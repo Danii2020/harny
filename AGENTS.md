@@ -6,20 +6,24 @@ here and add only what's genuinely specific to that tool.
 
 ## What this repo is
 
-This is `create-sdd-harness`-in-progress: a Specification-Driven Development (SDD)
-pipeline for AI coding agents, built and proven first on Claude Code, being
-generalized so the same five roles can eventually run on other coding-agent tools.
+This is `harny`: a Specification-Driven Development (SDD) pipeline for AI coding
+agents, built and proven first on Claude Code, being generalized so the same five
+roles can eventually run on other coding-agent tools.
 
-Today, two things exist side by side:
+Today, three things exist side by side:
 
 1. A **live pipeline**, instantiated for Claude Code, that you can actually run
    against this or any project (see "The live pipeline" below).
 2. A **portable template layer** under `templates/`, which holds the same five
-   roles' content in a tool-agnostic form — not yet wired up to any generator or
-   CLI, but intended as the canonical source those will eventually read from.
+   roles' content in a tool-agnostic form — the canonical source that generators
+   read from.
+3. A **CLI scaffolder**, `npx harny init`, that reads the portable templates and
+   generates a configured pipeline into any target repository (see `README.md`
+   for usage). The Claude Code generator ships here; other per-tool generators
+   are planned future work.
 
-There is no CLI, no per-tool generator, and no demo app in this repo yet. Those are
-future work; do not assume they exist.
+The repo does not yet include a demo application or any publishing/CI tooling.
+Those are future work; do not assume they exist.
 
 ## The SDD spec schema
 

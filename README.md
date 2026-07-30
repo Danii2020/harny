@@ -59,6 +59,56 @@ On this repo, the pipeline is wired up as Claude Code subagents and a Skill:
 - `.claude/skills/sdd-conductor/SKILL.md` - orchestrates the five roles above,
   enforces the three human gates, and never self-approves on the human's behalf.
 
+## Using harny to scaffold a new project
+
+The `npx harny init` CLI scaffolds the SDD pipeline into any target repository,
+interactively or non-interactively:
+
+```sh
+# Interactive mode — asks five questions: which tool(s), which roles,
+# model per role, active gates, and project stack.
+npx harny init /path/to/target-repo
+
+# Non-interactive with defaults:
+npx harny init /path/to/target-repo --yes
+
+# Non-interactive with per-tool generator selection:
+npx harny init /path/to/target-repo --yes --tools claude-code
+
+# Deselect specific roles (generates only the auditor agent):
+npx harny init /path/to/target-repo --yes --roles sdd-auditor
+
+# Preview without writing:
+npx harny init /path/to/target-repo --dry-run
+
+# Using a saved configuration file:
+npx harny init /path/to/target-repo --config ./harness-config.json
+```
+
+**Key flags:**
+- `--tools <list>` — comma-separated tool ids or `all` (default: `claude-code`)
+- `--roles <list>` — comma-separated role ids or `all` (default: all five; conductor always included)
+- `--model <role>=<value>` — repeatable; `<value>` is a cost tier or a literal model id
+- `--gates <list>` — comma-separated gate ids, `all`, or `none` (default: all three)
+- `--stack <name>` — project stack (captured only, for future MCP provisioning)
+- `--config <path>` — read configuration from JSON file instead of prompting
+- `--yes` — accept all defaults, skip prompts and final confirmation
+- `--dry-run` — print planned file list; write nothing
+- `--force` — overwrite existing files without prompting
+
+**Currently supported tools:**
+- `claude-code` — generates `.claude/agents/<role>.md`, `.claude/skills/sdd-conductor/SKILL.md`
+
+**Tools in progress (planned, not yet implemented):**
+- `cursor`, `kiro`, `github-copilot`, `codex` — will generate in their respective directories;
+  the CLI recognizes these IDs but reports them as "generator not shipped yet"
+
+The `init` command generates exactly 12 files into the target repository:
+- Five role agent files (`.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md`)
+- One conductor Skill (`.claude/skills/sdd-conductor/SKILL.md`)
+- Five spec-schema templates (`.sdd/spec-schema/{intent,contract,roadmap,tasks,audit}.md`)
+- One resolved configuration (`.sdd/harness.json`)
+
 ## Portable templates
 
 `templates/` at the repo root holds a **canonical, tool-agnostic** version of the
@@ -77,10 +127,9 @@ templates/
                    # the architect emits, extracted as standalone template files.
 ```
 
-These templates exist so that the same five roles can eventually be adapted to
-other coding-agent tools without re-deriving the pipeline from scratch. That
-adaptation work (a CLI, per-tool generators, a demo app) is not part of this repo
-yet - `templates/` is the groundwork for it, not a finished product.
+These templates are the canonical source that `npx harny init` reads from when
+generating configuration for a target repository. The CLI treats `templates/` as
+read-only input — the per-tool generators adapt this content without modifying it.
 
 ## Repository layout
 

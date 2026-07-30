@@ -2,3 +2,5 @@
 specs/
 plan.md
 CLAUDE.md
+node_modules/
+dist/

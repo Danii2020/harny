@@ -183,3 +183,172 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     expect(stdout.trim()).toBe('');
   });
 });
+
+/**
+ * Spec: specs/cursor-kiro-copilot-generators
+ * Covers: roadmap.md Phase 4.1/4.2/4.3, tasks.md Task 4.1, 4.2, 4.3; contract.md
+ * Behavior Guarantees 3, 8, 12.
+ *
+ * The blocks below are independent of the T40 block above: T40 compares
+ * generated output against `template.body`, the **parser's own output** — which
+ * is exactly the self-referential shape AL-6/AL-23 warn against (a defect in
+ * `extractBody` would silently pass a fidelity check phrased that way). Every
+ * assertion here instead slices the canonical body directly out of the raw file
+ * with `fs.readFile`, via a from-scratch reimplementation of the slicing rule
+ * that never calls `parseRoleTemplate` or `parseConductorTemplate`.
+ */
+
+/** Mirrors `trimBlankLines` in src/templates.ts, reimplemented independently
+ *  for this non-self-referential check (never imported from src/). */
+function trimBlankLinesIndependently(text: string): string {
+  const lines = text.split('\n');
+  let start = 0;
+  let end = lines.length - 1;
+  while (start <= end && lines[start].trim() === '') start++;
+  while (end >= start && lines[end].trim() === '') end--;
+  if (start > end) return '';
+  return lines.slice(start, end + 1).join('\n');
+}
+
+/** Slices a role's canonical body straight out of the raw file text: everything
+ *  after the "## Role body" heading line, with a leading authoring blockquote
+ *  (if any) excluded, blank-line-trimmed. Independent of src/templates.ts. */
+async function sliceRawRoleBody(roleId: string): Promise<string> {
+  const raw = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'roles', `${roleId}.md`), 'utf8');
+  const lines = raw.split('\n');
+  const headingIndex = lines.findIndex((line) => /^##\s+Role body\s*$/.test(line));
+  if (headingIndex === -1) {
+    throw new Error(`fixture bug: ${roleId}.md has no "## Role body" heading`);
+  }
+  let i = headingIndex + 1;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i < lines.length && /^>/.test(lines[i])) {
+    while (i < lines.length && /^>/.test(lines[i])) i++;
+  }
+  return trimBlankLinesIndependently(lines.slice(i).join('\n'));
+}
+
+/** Slices the conductor's canonical body straight out of the raw file text:
+ *  everything after the metadata bullet list and a leading authoring
+ *  blockquote (if any), blank-line-trimmed. Independent of src/templates.ts. */
+async function sliceRawConductorBody(): Promise<string> {
+  const raw = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'conductor', 'sdd-conductor.md'), 'utf8');
+  const lines = raw.split('\n');
+  const metadataHeadingIndex = lines.findIndex((line) => /^##\s+(Role )?Metadata\s*$/.test(line));
+  if (metadataHeadingIndex === -1) {
+    throw new Error('fixture bug: sdd-conductor.md has no "## Metadata" heading');
+  }
+  let i = metadataHeadingIndex + 1;
+  while (i < lines.length && (lines[i].trim() === '' || /^-\s+[a-z_]+:/.test(lines[i]))) i++;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i < lines.length && /^>/.test(lines[i])) {
+    while (i < lines.length && /^>/.test(lines[i])) i++;
+  }
+  return trimBlankLinesIndependently(lines.slice(i).join('\n'));
+}
+
+async function allGenerators() {
+  const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
+  const { cursorGenerator } = await import('../src/generators/cursor.js');
+  const { kiroGenerator } = await import('../src/generators/kiro.js');
+  const { githubCopilotGenerator } = await import('../src/generators/github-copilot.js');
+  return [claudeCodeGenerator, cursorGenerator, kiroGenerator, githubCopilotGenerator];
+}
+
+const SAMPLE_PROJECT = {
+  enabledRoles: [...ROLE_IDS],
+  gates: ['post-specs', 'post-red-tests', 'post-audit'] as const,
+  specSchemaDir: '.sdd/spec-schema',
+  reducedGates: false,
+};
+
+describe('canonical fidelity across all four generators, verified non-self-referentially (guarantee 12; AL-6/AL-23) (Task 4.1)', () => {
+  it('carries every role\'s raw-file-sliced canonical body byte-for-byte in each generator\'s output', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      for (const roleId of ROLE_IDS) {
+        const template = templates.roles.get(roleId)!;
+        const rawBody = await sliceRawRoleBody(roleId);
+        expect(rawBody.length).toBeGreaterThan(0);
+
+        const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+        expect(
+          generated.contents.includes(rawBody),
+          `${generator.id}'s generated ${roleId} artifact does not contain the raw-file-sliced body`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('carries the raw-file-sliced conductor body byte-for-byte in each generator\'s output', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+    const rawConductorBody = await sliceRawConductorBody();
+    expect(rawConductorBody.length).toBeGreaterThan(0);
+
+    for (const generator of generators) {
+      const generated = generator.renderConductor({ template: templates.conductor, project: SAMPLE_PROJECT });
+      expect(
+        generated.contents.includes(rawConductorBody),
+        `${generator.id}'s generated conductor artifact does not contain the raw-file-sliced body`,
+      ).toBe(true);
+    }
+  });
+});
+
+describe('no per-tool YAML machinery outside the shared module (guarantee 3) (Task 4.2)', () => {
+  it('has no "---" literal, hand-rolled quoting routine or frontmatter serializer in any generator file other than markdown-yaml.ts', async () => {
+    const generatorsDir = path.join(REPO_ROOT, 'src', 'generators');
+    const entries = await fs.readdir(generatorsDir, { withFileTypes: true });
+    const files = entries
+      .filter((e) => e.isFile() && e.name.endsWith('.ts') && e.name !== 'markdown-yaml.ts')
+      .map((e) => e.name);
+
+    // Every per-tool generator plus the interface file and the registry must be
+    // present, so a future generator addition is automatically swept too.
+    expect(files.length).toBeGreaterThanOrEqual(5);
+
+    for (const file of files) {
+      const contents = await fs.readFile(path.join(generatorsDir, file), 'utf8');
+      const code = contents.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '');
+
+      expect(code.includes('---'), `${file} contains a "---" literal`).toBe(false);
+      expect(
+        /function\s+\w*[Qq]uote\w*\s*\(/.test(code) || /const\s+\w*[Qq]uote\w*\s*=/.test(code),
+        `${file} defines its own quoting routine instead of reusing yamlQuote/yamlFlowSequence`,
+      ).toBe(false);
+      expect(
+        /function\s+render[A-Z]\w*[Ff]rontmatter\w*\s*\(/.test(code),
+        `${file} defines its own frontmatter serializer instead of reusing renderFrontmatter`,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('the AL-5 spec-schema pointer block reaches all 4 x 5 role artifacts (guarantee 8) (Task 4.3)', () => {
+  it('names exactly SPEC_SCHEMA_DIR, inside the generated-block markers, for every role x generator pair', async () => {
+    const { SPEC_SCHEMA_DIR } = await import('../src/engine.js');
+    const { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END } = await import('../src/generators/markdown-yaml.js');
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      for (const roleId of ROLE_IDS) {
+        const template = templates.roles.get(roleId)!;
+        const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+
+        const beginIndex = generated.contents.indexOf(GENERATED_BLOCK_BEGIN);
+        const endIndex = generated.contents.indexOf(GENERATED_BLOCK_END);
+        expect(beginIndex, `${generator.id}/${roleId} is missing the generated-block begin marker`).toBeGreaterThan(-1);
+        expect(endIndex, `${generator.id}/${roleId} is missing the generated-block end marker`).toBeGreaterThan(beginIndex);
+
+        const block = generated.contents.slice(beginIndex, endIndex);
+        expect(block, `${generator.id}/${roleId} pointer block does not name SPEC_SCHEMA_DIR`).toContain(
+          SPEC_SCHEMA_DIR,
+        );
+      }
+    }
+  });
+});

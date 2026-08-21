@@ -8,6 +8,11 @@
  * excluded is a USAGE error naming the role and the enabled set, not a
  * silent drop — Behavior Guarantee 22, the new Error Handling Contract row,
  * Task 5.17, T5.17.
+ *
+ * Spec: specs/cursor-kiro-copilot-generators
+ * Covers: tasks.md Task 3.3 (re-point the `--tools cursor` → exit-4
+ * "unimplemented tool" stand-in at `codex`, now that cursor ships a real
+ * generator); T21.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -124,11 +129,15 @@ describe('exit-code mapping (T34)', () => {
   });
 
   it('maps no-available-generator (HarnessError NO_GENERATOR) to exit 4', async () => {
+    // Re-pointed from `cursor` to `codex` (specs/cursor-kiro-copilot-generators
+    // tasks.md Task 3.3): cursor now ships its own generator, and codex is the
+    // one ToolId this feature deliberately leaves unimplemented — see
+    // specs/cursor-kiro-copilot-generators/intent.md Non-Goals.
     const { main } = await import('../src/cli.js');
     const targetDir = await makeTempDir();
 
     const { result } = await captureOutput(() =>
-      main(['init', targetDir, '--yes', '--tools', 'cursor']),
+      main(['init', targetDir, '--yes', '--tools', 'codex']),
     );
     expect(result).toBe(4);
 

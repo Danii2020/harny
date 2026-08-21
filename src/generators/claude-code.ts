@@ -4,8 +4,14 @@
  */
 import type { Capability } from '../templates.js';
 import type { ConductorPayload, RolePayload } from '../engine.js';
+import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
-import { renderFrontmatter, renderProjectConfigBlock, renderProvenance } from './markdown-yaml.js';
+import {
+  renderFrontmatter,
+  renderProjectConfigBlock,
+  renderProvenance,
+  renderSpecSchemaPointerBlock,
+} from './markdown-yaml.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
@@ -71,7 +77,8 @@ function renderRole(payload: RolePayload): GeneratedFile {
   );
 
   const provenance = renderProvenance(`templates/${template.sourcePath}`);
-  const contents = `${frontmatter}${provenance}\n${template.body}\n`;
+  const pointerBlock = renderSpecSchemaPointerBlock(SPEC_SCHEMA_DIR);
+  const contents = `${frontmatter}${provenance}\n${template.body}\n\n${pointerBlock}`;
 
   return { path: `${claudeCodeGenerator.agentsDir}/${roleFileName(template.metadata.id)}`, contents };
 }

@@ -3,6 +3,11 @@
  * Covers: contract.md "Public API — src/generators/markdown-yaml.ts" (G5);
  * Behavior Guarantees 3, 9; the contract's illustrated `renderFrontmatter`
  * shape; C10; T17, T18.
+ *
+ * Spec: specs/cursor-kiro-copilot-generators
+ * Covers: contract.md "Public API — src/generators/markdown-yaml.ts (additive)"
+ * (G5, G9), the normative `renderSpecSchemaPointerBlock` output shape;
+ * Behavior Guarantees 3, 8; tasks.md Task 1.1, 1.2; T1, T2.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -109,5 +114,67 @@ describe('renderProvenance (T17)', () => {
     const { renderProvenance } = await import('../../src/generators/markdown-yaml.js');
     const line = renderProvenance('templates/roles/sdd-auditor.md');
     expect(line).toContain('templates/roles/sdd-auditor.md');
+  });
+});
+
+describe('yamlFlowSequence (guarantee 3) (T1) (Task 1.1)', () => {
+  it('renders a YAML flow sequence of double-quoted, comma-space-joined scalars', async () => {
+    const { yamlFlowSequence } = await import('../../src/generators/markdown-yaml.js');
+    expect(yamlFlowSequence(['read', 'write', 'shell'])).toBe('["read", "write", "shell"]');
+  });
+
+  it('yields "[]" for an empty input, never an empty string or "null"', async () => {
+    const { yamlFlowSequence } = await import('../../src/generators/markdown-yaml.js');
+    expect(yamlFlowSequence([])).toBe('[]');
+  });
+
+  it('quotes each element through the same escaping rules as yamlQuote, not a naive wrap', async () => {
+    const { yamlFlowSequence } = await import('../../src/generators/markdown-yaml.js');
+    // Proves this reuses yamlQuote's escaping rather than a bespoke `"${v}"` — a
+    // value containing a double quote or backslash must come out escaped, exactly
+    // as it would through yamlQuote, or a tool's YAML parser would choke on it.
+    expect(yamlFlowSequence(['a"b', 'c\\d'])).toBe('["a\\"b", "c\\\\d"]');
+  });
+
+  it('is usable as a raw FrontmatterField value, embedding literally with no re-quoting', async () => {
+    const { renderFrontmatter, yamlFlowSequence } = await import('../../src/generators/markdown-yaml.js');
+    const output = renderFrontmatter([
+      { key: 'tools', value: yamlFlowSequence(['read', 'write']), raw: true },
+    ]);
+    expect(output).toBe('---\ntools: ["read", "write"]\n---\n');
+  });
+});
+
+describe('renderSpecSchemaPointerBlock (guarantee 8) (T2) (Task 1.2)', () => {
+  it('is fully delimited by the existing generated-block markers, so guarantee 3 (config quarantine) still holds', async () => {
+    const { renderSpecSchemaPointerBlock, GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END } = await import(
+      '../../src/generators/markdown-yaml.js'
+    );
+
+    const block = renderSpecSchemaPointerBlock('.sdd/spec-schema');
+
+    expect(block.startsWith(GENERATED_BLOCK_BEGIN)).toBe(true);
+    expect(block.trimEnd().endsWith(GENERATED_BLOCK_END)).toBe(true);
+  });
+
+  it('names the directory passed in, not a value hardcoded in the module', async () => {
+    const { renderSpecSchemaPointerBlock } = await import('../../src/generators/markdown-yaml.js');
+
+    const defaultBlock = renderSpecSchemaPointerBlock('.sdd/spec-schema');
+    const customBlock = renderSpecSchemaPointerBlock('some/other/dir');
+
+    expect(defaultBlock).toContain('.sdd/spec-schema');
+    expect(customBlock).toContain('some/other/dir');
+    expect(customBlock).not.toContain('.sdd/spec-schema');
+  });
+
+  it('points the reader at the deployed directory and disclaims the package-internal canonical path, per the normative shape', async () => {
+    const { renderSpecSchemaPointerBlock } = await import('../../src/generators/markdown-yaml.js');
+
+    const block = renderSpecSchemaPointerBlock('.sdd/spec-schema');
+
+    expect(block).toContain('Spec schema directory: `.sdd/spec-schema`');
+    expect(block).toContain('templates/spec-schema/');
+    expect(block.endsWith('\n')).toBe(true);
   });
 });

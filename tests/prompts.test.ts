@@ -11,6 +11,11 @@
  *
  * `@clack/prompts` is mocked at the module boundary: this tests OUR glue (what
  * defaults/options/order we pass it), not the library itself.
+ *
+ * Spec: specs/cursor-kiro-copilot-generators
+ * Covers: tasks.md Task 3.5 (re-point the "generator not shipped yet" hint
+ * assertion at `codex`, now that cursor/kiro/github-copilot ship real
+ * generators, and assert the three newly available tools carry no hint); T21.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -57,7 +62,7 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
     clackMocks.text.mockResolvedValue(''); // Q5: stack
 
     const result = await runInitPrompts(
-      { config, available: ['claude-code'], preset: {} },
+      { config, available: ['claude-code', 'cursor', 'kiro', 'github-copilot'], preset: {} },
       { log: () => {}, warn: () => {} },
     );
 
@@ -65,8 +70,15 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
     const toolsCall = clackMocks.multiselect.mock.calls[0][0];
     expect(toolsCall.required).toBe(true);
     expect(toolsCall.initialValues).toEqual(['claude-code']);
-    const cursorOption = toolsCall.options.find((o: any) => o.value === 'cursor');
-    expect(cursorOption.hint).toMatch(/not shipped yet/i);
+    // Re-pointed from `cursor` to `codex` (Task 3.5): cursor, kiro and
+    // github-copilot are now available and must carry NO hint; codex is the
+    // one tool this feature deliberately leaves unshipped.
+    const codexOption = toolsCall.options.find((o: any) => o.value === 'codex');
+    expect(codexOption.hint).toMatch(/not shipped yet/i);
+    for (const shippedId of ['claude-code', 'cursor', 'kiro', 'github-copilot']) {
+      const option = toolsCall.options.find((o: any) => o.value === shippedId);
+      expect(option.hint).toBeUndefined();
+    }
 
     // Q2: role selection — required, defaults to all five.
     const rolesCall = clackMocks.multiselect.mock.calls[1][0];

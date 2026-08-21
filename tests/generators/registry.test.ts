@@ -3,26 +3,36 @@
  * Covers: contract.md "Public API — src/generators/claude-code.ts and index.ts"
  * and "src/generators/types.ts" (G5); Behavior Guarantees 11, 18; C9, C13, C29;
  * T25, T26.
+ *
+ * Spec: specs/cursor-kiro-copilot-generators
+ * Covers: contract.md "SUPERSEDES — src/generators/index.ts" (G10); Behavior
+ * Guarantee 1; tasks.md Task 3.1; T20. Supersedes this file's own pre-feature
+ * assertion that `availableToolIds()` is exactly `['claude-code']` — updated
+ * here, not merely loosened, per roadmap.md Phase 3.2. The five-target
+ * interface-sufficiency evidence table below is retained unchanged: it
+ * exists to prove the `Generator` shape independently of which tools are
+ * actually registered, and it still covers `codex`, which remains
+ * unimplemented after this feature.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
 // to exist for this file's *other* tests to still fail for the right reason.
 import type { CapabilityMapping, Generator, GeneratedFile, WrapperFormat } from '../../src/generators/types.js';
 
-describe('generator registry (guarantee 18) (T25)', () => {
-  it('resolves claude-code and reports the four unimplemented tools as absent', async () => {
+describe('generator registry (guarantee 1, 18) (T20, T25)', () => {
+  it('resolves claude-code, cursor, kiro and github-copilot; codex remains the only tool with no generator', async () => {
     const { getGenerator } = await import('../../src/generators/index.js');
 
     expect(getGenerator('claude-code')).toBeDefined();
-    expect(getGenerator('cursor')).toBeUndefined();
-    expect(getGenerator('kiro')).toBeUndefined();
-    expect(getGenerator('github-copilot')).toBeUndefined();
+    expect(getGenerator('cursor')).toBeDefined();
+    expect(getGenerator('kiro')).toBeDefined();
+    expect(getGenerator('github-copilot')).toBeDefined();
     expect(getGenerator('codex')).toBeUndefined();
   });
 
-  it('availableToolIds() is exactly ["claude-code"], enforcing the single-reference-generator non-goal', async () => {
+  it('availableToolIds() is exactly the four shipped ids, in TOOL_IDS order (T20)', async () => {
     const { availableToolIds } = await import('../../src/generators/index.js');
-    expect(availableToolIds()).toEqual(['claude-code']);
+    expect(availableToolIds()).toEqual(['claude-code', 'cursor', 'kiro', 'github-copilot']);
   });
 });
 

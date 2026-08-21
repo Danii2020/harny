@@ -136,6 +136,12 @@ describe('runInit — reduced gates warning (guarantee 9) (T30)', () => {
 });
 
 describe('runInit — generator availability (guarantee 18) (T31)', () => {
+  // Re-pointed from `cursor` to `codex` (specs/cursor-kiro-copilot-generators
+  // tasks.md Task 3.4): cursor now ships its own generator, and codex is the
+  // one ToolId this feature deliberately leaves unimplemented — see
+  // specs/cursor-kiro-copilot-generators/intent.md Non-Goals. The assertion
+  // substance (a tool with no generator is skipped and warned about while
+  // another selected tool still generates) is unchanged.
   it('reports a tool without a generator as skipped while another selected tool still generates', async () => {
     const { runInit } = await import('../src/init.js');
     const targetDir = await makeTempDir();
@@ -144,15 +150,15 @@ describe('runInit — generator availability (guarantee 18) (T31)', () => {
     const result = await runInit({
       targetDir,
       templatesRoot: fixtureTemplatesRoot('well-formed'),
-      overrides: { tools: ['claude-code', 'cursor'] },
+      overrides: { tools: ['claude-code', 'codex'] },
       interactive: false,
       dryRun: true,
       force: false,
       io,
     });
 
-    expect(result.skippedTools).toEqual(['cursor']);
-    expect(warnings.some((w) => w.includes('cursor'))).toBe(true);
+    expect(result.skippedTools).toEqual(['codex']);
+    expect(warnings.some((w) => w.includes('codex'))).toBe(true);
   });
 
   it('throws NO_GENERATOR and writes nothing when no selected tool has a generator', async () => {
@@ -165,7 +171,7 @@ describe('runInit — generator availability (guarantee 18) (T31)', () => {
       await runInit({
         targetDir,
         templatesRoot: fixtureTemplatesRoot('well-formed'),
-        overrides: { tools: ['cursor'] },
+        overrides: { tools: ['codex'] },
         interactive: false,
         dryRun: false,
         force: false,

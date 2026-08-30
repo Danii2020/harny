@@ -19,9 +19,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Reference generator for Claude Code, proving the `Generator` adapter interface:
   reads abstract role templates (with cost-tier and capabilities), maps tiers to
   Claude model ids (most-capable→opus, mid→sonnet, cheapest→haiku), renders
-  Markdown+YAML agent frontmatter, and generates the conductor Skill. Validates
-  that the interface is sufficient for all five known per-tool targets (Cursor,
-  Kiro, GitHub Copilot, Codex); the other four generators are not yet shipped.
+  Markdown+YAML agent frontmatter, and generates the conductor Skill.
+- Three more per-tool generators — Cursor, Kiro, and GitHub Copilot — proving the
+  same `Generator` interface holds across tools with materially different agent
+  formats, frontmatter keys, and capability models. Each generator's paths, file
+  extensions, frontmatter fields, and model identifiers are verified against
+  current vendor documentation, with sources and verification date recorded in
+  `specs/cursor-kiro-copilot-generators/contract.md`. `codex` remains the sole
+  unimplemented `ToolId`; the CLI recognizes it but reports "generator not shipped
+  yet". `--tools` now accepts `claude-code`, `cursor`, `kiro`, and `github-copilot`
+  as shipped, selectable tools, plus `all`.
+- Spec-schema pointer block appended to every generated role artifact, across all
+  four shipped generators (including a retrofit onto Claude Code's own output),
+  making the deployed `.sdd/spec-schema/` directory reachable from inside a
+  generated agent file. Closes audit finding AL-5.
+- Shared rendering helpers `yamlFlowSequence` and `renderSpecSchemaPointerBlock`
+  in `src/generators/markdown-yaml.ts`, keeping YAML formatting and spec-schema
+  block placement consistent across all Markdown+YAML target tools.
 - Spec-schema deployment: the five spec-schema templates from `templates/` are
   written to `.sdd/spec-schema/` in the target repo, so the architect role's
   internal schema references resolve after generation.
@@ -50,3 +64,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   what the audit verified and never touches source code or code comments.
 - This project's own root documentation: `README.md`, `CHANGELOG.md`, `AGENTS.md`,
   and `CLAUDE.md`.
+
+### Changed
+
+- Generated role artifacts for all four shipped tools now include the
+  spec-schema pointer block described above; this applies retroactively to
+  Claude Code's output as well, as part of the AL-5 closure.

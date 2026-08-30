@@ -19,8 +19,8 @@ Today, three things exist side by side:
    read from.
 3. A **CLI scaffolder**, `npx harny init`, that reads the portable templates and
    generates a configured pipeline into any target repository (see `README.md`
-   for usage). The Claude Code generator ships here; other per-tool generators
-   are planned future work.
+   for usage). Four per-tool generators ship here: Claude Code, Cursor, Kiro,
+   and GitHub Copilot. Codex (TOML format) is planned future work.
 
 The repo does not yet include a demo application or any publishing/CI tooling.
 Those are future work; do not assume they exist.

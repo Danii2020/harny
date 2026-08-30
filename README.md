@@ -1,7 +1,7 @@
 # harny
 
-A portable **Specification-Driven Development (SDD)** subagent pipeline, currently
-instantiated for **Claude Code**.
+A portable **Specification-Driven Development (SDD)** subagent pipeline, with
+generators for **Claude Code**, **Cursor**, **Kiro**, and **GitHub Copilot**.
 
 Instead of asking a single agent to design, test, implement, and audit a feature in
 one undifferentiated pass, this pipeline splits the work across five specialized
@@ -43,21 +43,41 @@ cites back to `intent.md` or `contract.md`.
 
 On this repo, the pipeline is wired up as Claude Code subagents and a Skill:
 
-- `.claude/agents/sdd-architect.md` - explores the codebase and writes the 5 spec
-  files, one at a time, with human approval between files.
-- `.claude/agents/sdd-test-writer.md` - turns every contract guarantee and success
-  criterion into tests (red phase: must fail for the right reason).
-- `.claude/agents/sdd-executor.md` - implements `tasks.md` phase by phase; the
-  contract is law, no scope creep.
-- `.claude/agents/sdd-auditor.md` - the final quality gate: verifies compliance
-  against all 5 specs, runs the toolchain, and issues a verdict (`APPROVED` /
-  `APPROVED WITH RESERVATIONS` / `REJECTED`) in `audit.md`.
-- `.claude/agents/sdd-documentation.md` - runs automatically right after a human
-  approves the auditor's verdict (never on `REJECTED`, and never as a new blocking
-  gate). It updates this repo's own docs to reflect what was actually verified, and
-  stamps the shipped spec's `intent.md` with a `Shipped: <date>` header.
-- `.claude/skills/sdd-conductor/SKILL.md` - orchestrates the five roles above,
-  enforces the three human gates, and never self-approves on the human's behalf.
+- `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` — five
+  specialized roles that run as Claude Code subagents.
+- `.claude/skills/sdd-conductor/SKILL.md` — orchestrates the five roles, enforces
+  the three human gates, and never self-approves on the human's behalf.
+
+The `npx harny init` CLI scaffolds this same pipeline into any target repository,
+choosing which tool(s) to target. Each tool gets its own generator that reads the
+portable role templates and adapts them to that tool's native format and capability
+model.
+
+## Building and installing locally
+
+Since this package is not yet published to npm, you must build it locally before running the CLI:
+
+```sh
+# Install dependencies
+npm install
+
+# Build TypeScript to dist/
+npm run build
+
+# Then invoke the CLI in one of these ways:
+# Option 1: Use npm link to add harny to your PATH
+npm link
+harny init /path/to/target-repo
+
+# Option 2: Run directly from the repo
+node bin/harness.js init /path/to/target-repo
+
+# Option 3: Run within this repo's directory (npx reads local dist/)
+npx harny init /path/to/target-repo
+```
+
+**Note:** The build step is required before running the CLI, as `bin/harness.js` loads TypeScript
+output from `dist/`. If you make changes to `src/`, re-run `npm run build` before testing.
 
 ## Using harny to scaffold a new project
 
@@ -96,18 +116,18 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `--dry-run` — print planned file list; write nothing
 - `--force` — overwrite existing files without prompting
 
-**Currently supported tools:**
-- `claude-code` — generates `.claude/agents/<role>.md`, `.claude/skills/sdd-conductor/SKILL.md`
+**Shipped tools:**
+- `claude-code` — generates `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` and `.claude/skills/sdd-conductor/SKILL.md`
+- `cursor` — generates `.cursor/agents/sdd-*.md` and `.cursor/skills/sdd-conductor/SKILL.md`
+- `kiro` — generates `.kiro/agents/sdd-*.md` and `.kiro/skills/sdd-conductor/SKILL.md`
+- `github-copilot` — generates `.github/agents/sdd-*.agent.md` and `.github/skills/sdd-conductor/SKILL.md`
 
 **Tools in progress (planned, not yet implemented):**
-- `cursor`, `kiro`, `github-copilot`, `codex` — will generate in their respective directories;
-  the CLI recognizes these IDs but reports them as "generator not shipped yet"
+- `codex` — the CLI recognizes this ID but reports it as "generator not shipped yet"
 
-The `init` command generates exactly 12 files into the target repository:
-- Five role agent files (`.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md`)
-- One conductor Skill (`.claude/skills/sdd-conductor/SKILL.md`)
-- Five spec-schema templates (`.sdd/spec-schema/{intent,contract,roadmap,tasks,audit}.md`)
-- One resolved configuration (`.sdd/harness.json`)
+**Generated files per `init` run:**
+- For a single tool: 6 tool-specific files (5 roles + conductor artifact) + 6 shared files (5 spec schema templates + configuration) = 12 files total
+- For multiple tools: 6 files per selected tool, plus 6 shared files written exactly once. Example: `--tools claude-code,cursor,kiro` generates 24 tool-specific files + 6 shared = 30 files total
 
 ## Portable templates
 
@@ -133,14 +153,26 @@ read-only input — the per-tool generators adapt this content without modifying
 
 ## Repository layout
 
+This repo's own SDD pipeline (running on Claude Code):
+
 ```
 .claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md
 .claude/skills/sdd-conductor/SKILL.md
+```
+
+Shared templates and specs:
+
+```
 specs/<feature-name>/{intent,contract,roadmap,tasks,audit}.md
 templates/{roles,conductor,spec-schema}/
 plan.md          # background/vision notes (workshop planning)
 AGENTS.md        # tool-agnostic conventions for this repo
 CLAUDE.md        # Claude-Code-specific notes; defers to AGENTS.md
 ```
+
+When you run `npx harny init` in a target repository, it generates a pipeline for your
+chosen tool(s) — e.g., `.cursor/agents/sdd-*.md` for Cursor, `.kiro/agents/sdd-*.md` for Kiro,
+or `.github/agents/sdd-*.agent.md` for GitHub Copilot — plus shared `.sdd/spec-schema/` and
+`.sdd/harness.json` files.
 
 See `AGENTS.md` for the full conventions this repo follows.

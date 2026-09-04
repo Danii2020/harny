@@ -16,6 +16,16 @@
  * Covers: tasks.md Task 3.5 (re-point the "generator not shipped yet" hint
  * assertion at `codex`, now that cursor/kiro/github-copilot ship real
  * generators, and assert the three newly available tools carry no hint); T21.
+ *
+ * Spec: specs/codex-generator
+ * Covers: contract.md "SUPERSEDES — reachability of the unavailable-generator
+ * paths" (G8); Behavior Guarantee 13; roadmap.md Phase 3; tasks.md Task 3.5.
+ * The hint assertion below already passed a **partial** `available` array
+ * (an existing `PromptDefaults` field — no production change) omitting
+ * `codex`; that assertion is unchanged and still exercises the hint path,
+ * driven by test data rather than by codex being genuinely unshipped. A new
+ * assertion is added confirming that with the real `availableToolIds()`
+ * (all five `TOOL_IDS`, codex included) **no** tool option carries a hint.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -130,6 +140,35 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
     // Only 2 multiselect calls now: roles and gates — tools was preset.
     expect(clackMocks.multiselect).toHaveBeenCalledTimes(2);
     expect(result.tools).toEqual(['claude-code']);
+  });
+
+  it('carries no hint on any tool option when passed the real availableToolIds() (all five TOOL_IDS, codex included)', async () => {
+    const { runInitPrompts } = await import('../src/prompts.js');
+    const { availableToolIds } = await import('../src/generators/index.js');
+    const { config } = await loadDefaults();
+
+    clackMocks.multiselect
+      .mockResolvedValueOnce(['claude-code'])
+      .mockResolvedValueOnce([
+        'sdd-architect',
+        'sdd-test-writer',
+        'sdd-executor',
+        'sdd-auditor',
+        'sdd-documentation',
+      ])
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']);
+    clackMocks.select.mockResolvedValue('most-capable');
+    clackMocks.text.mockResolvedValue('');
+
+    await runInitPrompts(
+      { config, available: availableToolIds(), preset: {} },
+      { log: () => {}, warn: () => {} },
+    );
+
+    const toolsCall = clackMocks.multiselect.mock.calls[0][0];
+    for (const option of toolsCall.options) {
+      expect(option.hint, `${option.value} unexpectedly carries a hint`).toBeUndefined();
+    }
   });
 
   it('throws HarnessError(CANCELLED) and calls clack\'s cancel() when the user aborts a prompt', async () => {

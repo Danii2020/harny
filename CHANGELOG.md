@@ -25,10 +25,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   formats, frontmatter keys, and capability models. Each generator's paths, file
   extensions, frontmatter fields, and model identifiers are verified against
   current vendor documentation, with sources and verification date recorded in
-  `specs/cursor-kiro-copilot-generators/contract.md`. `codex` remains the sole
-  unimplemented `ToolId`; the CLI recognizes it but reports "generator not shipped
-  yet". `--tools` now accepts `claude-code`, `cursor`, `kiro`, and `github-copilot`
-  as shipped, selectable tools, plus `all`.
+  `specs/cursor-kiro-copilot-generators/contract.md`. `--tools` now accepts
+  `claude-code`, `cursor`, `kiro`, and `github-copilot` as shipped, selectable
+  tools, plus `all`.
+- The fifth per-tool generator — **Codex CLI** — completing the initial target set.
+  Codex generates `.codex/agents/sdd-*.toml` files (TOML format, distinct from the
+  Markdown+YAML format of the other four tools) and a shared Markdown conductor
+  artifact at `.agents/skills/sdd-conductor/SKILL.md`. A new `src/generators/toml.ts`
+  wrapper module owns all TOML syntax emission (exact analogue of `markdown-yaml.ts`
+  for the other four), ensuring that `src/generators/codex.ts` contains no TOML syntax
+  literals itself. All five Codex paths, keys, model ids, and sandbox-mode semantics
+  are verified against first-party Codex documentation (sources and verification date
+  in `specs/codex-generator/contract.md`). With Codex, `--tools` now accepts all five
+  tools, and `availableToolIds()` returns all five.
 - Spec-schema pointer block appended to every generated role artifact, across all
   four shipped generators (including a retrofit onto Claude Code's own output),
   making the deployed `.sdd/spec-schema/` directory reachable from inside a

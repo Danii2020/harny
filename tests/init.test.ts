@@ -136,55 +136,82 @@ describe('runInit — reduced gates warning (guarantee 9) (T30)', () => {
 });
 
 describe('runInit — generator availability (guarantee 18) (T31)', () => {
-  // Re-pointed from `cursor` to `codex` (specs/cursor-kiro-copilot-generators
-  // tasks.md Task 3.4): cursor now ships its own generator, and codex is the
-  // one ToolId this feature deliberately leaves unimplemented — see
-  // specs/cursor-kiro-copilot-generators/intent.md Non-Goals. The assertion
-  // substance (a tool with no generator is skipped and warned about while
-  // another selected tool still generates) is unchanged.
-  it('reports a tool without a generator as skipped while another selected tool still generates', async () => {
-    const { runInit } = await import('../src/init.js');
-    const targetDir = await makeTempDir();
-    const { io, warnings } = collectingIO();
-
-    const result = await runInit({
-      targetDir,
-      templatesRoot: fixtureTemplatesRoot('well-formed'),
-      overrides: { tools: ['claude-code', 'codex'] },
-      interactive: false,
-      dryRun: true,
-      force: false,
-      io,
+  // Re-pointed onto a synthetic registry (specs/codex-generator tasks.md Task
+  // 3.3, contract.md "SUPERSEDES — reachability of the unavailable-generator
+  // paths"): now that all five `TOOL_IDS` have a real generator, no legal
+  // `--tools` value can trigger the skip-and-warn branch or `NO_GENERATOR`
+  // any more. Both branches, and their coverage, are kept — driven by a
+  // `vi.doMock` of `src/generators/index.js` that deletes `codex` from a copy
+  // of the real registry, rather than by a real unimplemented tool id. No
+  // injection seam is added to `src/init.ts`.
+  async function withCodexUnavailable<T>(run: () => Promise<T>): Promise<T> {
+    vi.resetModules();
+    vi.doMock('../src/generators/index.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../src/generators/index.js')>();
+      const partial = new Map(actual.generators);
+      partial.delete('codex');
+      return {
+        ...actual,
+        generators: partial,
+        getGenerator: (id: string) => partial.get(id as never),
+        availableToolIds: () => [...partial.keys()],
+      };
     });
-
-    expect(result.skippedTools).toEqual(['codex']);
-    expect(warnings.some((w) => w.includes('codex'))).toBe(true);
-  });
-
-  it('throws NO_GENERATOR and writes nothing when no selected tool has a generator', async () => {
-    const { runInit } = await import('../src/init.js');
-    const { isHarnessError } = await import('../src/errors.js');
-    const targetDir = await makeTempDir();
-    const { io } = collectingIO();
-
     try {
-      await runInit({
+      return await run();
+    } finally {
+      vi.doUnmock('../src/generators/index.js');
+      vi.resetModules();
+    }
+  }
+
+  it('reports a tool without a generator as skipped while another selected tool still generates', async () => {
+    await withCodexUnavailable(async () => {
+      const { runInit } = await import('../src/init.js');
+      const targetDir = await makeTempDir();
+      const { io, warnings } = collectingIO();
+
+      const result = await runInit({
         targetDir,
         templatesRoot: fixtureTemplatesRoot('well-formed'),
-        overrides: { tools: ['codex'] },
+        overrides: { tools: ['claude-code', 'codex'] },
         interactive: false,
-        dryRun: false,
+        dryRun: true,
         force: false,
         io,
       });
-      expect.unreachable('expected runInit to throw NO_GENERATOR');
-    } catch (err) {
-      expect(isHarnessError(err)).toBe(true);
-      expect((err as any).code).toBe('NO_GENERATOR');
-    }
 
-    const entries = await fs.readdir(targetDir);
-    expect(entries).toEqual([]);
+      expect(result.skippedTools).toEqual(['codex']);
+      expect(warnings.some((w) => w.includes('codex'))).toBe(true);
+    });
+  });
+
+  it('throws NO_GENERATOR and writes nothing when no selected tool has a generator', async () => {
+    await withCodexUnavailable(async () => {
+      const { runInit } = await import('../src/init.js');
+      const { isHarnessError } = await import('../src/errors.js');
+      const targetDir = await makeTempDir();
+      const { io } = collectingIO();
+
+      try {
+        await runInit({
+          targetDir,
+          templatesRoot: fixtureTemplatesRoot('well-formed'),
+          overrides: { tools: ['codex'] },
+          interactive: false,
+          dryRun: false,
+          force: false,
+          io,
+        });
+        expect.unreachable('expected runInit to throw NO_GENERATOR');
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('NO_GENERATOR');
+      }
+
+      const entries = await fs.readdir(targetDir);
+      expect(entries).toEqual([]);
+    });
   });
 });
 

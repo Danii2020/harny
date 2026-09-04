@@ -278,8 +278,71 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
   });
 });
 
-describe('init --yes --tools claude-code,cursor,kiro,github-copilot end to end (Gu 10, 11) (T23)', () => {
-  it('emits 24 tool artifacts (4 tools x 5 roles + 1 conductor) plus exactly one copy of each shared artifact', async () => {
+describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task 4.4)', () => {
+  it('exits 0 and produces exactly the contracted Codex file set: 6 tool artifacts + 6 shared files', async () => {
+    const targetDir = await makeTempDir();
+
+    const { code } = await runCli(['init', targetDir, '--yes', '--tools', 'codex']);
+
+    expect(code).toBe(0);
+    const files = await listFilesRecursively(targetDir);
+    const expectedFiles = [
+      '.codex/agents/sdd-architect.toml',
+      '.codex/agents/sdd-test-writer.toml',
+      '.codex/agents/sdd-executor.toml',
+      '.codex/agents/sdd-auditor.toml',
+      '.codex/agents/sdd-documentation.toml',
+      '.agents/skills/sdd-conductor/SKILL.md',
+      '.sdd/spec-schema/intent.md',
+      '.sdd/spec-schema/contract.md',
+      '.sdd/spec-schema/roadmap.md',
+      '.sdd/spec-schema/tasks.md',
+      '.sdd/spec-schema/audit.md',
+      '.sdd/harness.json',
+    ];
+    expect(files.sort()).toEqual(expectedFiles.sort());
+
+    // Every generated path is relative and contained within the target
+    // directory -- no absolute path, no ".." segment.
+    for (const file of files) {
+      expect(path.isAbsolute(file)).toBe(false);
+      expect(file.split('/')).not.toContain('..');
+    }
+
+    // Every artifact -- TOML and Markdown alike -- ends in exactly one "\n".
+    for (const file of files) {
+      const contents = await fs.readFile(path.join(targetDir, file), 'utf8');
+      expect(contents.endsWith('\n'), `${file} does not end in a newline`).toBe(true);
+      expect(contents.endsWith('\n\n'), `${file} ends in more than one newline`).toBe(false);
+    }
+  });
+
+  it('produces byte-identical output across two independent codex-only runs', async () => {
+    const targetDirA = await makeTempDir();
+    const targetDirB = await makeTempDir();
+
+    const runA = await runCli(['init', targetDirA, '--yes', '--tools', 'codex']);
+    const runB = await runCli(['init', targetDirB, '--yes', '--tools', 'codex']);
+    expect(runA.code).toBe(0);
+    expect(runB.code).toBe(0);
+
+    const filesA = (await listFilesRecursively(targetDirA)).sort();
+    const filesB = (await listFilesRecursively(targetDirB)).sort();
+    expect(filesA).toEqual(filesB);
+
+    for (const file of filesA) {
+      const contentsA = await fs.readFile(path.join(targetDirA, file), 'utf8');
+      const contentsB = await fs.readFile(path.join(targetDirB, file), 'utf8');
+      expect(contentsA).toBe(contentsB);
+    }
+  });
+});
+
+describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to end (Gu 10, 11, 14) (T23)', () => {
+  // Extended from four tools / 24 tool artifacts to five tools / 30
+  // (specs/codex-generator tasks.md Task 3.6, contract.md guarantee 14): codex
+  // now ships its own generator too, so "all shipped tools" is five, not four.
+  it('emits 30 tool artifacts (5 tools x 5 roles + 1 conductor) plus exactly one copy of each shared artifact', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli([
@@ -287,14 +350,14 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot end to end (
       targetDir,
       '--yes',
       '--tools',
-      'claude-code,cursor,kiro,github-copilot',
+      'claude-code,cursor,kiro,github-copilot,codex',
     ]);
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
 
     const toolArtifacts = files.filter((f) => !f.startsWith('.sdd/'));
-    expect(toolArtifacts).toHaveLength(24);
+    expect(toolArtifacts).toHaveLength(30);
 
     const specSchemaFiles = files.filter((f) => f.startsWith('.sdd/spec-schema/'));
     expect(specSchemaFiles).toHaveLength(5);
@@ -309,7 +372,7 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot end to end (
       targetDir,
       '--yes',
       '--tools',
-      'claude-code,cursor,kiro,github-copilot',
+      'claude-code,cursor,kiro,github-copilot,codex',
     ]);
     expect(code).toBe(0);
 

@@ -252,7 +252,8 @@ async function allGenerators() {
   const { cursorGenerator } = await import('../src/generators/cursor.js');
   const { kiroGenerator } = await import('../src/generators/kiro.js');
   const { githubCopilotGenerator } = await import('../src/generators/github-copilot.js');
-  return [claudeCodeGenerator, cursorGenerator, kiroGenerator, githubCopilotGenerator];
+  const { codexGenerator } = await import('../src/generators/codex.js');
+  return [claudeCodeGenerator, cursorGenerator, kiroGenerator, githubCopilotGenerator, codexGenerator];
 }
 
 const SAMPLE_PROJECT = {
@@ -262,7 +263,7 @@ const SAMPLE_PROJECT = {
   reducedGates: false,
 };
 
-describe('canonical fidelity across all four generators, verified non-self-referentially (guarantee 12; AL-6/AL-23) (Task 4.1)', () => {
+describe('canonical fidelity across all five generators, verified non-self-referentially (guarantee 12; AL-6/AL-23) (Task 4.1)', () => {
   it('carries every role\'s raw-file-sliced canonical body byte-for-byte in each generator\'s output', async () => {
     const templates = await loadRealTemplates();
     const generators = await allGenerators();
@@ -296,6 +297,42 @@ describe('canonical fidelity across all four generators, verified non-self-refer
       ).toBe(true);
     }
   });
+
+  it('the raw-file-sliced role body also equals the corresponding prefix of the decoded developer_instructions, for the fifth (Codex) generator', async () => {
+    // Guarantee 4's second half, specific to Codex: the canonical body must
+    // survive not merely as a raw-file substring of the .toml text (already
+    // proven above), but also as the exact prefix of the *decoded*
+    // developer_instructions string -- proving the TOML embedding neither
+    // escapes nor re-indents it. Uses the test-local minimal decoder
+    // (tests/helpers/toml-decode.ts), never a TOML package dependency.
+    const { codexGenerator } = await import('../src/generators/codex.js');
+    const { decodeToml } = await import('./helpers/toml-decode.js');
+    const templates = await loadRealTemplates();
+
+    for (const roleId of ROLE_IDS) {
+      const template = templates.roles.get(roleId)!;
+      const rawBody = await sliceRawRoleBody(roleId);
+      expect(rawBody.length).toBeGreaterThan(0);
+
+      const generated = codexGenerator.renderRole({ template, tier: template.metadata.costTier });
+      const decoded = decodeToml(generated.contents);
+
+      expect(
+        decoded.developer_instructions.startsWith(rawBody),
+        `codex's decoded developer_instructions for ${roleId} does not start with the raw-file-sliced body`,
+      ).toBe(true);
+    }
+  });
+
+  it('the raw-file-sliced conductor body appears byte-for-byte inside the generated Codex SKILL.md (Markdown, not TOML)', async () => {
+    const { codexGenerator } = await import('../src/generators/codex.js');
+    const templates = await loadRealTemplates();
+    const rawConductorBody = await sliceRawConductorBody();
+    expect(rawConductorBody.length).toBeGreaterThan(0);
+
+    const generated = codexGenerator.renderConductor({ template: templates.conductor, project: SAMPLE_PROJECT });
+    expect(generated.contents.includes(rawConductorBody)).toBe(true);
+  });
 });
 
 describe('no per-tool YAML machinery outside the shared module (guarantee 3) (Task 4.2)', () => {
@@ -327,7 +364,7 @@ describe('no per-tool YAML machinery outside the shared module (guarantee 3) (Ta
   });
 });
 
-describe('the AL-5 spec-schema pointer block reaches all 4 x 5 role artifacts (guarantee 8) (Task 4.3)', () => {
+describe('the AL-5 spec-schema pointer block reaches all 5 x 5 role artifacts (guarantee 8) (Task 4.3)', () => {
   it('names exactly SPEC_SCHEMA_DIR, inside the generated-block markers, for every role x generator pair', async () => {
     const { SPEC_SCHEMA_DIR } = await import('../src/engine.js');
     const { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END } = await import('../src/generators/markdown-yaml.js');
@@ -350,5 +387,44 @@ describe('the AL-5 spec-schema pointer block reaches all 4 x 5 role artifacts (g
         );
       }
     }
+  });
+});
+
+/**
+ * Spec: specs/codex-generator
+ * Covers: contract.md Behavior Guarantee 12 ("The interface and the shared
+ * Markdown layer are untouched"); intent.md G7, G9; roadmap.md Phase 4.2;
+ * tasks.md Task 4.2. Asserted via `git status --porcelain`, the same
+ * mechanism the existing T41 non-mutation check above already uses, rather
+ * than a content hash -- it fails loudly and specifically (naming which path
+ * has a diff) if anything in this feature accidentally touched a file it was
+ * never supposed to.
+ */
+describe('no regression: the four shipped generators, the shared interface/Markdown layer, templates/, and every module outside src/generators/ are byte-identical (guarantee 12) (Task 4.2)', () => {
+  it('shows no git changes to the read-only file set after implementing the Codex generator', async () => {
+    const { stdout: generatorLayerDiff } = await execFileAsync(
+      'git',
+      [
+        'status',
+        '--porcelain',
+        '--',
+        'templates',
+        'src/generators/types.ts',
+        'src/generators/markdown-yaml.ts',
+        'src/generators/claude-code.ts',
+        'src/generators/cursor.ts',
+        'src/generators/kiro.ts',
+        'src/generators/github-copilot.ts',
+      ],
+      { cwd: REPO_ROOT },
+    );
+    expect(generatorLayerDiff.trim(), 'templates/ or the four shipped generators (or types.ts/markdown-yaml.ts) changed').toBe('');
+
+    const { stdout: outsideGeneratorsDiff } = await execFileAsync(
+      'git',
+      ['status', '--porcelain', '--', 'src', ':!src/generators'],
+      { cwd: REPO_ROOT },
+    );
+    expect(outsideGeneratorsDiff.trim(), 'a module outside src/generators/ changed').toBe('');
   });
 });

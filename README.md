@@ -1,7 +1,7 @@
 # harny
 
 A portable **Specification-Driven Development (SDD)** subagent pipeline, with
-generators for **Claude Code**, **Cursor**, **Kiro**, and **GitHub Copilot**.
+generators for **Claude Code**, **Cursor**, **Kiro**, **GitHub Copilot**, and **Codex**.
 
 Instead of asking a single agent to design, test, implement, and audit a feature in
 one undifferentiated pass, this pipeline splits the work across five specialized
@@ -121,13 +121,11 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `cursor` — generates `.cursor/agents/sdd-*.md` and `.cursor/skills/sdd-conductor/SKILL.md`
 - `kiro` — generates `.kiro/agents/sdd-*.md` and `.kiro/skills/sdd-conductor/SKILL.md`
 - `github-copilot` — generates `.github/agents/sdd-*.agent.md` and `.github/skills/sdd-conductor/SKILL.md`
-
-**Tools in progress (planned, not yet implemented):**
-- `codex` — the CLI recognizes this ID but reports it as "generator not shipped yet"
+- `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
 - For a single tool: 6 tool-specific files (5 roles + conductor artifact) + 6 shared files (5 spec schema templates + configuration) = 12 files total
-- For multiple tools: 6 files per selected tool, plus 6 shared files written exactly once. Example: `--tools claude-code,cursor,kiro` generates 24 tool-specific files + 6 shared = 30 files total
+- For multiple tools: 6 files per selected tool, plus 6 shared files written exactly once. Example: `--tools claude-code,cursor,kiro,github-copilot,codex` generates 30 tool-specific files + 6 shared = 36 files total
 
 ## Portable templates
 

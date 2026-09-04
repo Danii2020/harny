@@ -6,13 +6,20 @@
  *
  * Spec: specs/cursor-kiro-copilot-generators
  * Covers: contract.md "SUPERSEDES — src/generators/index.ts" (G10); Behavior
- * Guarantee 1; tasks.md Task 3.1; T20. Supersedes this file's own pre-feature
- * assertion that `availableToolIds()` is exactly `['claude-code']` — updated
- * here, not merely loosened, per roadmap.md Phase 3.2. The five-target
- * interface-sufficiency evidence table below is retained unchanged: it
- * exists to prove the `Generator` shape independently of which tools are
- * actually registered, and it still covers `codex`, which remains
- * unimplemented after this feature.
+ * Guarantee 1; tasks.md Task 3.1; T20.
+ *
+ * Spec: specs/codex-generator
+ * Covers: contract.md "SUPERSEDES — src/generators/index.ts" (G8), which itself
+ * supersedes `cursor-kiro-copilot-generators`' guarantee 1; Behavior Guarantees
+ * 1, 13; roadmap.md Phase 3; tasks.md Task 3.2. Supersedes this file's own
+ * pre-feature assertion that `availableToolIds()` is exactly the four
+ * Markdown-target ids and that `codex` "remains unimplemented after this
+ * feature" — updated here, not merely loosened, per roadmap.md Phase 3.2. The
+ * five-target interface-sufficiency evidence table below is retained
+ * unchanged in shape: it exists to prove the `Generator` shape independently
+ * of which tools are actually registered, and its `codex` row is now also
+ * asserted against the real `codexGenerator`, promoting it from prediction to
+ * regression test.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
@@ -20,30 +27,47 @@ import { describe, expect, it } from 'vitest';
 import type { CapabilityMapping, Generator, GeneratedFile, WrapperFormat } from '../../src/generators/types.js';
 
 describe('generator registry (guarantee 1, 18) (T20, T25)', () => {
-  it('resolves claude-code, cursor, kiro and github-copilot; codex remains the only tool with no generator', async () => {
+  it('resolves all five TOOL_IDS to a Generator: claude-code, cursor, kiro, github-copilot and codex', async () => {
     const { getGenerator } = await import('../../src/generators/index.js');
 
     expect(getGenerator('claude-code')).toBeDefined();
     expect(getGenerator('cursor')).toBeDefined();
     expect(getGenerator('kiro')).toBeDefined();
     expect(getGenerator('github-copilot')).toBeDefined();
-    expect(getGenerator('codex')).toBeUndefined();
+    expect(getGenerator('codex')).toBeDefined();
   });
 
-  it('availableToolIds() is exactly the four shipped ids, in TOOL_IDS order (T20)', async () => {
+  it('availableToolIds() is exactly the five TOOL_IDS, in TOOL_IDS order (T20)', async () => {
     const { availableToolIds } = await import('../../src/generators/index.js');
-    expect(availableToolIds()).toEqual(['claude-code', 'cursor', 'kiro', 'github-copilot']);
+    const { TOOL_IDS } = await import('../../src/vocabulary.js');
+
+    expect(availableToolIds()).toEqual(['claude-code', 'cursor', 'kiro', 'github-copilot', 'codex']);
+    expect(availableToolIds()).toEqual([...TOOL_IDS]);
+  });
+});
+
+describe('the real codexGenerator matches the interface-sufficiency evidence table\'s codex row (guarantee 1) (Task 3.2)', () => {
+  it('has agentsDir .codex/agents, wrapperFormat toml, roleFileName sdd-architect.toml, and a conductorPath not under agentsDir', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+
+    expect(codexGenerator.agentsDir).toBe('.codex/agents');
+    expect(codexGenerator.wrapperFormat).toBe('toml');
+    expect(`${codexGenerator.agentsDir}/${codexGenerator.roleFileName('sdd-architect')}`).toBe(
+      '.codex/agents/sdd-architect.toml',
+    );
+    expect(codexGenerator.conductorPath.startsWith(codexGenerator.agentsDir)).toBe(false);
   });
 });
 
 describe('Generator interface sufficiency for all five known targets (guarantee 11) (T26)', () => {
   /**
-   * Minimal fake implementations of the `Generator` interface for the four
-   * targets that do NOT ship in this feature. These exist purely as
-   * compile-time- and runtime-checked evidence that the interface accommodates
-   * every known target's facts from intent.md's Constraints — they are not,
-   * and must not become, real generators (that would violate the single
-   * reference-generator non-goal, separately enforced by the registry test above).
+   * Minimal fake implementations of the `Generator` interface for all five
+   * known targets, independent of which ones are actually registered. These
+   * exist purely as compile-time- and runtime-checked evidence that the
+   * interface accommodates every known target's facts from intent.md's
+   * Constraints — they are not, and must not become, real generators. The
+   * `codex` row is additionally cross-checked against the real
+   * `codexGenerator` above, now that codex ships too.
    */
   function fakeGenerator(descriptor: {
     id: Generator['id'];

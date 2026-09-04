@@ -13,6 +13,13 @@
  * Covers: tasks.md Task 3.3 (re-point the `--tools cursor` → exit-4
  * "unimplemented tool" stand-in at `codex`, now that cursor ships a real
  * generator); T21.
+ *
+ * Spec: specs/codex-generator
+ * Covers: contract.md "SUPERSEDES — reachability of the unavailable-generator
+ * paths" (G8); Behavior Guarantee 13; roadmap.md Phase 3; tasks.md Task 3.4.
+ * Re-points the exit-4 test again, now onto a synthetic registry
+ * (`vi.doMock('../src/generators/index.js', …)`), since codex itself now
+ * ships a real generator too.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -129,20 +136,43 @@ describe('exit-code mapping (T34)', () => {
   });
 
   it('maps no-available-generator (HarnessError NO_GENERATOR) to exit 4', async () => {
-    // Re-pointed from `cursor` to `codex` (specs/cursor-kiro-copilot-generators
-    // tasks.md Task 3.3): cursor now ships its own generator, and codex is the
-    // one ToolId this feature deliberately leaves unimplemented — see
-    // specs/cursor-kiro-copilot-generators/intent.md Non-Goals.
-    const { main } = await import('../src/cli.js');
-    const targetDir = await makeTempDir();
+    // Re-pointed onto a synthetic registry (specs/codex-generator tasks.md
+    // Task 3.4, contract.md "SUPERSEDES — reachability of the
+    // unavailable-generator paths"): now that all five `TOOL_IDS` have a real
+    // generator, no legal `--tools` value can trigger `NO_GENERATOR` any
+    // more. The `HarnessError` → exit-4 mapping and the "nothing written"
+    // guarantee are kept, driven by a `vi.doMock` of
+    // `src/generators/index.js` that deletes `codex` from a copy of the real
+    // registry, rather than by a real unimplemented tool id. No injection
+    // seam is added to `src/init.ts` or `src/cli.ts`.
+    vi.resetModules();
+    vi.doMock('../src/generators/index.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../src/generators/index.js')>();
+      const partial = new Map(actual.generators);
+      partial.delete('codex');
+      return {
+        ...actual,
+        generators: partial,
+        getGenerator: (id: string) => partial.get(id as never),
+        availableToolIds: () => [...partial.keys()],
+      };
+    });
 
-    const { result } = await captureOutput(() =>
-      main(['init', targetDir, '--yes', '--tools', 'codex']),
-    );
-    expect(result).toBe(4);
+    try {
+      const { main } = await import('../src/cli.js');
+      const targetDir = await makeTempDir();
 
-    const entries = await fs.readdir(targetDir);
-    expect(entries).toEqual([]);
+      const { result } = await captureOutput(() =>
+        main(['init', targetDir, '--yes', '--tools', 'codex']),
+      );
+      expect(result).toBe(4);
+
+      const entries = await fs.readdir(targetDir);
+      expect(entries).toEqual([]);
+    } finally {
+      vi.doUnmock('../src/generators/index.js');
+      vi.resetModules();
+    }
   });
 });
 

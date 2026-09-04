@@ -2,10 +2,17 @@
  * Spec: specs/cli-skeleton
  * Covers: contract.md "Data Models — build and packaging" (G1, G10);
  * Behavior Guarantee 20; R15; C38; T42.
+ *
+ * Spec: specs/codex-generator
+ * Covers: contract.md Behavior Guarantee 16 ("No dependency drift");
+ * intent.md Non-Goals ("A general-purpose TOML serializer or a TOML
+ * dependency"); roadmap.md Phase 4.3; tasks.md Task 4.3.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { REPO_ROOT } from './helpers/paths.js';
 
 const execFileAsync = promisify(execFile);
@@ -49,5 +56,38 @@ describe('npm pack --dry-run (guarantee 20) (T42)', () => {
     expect(files.some((f) => f.startsWith('src/'))).toBe(false);
     expect(files.some((f) => f.startsWith('tests/'))).toBe(false);
     expect(files.some((f) => f.startsWith('specs/'))).toBe(false);
+  });
+});
+
+describe('no dependency drift for the Codex generator (guarantee 16) (Task 4.3)', () => {
+  it('package.json dependencies and devDependencies are byte-identical (git-tracked, unchanged)', async () => {
+    const { stdout } = await execFileAsync('git', ['status', '--porcelain', '--', 'package.json'], {
+      cwd: REPO_ROOT,
+    });
+    expect(stdout.trim()).toBe('');
+  });
+
+  it('adds no TOML parsing or serialization package to either dependencies or devDependencies', async () => {
+    const raw = await fs.readFile(path.join(REPO_ROOT, 'package.json'), 'utf8');
+    const pkg = JSON.parse(raw) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+
+    const allPackageNames = [
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+    ];
+
+    for (const name of allPackageNames) {
+      expect(/toml/i.test(name), `${name} looks like a TOML package`).toBe(false);
+    }
+
+    expect(pkg.dependencies).toEqual({ commander: '15.0.0', '@clack/prompts': '1.7.0' });
+    expect(pkg.devDependencies).toEqual({
+      typescript: '7.0.2',
+      vitest: '4.1.10',
+      '@types/node': '26.1.2',
+    });
   });
 });

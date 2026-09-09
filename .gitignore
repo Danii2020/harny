@@ -1,5 +1,9 @@
-.claude/
-specs/
+# Local agent config stays local; the harny-* skill bridge is tracked.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/harny-*
+
 plan.md
 CLAUDE.md
 node_modules/

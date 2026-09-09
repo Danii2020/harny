@@ -43,15 +43,28 @@ cites back to `intent.md` or `contract.md`.
 
 On this repo, the pipeline is wired up as Claude Code subagents and a Skill:
 
-- `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` — five
-  specialized roles that run as Claude Code subagents.
+- `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` — five thin
+  specialized roles that run as Claude Code subagents. Each agent body is ≤ 25 lines;
+  combined file size is 148 lines (down from 646) because shared instructions are now in
+  eight reusable skills.
 - `.claude/skills/sdd-conductor/SKILL.md` — orchestrates the five roles, enforces
   the three human gates, and never self-approves on the human's behalf.
+- Eight `harny-*` skills bridged from `.agents/skills/` via git-tracked symlinks under
+  `.claude/skills/harny-{propose,test,implement,audit,document,sync,adr,standards}/` —
+  canonical instruction sets that the five agents delegate to and that can be reused
+  or inspected independently.
 
 The `npx harny init` CLI scaffolds this same pipeline into any target repository,
 choosing which tool(s) to target. Each tool gets its own generator that reads the
 portable role templates and adapts them to that tool's native format and capability
 model.
+
+### Knowledge base and documentation
+
+- `specs/current/` — the fast-lookup picture of current behavior, live statements,
+  invariants, open reservations, and keyword routing (five capability docs plus index).
+- `specs/archived/` — byte-identical historical record of every shipped feature, with its
+  rationale decisions published as Architecture Decision Records (ADRs).
 
 ## Building and installing locally
 

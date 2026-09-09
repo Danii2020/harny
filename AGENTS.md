@@ -46,8 +46,15 @@ Nothing floats without a stated justification.
 Once a feature's `audit.md` reaches a final verdict of `APPROVED` or
 `APPROVED WITH RESERVATIONS` and a human signs off, the `sdd-documentation` role
 runs automatically, updates this repo's docs, and stamps that feature's `intent.md`
-with a `Shipped: <date>` header. The spec directory is never moved, renamed, or
-deleted — it stays in place as a record of what shipped.
+with a `Shipped: <date>` header, in place. **SUPERSEDES note (scoped to the live
+Claude Code pipeline only, per the `sdd-skill-library` feature's `contract.md`
+§ SUPERSEDES):** after the in-place stamp, the `harny-sync` skill's archive mode then
+moves the stamped directory to `specs/archived/<feature-name>/`, byte-identical. The
+rule is therefore: a spec directory is never moved, renamed, or deleted **except
+through `harny-sync` archive mode**, and never edited once archived. This diverges
+deliberately from `templates/roles/sdd-documentation.md`, which still says "do NOT
+move" the spec directory — a portable-layer reconvergence is tracked as the named
+follow-up feature `templates-skill-library-parity`.
 
 ## The `templates/` structure
 
@@ -104,20 +111,50 @@ rather than being duplicated inline in the architect's prompt.
 
 ## The live pipeline (Claude Code)
 
-The pipeline that actually runs against this repo today lives under `.claude/`:
+The pipeline that actually runs against this repo today is composed of thin agents
+backed by reusable skills:
 
-- `.claude/agents/sdd-architect.md`
-- `.claude/agents/sdd-test-writer.md`
-- `.claude/agents/sdd-executor.md`
-- `.claude/agents/sdd-auditor.md`
-- `.claude/agents/sdd-documentation.md`
-- `.claude/skills/sdd-conductor/SKILL.md` — orchestrates the four subagents above
-  plus documentation, enforcing three human gates (post-specs, post-red-tests,
-  post-audit) and never self-approving on the human's behalf.
+**Five thin agents** (each ≤ 25 lines, combined 148 lines down from 646):
+
+- `.claude/agents/sdd-architect.md` — delegates to `harny-propose`
+- `.claude/agents/sdd-test-writer.md` — delegates to `harny-test`
+- `.claude/agents/sdd-executor.md` — delegates to `harny-implement` and `harny-standards`
+- `.claude/agents/sdd-auditor.md` — delegates to `harny-audit` and `harny-standards`
+- `.claude/agents/sdd-documentation.md` — delegates to `harny-document`, `harny-sync`,
+  and `harny-adr`
+
+**Eight reusable skills** at `.agents/skills/harny-*/SKILL.md`, bridged via git-tracked
+symlinks at `.claude/skills/harny-*/`:
+
+- `harny-propose` — architect's exploration and spec-drafting protocol; reads
+  `specs/current/` via `harny-sync` lookup
+- `harny-test` — test-plan derivation and red-phase rules
+- `harny-implement` — phase execution, contract-is-law, adherence rules
+- `harny-audit` — 7-step audit process, severity ratings, verdict enum
+- `harny-document` — documentation trigger check, README/CHANGELOG/AGENTS update,
+  `Shipped:` stamp, and the six-step hand-off ordering
+- `harny-sync` — knowledge-base lookup and archive modes; updates `specs/current/`
+  and moves features to `specs/archived/`
+- `harny-adr` — Architecture Decision Record generation, global numbering, registry
+  update
+- `harny-standards` — coding standards checklist (S1–S7), points to `AGENTS.md`
+  § Coding standards as its single source of truth
+
+**Orchestration**:
+
+- `.claude/skills/sdd-conductor/SKILL.md` — orchestrates the five agents above,
+  enforces three human gates (post-specs, post-red-tests, post-audit), and never
+  self-approves on the human's behalf. (This skill remains a regular directory;
+  it does not have a `.agents/` canonical copy.)
+
+All eight `harny-*` skills are portable: they declare only the six generic frontmatter
+keys (name, description, license, compatibility, allowed-tools, metadata); they carry
+no Claude-Code-only mechanics; and their base shape contract is published at
+`.agents/skills/README.md`.
 
 See `CLAUDE.md` for the Claude-Code-specific details this file deliberately keeps
 generic (exact file locations, the fact that orchestration is a Skill rather than
-a subagent).
+a subagent, the symlink bridge mechanism).
 
 ## Working conventions
 
@@ -130,3 +167,24 @@ a subagent).
   automatic, non-gated step in the pipeline.
 - Read this file (or the target tool's equivalent conventions doc) before
   exploring a new codebase as part of any SDD role.
+
+## Coding standards
+
+This section is the single source of truth for this repo's code-level conventions —
+distinct from "Working conventions" above, which covers *process*. The `harny-standards`
+skill points here rather than restating any of this; `sdd-executor` follows it, and
+`sdd-auditor` checks compliance against it, both by reference, never by copy.
+
+| # | Standard | Established by |
+|---|---|---|
+| S1 | TypeScript, ESM, `nodenext` resolution; relative imports carry the `.js` specifier; Node builtins use the `node:` prefix | `src/engine.ts:5–11`, `tsconfig.json` |
+| S2 | `HarnessError(code, message, details?)` is the only error thrown deliberately; the `HarnessErrorCode`→exit-code map lives in `src/errors.ts`; anything else reaching `main` is a bug mapping to `EXIT.UNEXPECTED` | `src/errors.ts:1–3, 28–31` |
+| S3 | Determinism and containment: identical inputs produce byte-identical output; every written path is relative and inside the target directory; every generated artifact ends in exactly one `\n` | `src/writer.ts:16–28`; `specs/archived/cli-skeleton/contract.md` guarantees 13, 19 |
+| S4 | Adding a runtime or dev dependency requires an explicit line in that feature's `contract.md`; the default is none | `tests/packaging.test.ts` |
+| S5 | A shared constant is imported from its owning module, never re-literalled at a call site (e.g. `SPEC_SCHEMA_DIR` from `src/engine.ts:45`) | `specs/archived/cursor-kiro-copilot-generators/contract.md` guarantee 8 |
+| S6 | Tests: vitest; `tests/` mirrors `src/`; every test file opens with a `Spec:` / `Covers:` header naming the feature and the ids it covers; contract ids never appear in test names; the default run is offline | `tests/packaging.test.ts:1–10`; `.claude/skills/high-value-tests/SKILL.md` |
+| S7 | In tool-neutral content, no single tool's mechanic may be named as the only possibility; name the behavior first and the tool as an attributed example | `specs/archived/canonical-role-templates/audit.md` AL-9 |
+
+Per-role checklist: **executor** — S1, S2, S3, S4, S5, S6 before marking a task done;
+**auditor** — all seven, reported as findings under the existing severity ratings, never
+fixed in place.

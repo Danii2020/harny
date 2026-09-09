@@ -8,6 +8,12 @@
  * own text — Task 5.14, T5.14.
  * AL-4 amendment round: the "no tier literal in src/" half of guarantee 4 that
  * T41 documented as deliberately unasserted — Task 5.18, T5.18.
+ * sdd-skill-library amendment round: T41's non-mutation check is now an absolute
+ * assertion that filters out the 8 contracted `.claude/skills/harny-*` bridge
+ * symlinks — see specs/sdd-skill-library/contract.md § Amendment A1 (AL-S3
+ * correction: a before/after differential inside this describe block cannot
+ * detect a mutation that is already present before the "before" snapshot is
+ * taken, which is exactly the shape of a leaked file sitting in templates/).
  *
  * Guarantee 4's "no tier literal in src/" clause is NOT re-verified here by a
  * source-text grep: tests/config.test.ts's mutated-cost-tier fixture test
@@ -174,13 +180,45 @@ describe('single-source: src/ carries no literal copy of canonical prose (guaran
 });
 
 describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16, guarantee 5) (T41)', () => {
-  it('shows no git changes under templates/ or .claude/ after the suite has exercised runInit', async () => {
+  it('shows no git changes under templates/ or .claude/ other than the contracted harny-* bridge symlinks', async () => {
+    // sdd-skill-library amendment round (contract.md § Amendment A1, corrected per
+    // AL-S3): the original form here was an absolute `expect(stdout.trim()).toBe('')`
+    // check, which conflated "no mutation occurred" with "no uncommitted state exists
+    // at all" -- indistinguishable only because `.claude/` used to be entirely
+    // gitignored. A first fix attempt replaced it with a before/after differential
+    // taken back-to-back with no work in between, which the auditor proved can never
+    // fail (AL-S3): a *persistent* leak -- e.g. a stray file already sitting in
+    // templates/ before this test even starts -- is present identically in both
+    // snapshots, so the two are always equal regardless of whether anything actually
+    // mutated either directory. A differential structurally cannot catch a leak that
+    // predates the test, which is exactly the shape of mutation this check exists to
+    // catch (a prior `runInit` run, or any other process, leaving a file behind).
+    //
+    // The fix is an absolute assertion again, but one that explicitly filters out the
+    // known-contracted state this feature's own contract says legitimately exists here
+    // instead of asserting total emptiness: the 8 `.claude/skills/harny-*` bridge
+    // symlinks (contract.md § Interfaces). `--untracked-files=all` is required so
+    // `.claude/` is reported entry-by-entry rather than folded to a single `?? .claude/`
+    // line, which would make every legitimate entry indistinguishable from a real leak.
     const { stdout } = await execFileAsync(
       'git',
-      ['status', '--porcelain', '--', 'templates', '.claude'],
+      ['status', '--porcelain', '--untracked-files=all', '--', 'templates', '.claude'],
       { cwd: REPO_ROOT },
     );
-    expect(stdout.trim()).toBe('');
+
+    const CONTRACTED_BRIDGE_SYMLINKS = new Set(
+      ['harny-propose', 'harny-test', 'harny-implement', 'harny-audit', 'harny-document', 'harny-sync', 'harny-adr', 'harny-standards']
+        .map((name) => `.claude/skills/${name}`),
+    );
+
+    const unexpectedEntries = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      // Each porcelain line is `XY <path>`: strip the 2-char status + 1 space.
+      .filter((line) => !CONTRACTED_BRIDGE_SYMLINKS.has(line.slice(3)));
+
+    expect(unexpectedEntries).toEqual([]);
   });
 });
 

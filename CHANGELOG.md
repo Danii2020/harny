@@ -8,6 +8,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Skill Library and Knowledge Base** — the live five-agent pipeline is now composed of
+  eight reusable `harny-*` skills bridged via symlinks from `.agents/skills/` (harny-propose,
+  harny-test, harny-implement, harny-audit, harny-document, harny-sync, harny-adr,
+  harny-standards). Each agent body is ≤ 25 lines; combined agent file size is 148 lines
+  down from 646. All skills are portable (no Claude-Code-only frontmatter keys); all are
+  discoverable and preloadable by the harness. The skills' base contract is published at
+  `.agents/skills/README.md` with the shape spec, six required frontmatter keys, five
+  required body sections, and seven binding rules for future extensions.
+- **Knowledge base** — `specs/current/` (fast-lookup current truth, five capability docs
+  covering spec-workflow, pipeline-roles, skill-library, cli-init, tool-generators) and
+  `specs/archived/` (historical record of all shipped features). The capability docs state
+  current behavior with provenance, invariants, open reservations, contributing features,
+  and related ADRs. `specs/current/_index.md` (103 lines, ≤ 150) routes questions by keyword
+  (38 keyword rows, ≥ 20) and registers Architecture Decision Records.
+- **Architecture Decision Records** — significant decisions from the four migrated features
+  are recorded as ADRs under `specs/archived/<feature>/decisions/`, with the adr-template.md
+  bundled into the `harny-adr` skill. The ADR numbering is globally monotonic. This feature
+  itself generates candidates for the follow-up decision-documentation task, to be recorded
+  after approval.
+- **Skill synchronization** (`harny-sync`) — two modes (lookup and archive) that maintain
+  `specs/current/` and `specs/archived/` as the single source of truth. Lookup reads at most
+  4 files and routes new questions. Archive moves a stamped spec directory, re-verifies
+  checksums, updates affected capability docs (merging, never overwriting), and regenerates
+  the index. Archive is atomic (precondition-gated, checksum-restoring on failure).
+- **Documentation hand-off** (`harny-document`) — runs automatically after human approval,
+  updates README/CHANGELOG/AGENTS.md, stamps the spec's intent.md in place with `Shipped:
+  <date>`, then invokes the archive/ADR/sync chain with the six-step contracted ordering.
+
+### Changed
+
+- The `.gitignore` now includes all of `specs/` (both `current/` and `archived/`, plus in-flight
+  feature work under `specs/<feature-name>/`) so the knowledge base is tracked in version
+  control and durable across clones, per Amendment A2. Agent files (`.claude/agents/sdd-*.md`)
+  remain gitignored and local, per the contracted design. The eight bridge symlinks stage at
+  git mode `120000` for symlink durability.
+
 - `npx harny init` — a CLI for scaffolding the SDD pipeline into any target
   repository. Supports interactive mode (five questions: tool selection, enabled
   roles, per-role model tier, active gates, project stack) and non-interactive

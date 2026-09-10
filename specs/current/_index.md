@@ -1,17 +1,17 @@
-# Current specifications — index
+# Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
 > Last synced: 2026-09-09 by sdd-skill-library (archive mode: feature archived, capability docs updated, ADRs registered)
 
 ## Capabilities
 
-| Capability | Path | Purpose | Statements | Last synced |
-|---|---|---|---|---|
-| spec-workflow | `specs/current/spec-workflow/capability.md` | The 5-file spec schema, traceability rules, task states, verdict enum, the in-flight → archived lifecycle | SW-1..SW-9 | 2026-09-08 |
-| pipeline-roles | `specs/current/pipeline-roles/capability.md` | The five SDD roles, their cost-tier/capability vocabulary, the conductor's three gates | PR-1..PR-9 | 2026-09-08 |
-| skill-library | `specs/current/skill-library/capability.md` | The `harny-*` skills, the shape contract, the `.agents`/`.claude` bridge, sync/adr/standards | SL-1..SL-10 | 2026-09-09 |
-| cli-init | `specs/current/cli-init/capability.md` | `npx harny init`: flags, config resolution, exit codes, write planning, packaging | CLI-1..CLI-11 | 2026-09-08 |
-| tool-generators | `specs/current/tool-generators/capability.md` | The `Generator` interface and the five per-tool adapters (Claude Code, Cursor, Kiro, Copilot, Codex) | TG-1..TG-11 | 2026-09-08 |
+| Capability | Current-State Specification | Incorporated Changes |
+|---|---|---|
+| spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/) |
 
 ## Keyword lookup
 
@@ -58,15 +58,15 @@
 | canonical fidelity | tool-generators |
 | .agents/skills | tool-generators, skill-library |
 
-## Shipped features
+## Synchronized Changes
 
-| Feature | Shipped | Verdict | Capabilities | Archive |
-|---|---|---|---|---|
-| canonical-role-templates | 2026-07-26 | APPROVED | spec-workflow, pipeline-roles | `specs/archived/canonical-role-templates/` |
-| cli-skeleton | 2026-07-30 | APPROVED WITH RESERVATIONS | spec-workflow, cli-init, tool-generators | `specs/archived/cli-skeleton/` |
-| cursor-kiro-copilot-generators | 2026-08-30 | APPROVED WITH RESERVATIONS | tool-generators | `specs/archived/cursor-kiro-copilot-generators/` |
-| codex-generator | 2026-09-02 | APPROVED WITH RESERVATIONS | tool-generators | `specs/archived/codex-generator/` |
-| sdd-skill-library | 2026-09-09 | APPROVED WITH RESERVATIONS | spec-workflow, pipeline-roles, skill-library | `specs/archived/sdd-skill-library/` |
+| Change | Archive | Current-State Specification |
+|---|---|---|
+| canonical-role-templates | [specs/archived/canonical-role-templates/](../archived/canonical-role-templates/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md) |
+| cli-skeleton | [specs/archived/cli-skeleton/](../archived/cli-skeleton/) | [spec-workflow.md](./spec-workflow.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md) |
+| cursor-kiro-copilot-generators | [specs/archived/cursor-kiro-copilot-generators/](../archived/cursor-kiro-copilot-generators/) | [tool-generators.md](./tool-generators.md) |
+| codex-generator | [specs/archived/codex-generator/](../archived/codex-generator/) | [tool-generators.md](./tool-generators.md) |
+| sdd-skill-library | [specs/archived/sdd-skill-library/](../archived/sdd-skill-library/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md) |
 
 ## Decisions (ADR registry)
 
@@ -79,6 +79,7 @@
 | 0005 | Portable skill frontmatter — six keys | Accepted | skill-library | `specs/archived/sdd-skill-library/decisions/0005-portable-skill-frontmatter-six-keys.md` |
 | 0006 | Coding standards — single source of truth in AGENTS.md | Accepted | pipeline-roles | `specs/archived/sdd-skill-library/decisions/0006-coding-standards-single-source-in-agents-md.md` |
 | 0007 | ADR storage and global monotonic numbering | Accepted | spec-workflow | `specs/archived/sdd-skill-library/decisions/0007-adr-storage-and-global-monotonic-numbering.md` |
+| 0008 | Flat OpenSpec-derived capability format | Accepted | spec-workflow | `specs/archived/sdd-skill-library/decisions/0008-flat-openspec-derived-capability-format.md` |
 
 ## Open reservations
 

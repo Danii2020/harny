@@ -108,6 +108,11 @@ individually:
 
 ## Phase 3: The knowledge base — migration, `harny-sync`, `harny-adr`
 
+> **Note:** every `specs/current/<capability>/capability.md` path in Tasks 3.4–3.9 below
+> reflects the shape as originally shipped. That per-capability-subfolder + `capability.md`
+> shape was later flattened to `specs/current/<capability>.md` — see `contract.md`
+> § Amendment A3 (post-archive exception, human-authorized 2026-09-09).
+
 - [x] Task 3.1: Write the single path-redirect rule verbatim from `contract.md` — `specs/archived/README.md` (roadmap 3.1; G8)
 - [x] Task 3.2: Move the four directories with `mv` (they are untracked, so `git mv` does not apply), then re-verify all 20 SHA-256 values into B1's second column. **Any mismatch: restore and stop** — `specs/archived/` (roadmap 3.2; G8, Gu 9)
 - [x] Task 3.3: Assert history survived explicitly, not by assumption: `AUDIT PASS 2` present in `specs/archived/cli-skeleton/audit.md`; `Final Verdict — pass 2` present in `specs/archived/cursor-kiro-copilot-generators/audit.md`; all four `Shipped:` headers intact **in their original inconsistent formatting** (roadmap 3.3; Gu 10)
@@ -314,7 +319,9 @@ REJECTED on the AL-S3 critical).**
   now reads "via Context7 (or the target tool's equivalent docs-lookup MCP) … before
   pinning signatures in a contract" (same edit that restores AL-S4's qualifier there);
   `README.md:21` now reads "the harness selects on this".
-- [x] Task R1.5: **AL-S7 (MEDIUM)** — `specs/current/spec-workflow/capability.md` SW-6's
+- [x] Task R1.5: **AL-S7 (MEDIUM)** — `specs/current/spec-workflow/capability.md`
+  (now flattened to `specs/current/spec-workflow.md` — see `contract.md` § Amendment A3)
+  SW-6's
   first citation ("cli-skeleton · contract.md Behavior Guarantee 8") pointed at an
   unrelated guarantee ("Nothing is silently dropped"). **Fixed**: corrected to
   `cli-skeleton · contract.md § Interfaces (`SPEC_SCHEMA_DIR`, :407)`, verified against

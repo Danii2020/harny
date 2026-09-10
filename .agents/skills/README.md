@@ -5,7 +5,7 @@ This directory, `.agents/skills/`, is the **canonical, tool-neutral home** for e
 Codex CLI already documents (`src/generators/codex.ts:148–149`) — so any harness that
 reads `.agents/skills/` picks these up unchanged. Claude Code specifically does not read
 this directory directly; it reaches these skills only through the relative symlinks
-bridged into `.claude/skills/` (see `specs/current/skill-library/capability.md`).
+bridged into `.claude/skills/` (see `specs/current/skill-library.md`).
 
 **This is the extension point.** A user adds a ninth `harny-*` skill (or a tenth, or a
 completely unrelated skill) by satisfying this document and nothing else — no other file

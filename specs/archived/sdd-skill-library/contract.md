@@ -535,6 +535,12 @@ bound to mean anything).
 
 ### `specs/current/_index.md` (SC11)
 
+> **Superseded by § Amendment A3 (2026-09-09).** The table shapes below are the
+> **original**, as-shipped schema and are retained here only as the historical record of
+> what this feature actually delivered. § Amendment A3 replaces `## Capabilities` and
+> `## Shipped features` with `## Capabilities` (3-column) and `## Synchronized Changes`
+> — read that section for the schema `specs/current/_index.md` follows today.
+
 Fast lookup is achieved by **routing, not summarizing**: one bounded file read tells an
 agent exactly which capability doc to open next. Five required tables, ≤150 lines total.
 
@@ -574,7 +580,16 @@ environment) and **CG-1** (Codex live-install check never performed). These are 
 reachable only by reading three audit files; surfacing them is a large part of this
 capability's value.
 
-### `specs/current/<capability>/capability.md` (SC12)
+### `specs/current/<capability>.md` (SC12)
+
+> **Superseded by § Amendment A3 (2026-09-09).** The path shape and table schema below
+> are the **original**, as-shipped design (a per-capability subfolder holding
+> `capability.md`, with an ID+Statement+Provenance table for "Current behavior") and are
+> retained here only as the historical record of what this feature actually delivered.
+> § Amendment A3 flattens the path to `specs/current/<capability>.md` and replaces
+> `## Current behavior` with an OpenSpec-derived `## Requirements` section of
+> `### Requirement: <ID> — <name>` / `#### Scenario: <name>` blocks — read that section
+> for the schema every capability doc follows today.
 
 Required entry point per capability; additional files may sit beside it.
 
@@ -1008,3 +1023,93 @@ An allowlist `files` field takes precedence over the `.gitignore` fallback, so r
 Also unaffected: guarantees 1–18 and 21; § Amendment A1 (a `.claude`/`templates`-scoped
 change with no `specs/` dependency); the `.agents/skills/**` tracking, which was never
 matched by any pattern; and every reserved-name and archive-integrity rule.
+
+---
+
+## Amendment A3 — flat OpenSpec-derived capability format (post-archive exception, human-authorized 2026-09-09)
+
+> **Status:** this is a **direct edit to an already-archived artifact**. `AGENTS.md`'s
+> own § Invariants (Guarantee 2 of this contract; restated in `specs/current/spec-workflow.md`
+> Invariant 2) states that once a feature is archived, its five files are never edited
+> again. **The human explicitly authorized breaking that rule for this one, specific
+> change** — this is a deliberate, human-approved exception, not a violation discovered
+> and silently patched. It is recorded here in the same style as § Amendment A1 and
+> § Amendment A2 precisely so it is never mistaken for the latter: those two amendments
+> were approved *before* archival, during the feature's own post-implementation phase;
+> this one is approved *after* archival, against a feature that has already shipped and
+> been closed out. No other archived feature's files are touched by this amendment, and
+> this exception does not generalize — Guarantee 9 ("no archived artifact is ever edited
+> afterwards") remains this repo's default rule for every future feature.
+
+### What changed
+
+Three things, applied across `specs/current/` and `.agents/skills/harny-sync/SKILL.md`
+(the latter is not archived and was updated directly, without needing this exception):
+
+1. **Path shape: per-capability subfolder → flat file.**
+   `specs/current/<capability>/capability.md` (as specified in § Data Models above, now
+   marked superseded in place) becomes flat `specs/current/<capability>.md`. No
+   subfolder exists under `specs/current/` for any capability any longer.
+2. **Content format: ID+Statement+Provenance table → OpenSpec-hybrid
+   Requirement/Scenario/Source.** The old `## Current behavior` section — a single table
+   of `| ID | Statement | Provenance |` rows — is replaced by a `## Requirements` section
+   containing one `### Requirement: <OLD-ID> — <short descriptive name>` block per old
+   statement, each with a `The system SHALL …` sentence (the old statement reworded as a
+   SHALL clause), a `**Source:** <old provenance citation, verbatim>` line, and one or
+   more `#### Scenario: <name>` blocks phrased as `**WHEN** <trigger>` /
+   `**THEN** <expected behavior>`. Every old stable ID (`SW-*`, `PR-*`, `SL-*`, `CLI-*`,
+   `TG-*`) survives unchanged as the ID prefix of its `### Requirement:` heading, per
+   Guarantee 16 ("stable statement IDs are never reused or renumbered") — this amendment
+   reformats presentation, it does not renumber or retire anything. `## Purpose`,
+   `## Invariants`, `## Open reservations`, `## Contributing features`, and
+   `## Related ADRs` are kept, unchanged in substance, because they carry real,
+   still-load-bearing content that OpenSpec's own format does not have a place for.
+3. **`specs/current/_index.md` restructure.** `## Capabilities` changes from a 5-column
+   table (`Capability | Path | Purpose | Statements | Last synced`) to a 3-column table
+   (`Capability | Current-State Specification | Incorporated Changes`), and
+   `## Shipped features` (`Feature | Shipped | Verdict | Capabilities | Archive`) is
+   replaced by `## Synchronized Changes` (`Change | Archive | Current-State
+   Specification`) — dropping the Shipped-date and Verdict columns, since that detail
+   already lives in each feature's own archived `intent.md`/`audit.md` and duplicating it
+   in the index added a second source of truth for no lookup benefit. `## Keyword
+   lookup`, `## Decisions (ADR registry)`, `## Open reservations`, and `## Notes` are
+   unchanged in format; only their internal path references move from
+   `specs/current/<capability>/capability.md` to `specs/current/<capability>.md`.
+
+### Why now, and why this file
+
+This is a **structural** change to the knowledge base's file shape, not a change to any
+fact the knowledge base records — every requirement, invariant, reservation, and
+contributing-feature row that existed before this amendment still exists after it, just
+addressed by a flat path and phrased as a Requirement/Scenario instead of a table row.
+Recording it here, against the feature whose contract *defined* the shape being changed,
+keeps this repo's traceability promise intact: a reader who lands on the original
+§ Data Models section above and wonders why `specs/current/` doesn't match it is pointed
+here rather than left to conclude the contract is simply wrong. The alternative —
+leaving § Data Models unedited and letting reality silently diverge from it — is exactly
+the kind of undocumented drift this repo's audit process exists to catch, which is why
+the human chose the (unusual) path of authorizing a targeted, labeled exception instead.
+
+### What did NOT change
+
+- The `specs/current/` / `specs/archived/` split itself (ADR 0002) — unaffected. This
+  amendment only changes the shape of files *inside* `specs/current/`, not the
+  current/archived taxonomy.
+- The **capability taxonomy** (`spec-workflow`, `pipeline-roles`, `skill-library`,
+  `cli-init`, `tool-generators`) — unaffected; the same five capabilities own the same
+  content under the same IDs.
+- The **ADR mechanism** (storage path, global monotonic numbering, template,
+  significance criteria, no-backfill rule) — unaffected; this amendment's own decision is
+  itself recorded as ADR 0008, following that unchanged mechanism.
+- `templates/**`, `src/**`, `bin/**` — untouched, as always; this is scoped to the
+  dogfooded `specs/current/` knowledge base and `.agents/skills/harny-sync/SKILL.md`
+  only.
+
+### Corresponding corrections the reader must apply
+
+Per this repo's own pattern for a carried-forward stale-reference problem (see how
+§ Amendment A1 and § Amendment A2 each list the locations their own change left stale),
+the following files still describe or reference the pre-Amendment-A3 shape and each now
+carries a short pointer to this section rather than being silently left inconsistent:
+`roadmap.md`, `tasks.md`, and `audit.md` (all in this same `sdd-skill-library` archive
+directory).

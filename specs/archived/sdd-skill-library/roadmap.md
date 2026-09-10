@@ -131,8 +131,11 @@ be under-done by producing plausible-looking placeholders.
    `specs/archived/cursor-kiro-copilot-generators/audit.md`, and all four `Shipped:`
    headers intact in their original (inconsistent) formatting.
 4. Create the five capability directories and write each `capability.md` against the
-   contract's schema. Every current-behavior statement gets a stable ID and a **provenance
-   citation to an archived artifact**. Source material, by capability: `spec-workflow` and
+   contract's schema **(this per-capability-subfolder + `capability.md` shape was later
+   flattened to `specs/current/<capability>.md` — see `contract.md` § Amendment A3,
+   post-archive exception, human-authorized 2026-09-09)**. Every current-behavior
+   statement gets a stable ID and a **provenance citation to an archived artifact**.
+   Source material, by capability: `spec-workflow` and
    `pipeline-roles` from `canonical-role-templates/{contract,audit}.md`; `cli-init` from
    `cli-skeleton/contract.md` guarantees 1–23; `tool-generators` from `cli-skeleton` plus
    `cursor-kiro-copilot-generators` guarantees 1–14 plus `codex-generator`;
@@ -331,7 +334,9 @@ same edit that fixes AL-S5.
 - `.claude/skills/harny-standards` (P1); `harny-propose`, `harny-test`, `harny-implement`,
   `harny-audit`, `harny-document` (P2); `harny-sync`, `harny-adr` (P3) — 8 total.
 
-**Create — knowledge base (Phase 3)**
+**Create — knowledge base (Phase 3)** — *paths below are as originally shipped; the
+per-capability-subfolder shape was flattened to `specs/current/<capability>.md` by
+`contract.md` § Amendment A3 (post-archive exception, human-authorized 2026-09-09)*
 - `specs/archived/README.md` — CREATE — the path-redirect rule.
 - `specs/current/_index.md` — CREATE — five tables, ≤150 lines.
 - `specs/current/spec-workflow/capability.md` — CREATE.

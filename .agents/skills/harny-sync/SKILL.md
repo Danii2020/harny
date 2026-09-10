@@ -42,9 +42,11 @@ across two modes that share all their preconditions and state.
 
 - **Lookup**: `specs/current/_index.md`; the capability doc(s) it routes to.
 - **Archive**: the target feature's full `specs/<feature-name>/` directory (all five
-  files); the current `specs/current/<capability>/capability.md` doc(s) for every
-  capability the feature's `contract.md` names as affected; `specs/current/_index.md`
-  and every `specs/archived/*/decisions/*.md` (to regenerate the ADR registry table).
+  files); the current `specs/current/<capability>.md` doc(s) for every
+  capability the feature's `contract.md` names as affected — or `capability-template.md`
+  (bundled next to this file) if a named capability has no file yet; `specs/current/_index.md`
+  and every `specs/archived/*/decisions/*.md` (to regenerate the ADR registry table and
+  to check each ADR's own `Capability:` field directly — see step 5).
 
 ## Steps
 
@@ -54,10 +56,10 @@ across two modes that share all their preconditions and state.
    knowledge base" and return an empty brief — never fabricate one.
 2. Match the request against the index's § Keyword lookup table to select **at most 3**
    capabilities.
-3. Read `specs/current/<capability>/capability.md` in full for each matched capability.
-4. Return a brief containing: the matched capabilities; the relevant current-behavior
-   statements **quoted verbatim with their IDs**; the capability's invariants; its open
-   reservations; related ADR numbers; and the archive paths to read *only if* the
+3. Read `specs/current/<capability>.md` in full for each matched capability.
+4. Return a brief containing: the matched capabilities; the relevant Requirements (with
+   their stable IDs) and Scenarios **quoted verbatim**; the capability's invariants; its
+   open reservations; related ADR numbers; and the archive paths to read *only if* the
    caller needs the underlying "why".
 5. **Bounded reads**: this mode reads at most 4 files total (`_index.md` plus ≤3
    capability docs) and never globs `specs/archived/**`. This bound is what makes
@@ -92,13 +94,31 @@ Procedure:
    which move command ran, is what actually proves integrity in either case** — `git mv`
    is a history-quality improvement, not a correctness dependency.
 4. Determine affected capabilities from the feature's (now-archived) `contract.md`.
-5. For each affected capability, update `specs/current/<capability>/capability.md`:
-   add/modify/retire current-behavior statements — **merging, never overwriting**: a
-   statement not mentioned by this feature is left untouched; carry forward the
-   feature's open reservations; add the feature to § Contributing features with its
-   `Shipped:` date.
+5. For each affected capability:
+   - **If `specs/current/<capability>.md` already exists**, update it in place:
+     add/modify/retire Requirements and their Scenarios — **merging, never
+     overwriting**: a Requirement not mentioned by this feature is left untouched;
+     carry forward the feature's open reservations; add the feature to
+     § Contributing features with its `Shipped:` date.
+   - **If it does not exist yet** (the feature introduces a genuinely new
+     capability), create it from `capability-template.md` (bundled next to this
+     file) — **never invent a different shape**. Fill in every section the template
+     has, and populate `## Related ADRs` and `## Contributing features` (both
+     empty in the template) the same way step 6 below does, not by leaving the
+     template's placeholder rows in place.
+   - **Every `### Requirement:` gets a stable ID** in that capability's own
+     namespace (its short prefix, e.g. `CLI-`, `SW-`), assigned by incrementing
+     past the highest existing number in that file — never renumbered later.
 6. Regenerate `specs/current/_index.md`'s five tables from the capability docs and the
-   ADR files on disk (`specs/archived/*/decisions/*.md`).
+   ADR files on disk (`specs/archived/*/decisions/*.md`). When rebuilding
+   `## Decisions (ADR registry)` and each capability doc's own `## Related ADRs`
+   table, **open each ADR file directly and read its own `Capability:` field** —
+   do not assume an ADR belongs to the capability of the feature that wrote it, and
+   do not copy one capability doc's ADR list into another's. (This exact mistake
+   was found and fixed by hand on 2026-09-09: `skill-library.md` was listing every
+   ADR regardless of its actual `Capability:` field, while `spec-workflow.md` and
+   `pipeline-roles.md` — the capabilities most of those ADRs actually belonged to —
+   said "none yet.")
 7. Report: capabilities touched, statements added/modified/retired, ADRs registered.
 
 ## Guardrails

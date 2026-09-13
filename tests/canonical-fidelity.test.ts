@@ -211,12 +211,32 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
         .map((name) => `.claude/skills/${name}`),
     );
 
+    // (templates-skill-library-parity amendment round.) Two more classes of
+    // `templates/` change are now contracted and legitimate, alongside the
+    // pre-existing bridge symlinks above: `templates/skills/**` is new
+    // canonical content this feature introduces (Phase 1, intent.md SC1), and
+    // `templates/roles/sdd-documentation.md` is the single sanctioned
+    // canonical-body content change (contract.md S5, Amendment A1). Neither
+    // is a mutation this check exists to catch.
+    const isContractedEntry = (relativePath: string): boolean =>
+      CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
+      relativePath.startsWith('templates/skills/') ||
+      relativePath === 'templates/roles/sdd-documentation.md';
+
+    // (templates-skill-library-parity fix.) Each porcelain line is a fixed-width
+    // `XY <path>` — the 2-char status can legitimately be a leading space (e.g.
+    // ` M path` for "modified, not staged"). The previous `.trim()` here stripped
+    // that leading space before the fixed `slice(3)`, silently truncating the
+    // first three characters of `path` instead of the status prefix — a latent
+    // bug that only ever manifested once this feature introduced the first
+    // *modified* (not merely untracked) entry under `templates/`. Only trailing
+    // `\r`/empty lines are stripped now; the status-prefix width is never
+    // disturbed by trimming.
     const unexpectedEntries = stdout
       .split('\n')
-      .map((line) => line.trim())
+      .map((line) => line.replace(/\r$/, ''))
       .filter((line) => line.length > 0)
-      // Each porcelain line is `XY <path>`: strip the 2-char status + 1 space.
-      .filter((line) => !CONTRACTED_BRIDGE_SYMLINKS.has(line.slice(3)));
+      .filter((line) => !isContractedEntry(line.slice(3)));
 
     expect(unexpectedEntries).toEqual([]);
   });
@@ -429,40 +449,28 @@ describe('the AL-5 spec-schema pointer block reaches all 5 x 5 role artifacts (g
 });
 
 /**
- * Spec: specs/codex-generator
- * Covers: contract.md Behavior Guarantee 12 ("The interface and the shared
- * Markdown layer are untouched"); intent.md G7, G9; roadmap.md Phase 4.2;
- * tasks.md Task 4.2. Asserted via `git status --porcelain`, the same
- * mechanism the existing T41 non-mutation check above already uses, rather
- * than a content hash -- it fails loudly and specifically (naming which path
- * has a diff) if anything in this feature accidentally touched a file it was
- * never supposed to.
+ * (Retired — templates-skill-library-parity post-audit fix, AL-P5/finding
+ * "Recommendations".) A `codex-generator` regression test used to live here:
+ * `describe('no regression: the four shipped generators, the shared
+ * interface/Markdown layer, templates/, and every module outside
+ * src/generators/ are byte-identical (guarantee 12) (Task 4.2)')`, asserting
+ * `git status --porcelain` was empty for `templates/`, the four pre-Codex
+ * generator files, and every `src/` module outside `src/generators/`.
+ *
+ * `contract.md` S1 narrows `tool-generators.md` TG-1's "no amendment" claim
+ * and D3 mandates a new `skillsDir` member on the `Generator` interface and
+ * on all five generator files; Phase 1 adds eleven files under `templates/`
+ * and S5 edits `templates/roles/sdd-documentation.md`; Phase 3 modifies seven
+ * modules outside `src/generators/`. Every one of those is contract-mandated
+ * and every one falsified this test's assertions, so it could never pass
+ * again once this feature landed and could never be un-skipped afterward —
+ * `specs/archived/codex-generator/audit.md`'s own finding CG-7 already named
+ * this test "a *this-feature* gate, not a standing regression test." See
+ * `contract.md` § SUPERSEDES row S7 for the full retirement record.
+ *
+ * The guarantees it recorded that remain load-bearing are re-asserted
+ * elsewhere and still run: canonical body fidelity (T40/T41 above), the five
+ * pinned `skillsDir` values (`tests/generators/registry.test.ts`), and the
+ * `.agents/skills/` / `templates/skills/` divergence fidelity
+ * (`tests/skills-fidelity.test.ts`).
  */
-describe('no regression: the four shipped generators, the shared interface/Markdown layer, templates/, and every module outside src/generators/ are byte-identical (guarantee 12) (Task 4.2)', () => {
-  it('shows no git changes to the read-only file set after implementing the Codex generator', async () => {
-    const { stdout: generatorLayerDiff } = await execFileAsync(
-      'git',
-      [
-        'status',
-        '--porcelain',
-        '--',
-        'templates',
-        'src/generators/types.ts',
-        'src/generators/markdown-yaml.ts',
-        'src/generators/claude-code.ts',
-        'src/generators/cursor.ts',
-        'src/generators/kiro.ts',
-        'src/generators/github-copilot.ts',
-      ],
-      { cwd: REPO_ROOT },
-    );
-    expect(generatorLayerDiff.trim(), 'templates/ or the four shipped generators (or types.ts/markdown-yaml.ts) changed').toBe('');
-
-    const { stdout: outsideGeneratorsDiff } = await execFileAsync(
-      'git',
-      ['status', '--porcelain', '--', 'src', ':!src/generators'],
-      { cwd: REPO_ROOT },
-    );
-    expect(outsideGeneratorsDiff.trim(), 'a module outside src/generators/ changed').toBe('');
-  });
-});

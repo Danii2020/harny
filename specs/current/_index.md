@@ -1,17 +1,17 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-09 by sdd-skill-library (archive mode: feature archived, capability docs updated, ADRs registered)
+> Last synced: 2026-09-13 by templates-skill-library-parity (archive mode: feature archived, capability docs updated, ADRs registered)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
-| spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/) |
-| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/) |
+| spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 
 ## Keyword lookup
 
@@ -67,6 +67,7 @@
 | cursor-kiro-copilot-generators | [specs/archived/cursor-kiro-copilot-generators/](../archived/cursor-kiro-copilot-generators/) | [tool-generators.md](./tool-generators.md) |
 | codex-generator | [specs/archived/codex-generator/](../archived/codex-generator/) | [tool-generators.md](./tool-generators.md) |
 | sdd-skill-library | [specs/archived/sdd-skill-library/](../archived/sdd-skill-library/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md) |
+| templates-skill-library-parity | [specs/archived/templates-skill-library-parity/](../archived/templates-skill-library-parity/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md) |
 
 ## Decisions (ADR registry)
 
@@ -80,6 +81,11 @@
 | 0006 | Coding standards — single source of truth in AGENTS.md | Accepted | pipeline-roles | `specs/archived/sdd-skill-library/decisions/0006-coding-standards-single-source-in-agents-md.md` |
 | 0007 | ADR storage and global monotonic numbering | Accepted | spec-workflow | `specs/archived/sdd-skill-library/decisions/0007-adr-storage-and-global-monotonic-numbering.md` |
 | 0008 | Flat OpenSpec-derived capability format | Accepted | spec-workflow | `specs/archived/sdd-skill-library/decisions/0008-flat-openspec-derived-capability-format.md` |
+| 0009 | Keep `allowed-tools` key uniformly across all skill roots | Accepted | skill-library | `specs/archived/templates-skill-library-parity/decisions/0009-allowed-tools-key-kept-uniformly-across-roots.md` |
+| 0010 | GitHub Copilot skills route to `.agents/skills/` unconditionally | Accepted | tool-generators | `specs/archived/templates-skill-library-parity/decisions/0010-github-copilot-skills-route-to-agents-skills.md` |
+| 0011 | Generator interface gains `skillsDir` member; no `renderSkill` method | Accepted | tool-generators | `specs/archived/templates-skill-library-parity/decisions/0011-generator-interface-gains-skillsdir-member.md` |
+| 0012 | Skills get stronger fidelity guarantees than roles (Gu 9/10 not TG-3/TG-4) | Accepted | skill-library | `specs/archived/templates-skill-library-parity/decisions/0012-skills-get-stronger-fidelity-guarantees-than-roles.md` |
+| 0013 | Template roles remain full-body, not thinned; no thin pointer layer in `templates/` | Accepted | pipeline-roles | `specs/archived/templates-skill-library-parity/decisions/0013-templates-roles-remain-full-body-not-thinned.md` |
 
 ## Open reservations
 
@@ -95,6 +101,13 @@
 | AL-S16 | The T41 filter is status-blind and hardcodes eight skill names. A modification of a tracked bridge symlink may escape detection, and a ninth `harny-*` skill causes false positive. Must filter on `?? ` + `harny-` discovery pattern. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S16 | skill-library |
 | CR-1 | Live discovery of a symlinked skill and warning-free `skills:` preloading are unverified in-session (require a Claude Code restart) | MEDIUM | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
 | CR-2 | The entire live pipeline depends on the `.agents`↔`.claude` symlink bridge surviving | LOW | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
+| AL-P3 | `templates/skills/harny-test/SKILL.md` ships hard, unhedged dependency on non-scaffolded `high-value-tests` skill; `templates/roles/sdd-test-writer.md:34` handles the same case correctly with a hedge | MEDIUM (design, deferred) | `specs/archived/templates-skill-library-parity/audit.md` AL-P3 | skill-library |
+| AL-P6 | All seven `allowed-tools` values are comma-separated, contradicting V4 (space-separated per portable spec); `templates/skills/README.md:24` documents the non-conforming form as canonical | MEDIUM (design, deferred) | `specs/archived/templates-skill-library-parity/audit.md` AL-P6 | skill-library |
+| AL-P7 | `intent.md` SC11's interactive `io.warn` branch is not implemented; the branch built at `src/init.ts:124–133` is structurally unreachable | MEDIUM (design, deferred) | `specs/archived/templates-skill-library-parity/audit.md` AL-P7 | cli-init |
+| AL-P12 | `templates/skills/harny-implement/SKILL.md:46` and `harny-propose/SKILL.md:37` name `CLAUDE.md` as *the* conventions source; pre-existing role templates already say "`CLAUDE.md`, `AGENTS.md`, or equivalent" | MEDIUM (design, deferred) | `specs/archived/templates-skill-library-parity/audit.md` AL-P12 | pipeline-roles |
+| AL-P8 | Contract ids appear in four test names where `AGENTS.md` S6 forbids them; standard is already systemically unmet and needs clarification | LOW (documentation) | `specs/archived/templates-skill-library-parity/audit.md` AL-P8 | cli-init |
+| AL-P9 | A ninth skill directory in `templates/skills/` would be silently never shipped; no test detects it at authorship time | LOW (design) | `specs/archived/templates-skill-library-parity/audit.md` AL-P9 | skill-library |
+| AL-P10 | Three new/updated tests are weaker than their guarantee; three edge cases have downgraded assertions or leftover type casts | LOW (test quality) | `specs/archived/templates-skill-library-parity/audit.md` AL-P10 | cli-init |
 
 ## Notes
 

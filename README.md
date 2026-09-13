@@ -59,6 +59,17 @@ choosing which tool(s) to target. Each tool gets its own generator that reads th
 portable role templates and adapts them to that tool's native format and capability
 model.
 
+Since `templates-skill-library-parity`, the scaffolder also writes the same eight
+`harny-*` skills to the target repository as **real files** (never symlinks), one copy
+per tool's skill-discovery root:
+- `.claude/skills/harny-*/` for Claude Code
+- `.kiro/skills/harny-*/` for Kiro  
+- `.agents/skills/harny-*/` for Cursor, GitHub Copilot, and Codex (shared root)
+
+Six skills are always scaffolded (`harny-propose`, `harny-test`, `harny-implement`,
+`harny-audit`, `harny-document`, `harny-sync`); two are optional (`harny-adr` and
+`harny-standards`, selectable via the `--skills` flag).
+
 ### Knowledge base and documentation
 
 - `specs/current/` — the fast-lookup picture of current behavior, live statements,
@@ -121,6 +132,7 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 **Key flags:**
 - `--tools <list>` — comma-separated tool ids or `all` (default: `claude-code`)
 - `--roles <list>` — comma-separated role ids or `all` (default: all five; conductor always included)
+- `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the six core skills are always included)
 - `--model <role>=<value>` — repeatable; `<value>` is a cost tier or a literal model id
 - `--gates <list>` — comma-separated gate ids, `all`, or `none` (default: all three)
 - `--stack <name>` — project stack (captured only, for future MCP provisioning)
@@ -137,13 +149,15 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
-- For a single tool: 6 tool-specific files (5 roles + conductor artifact) + 6 shared files (5 spec schema templates + configuration) = 12 files total
-- For multiple tools: 6 files per selected tool, plus 6 shared files written exactly once. Example: `--tools claude-code,cursor,kiro,github-copilot,codex` generates 30 tool-specific files + 6 shared = 36 files total
+- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 8 core skills (one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 20 files total
+- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 8 core skills per unique root (24 total for the three roots), plus 6 shared files = 60 files total
+- With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 10 skills per root instead of 8
+- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 30 skill artifacts (10 per root) + 6 shared = 66 files total
 
 ## Portable templates
 
 `templates/` at the repo root holds a **canonical, tool-agnostic** version of the
-same five roles, the conductor, and the spec schema:
+five roles, the conductor, the spec schema, and the skill library:
 
 ```
 templates/
@@ -154,13 +168,20 @@ templates/
 │                  # (most-capable / mid / cheapest) and a capabilities list.
 ├── conductor/     # sdd-conductor.md - the same 5-role, 3-gate orchestration logic,
 │                  # described without assuming any single tool's Skill format.
-└── spec-schema/   # intent/contract/roadmap/tasks/audit.md - the blank scaffolds
-                   # the architect emits, extracted as standalone template files.
+├── spec-schema/   # intent/contract/roadmap/tasks/audit.md - the blank scaffolds
+│                  # the architect emits, extracted as standalone template files.
+└── skills/        # Eight harny-* skills plus bundled resources and a shape contract:
+                   # harny-propose, harny-test, harny-implement, harny-audit,
+                   # harny-document, harny-sync, harny-adr, harny-standards.
+                   # Each skill carries six portable frontmatter keys and five body
+                   # sections per the Agent Skills specification.
 ```
 
 These templates are the canonical source that `npx harny init` reads from when
 generating configuration for a target repository. The CLI treats `templates/` as
 read-only input — the per-tool generators adapt this content without modifying it.
+The eight skills are **copied as real files** to each tool's skill-discovery root,
+never as symlinks, and never edited by the generators.
 
 ## Repository layout
 

@@ -8,6 +8,17 @@
  * AL-6 amendment round: parsing rules 9, 10 (leading authoring blockquote
  * excluded from body and surfaced as authoringNote, general to both entry
  * points, not conductor-only) and Behavior Guarantee 23 — Task 5.15, T5.15.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md "Public API — src/templates.ts" (`SkillResource`,
+ * `SkillTemplate`, `CanonicalTemplates.skills`/`.skillsReadme`, the
+ * byte-only, tolerated-absence loading rules); Behavior Guarantees 9, 12, 18;
+ * roadmap.md Phase 4.4; tasks.md Task 4.26. Driven against the well-formed
+ * fixture's `skills/` subtree (`tests/fixtures/templates/well-formed/
+ * skills/**`, created for this feature), which carries exactly the seven
+ * default-selected skills and deliberately omits `harny-adr` and a
+ * `README.md`, to exercise tolerated absence at both the single-skill and
+ * whole-tree level.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -307,8 +318,80 @@ describe('resolveTemplatesRoot (C7)', () => {
     expect(resolved).toBe(path.normalize(REAL_TEMPLATES_ROOT));
 
     const entries = await fs.readdir(resolved);
-    expect(entries.sort()).toEqual(['conductor', 'roles', 'spec-schema']);
+    // templates-skill-library-parity (SC1) adds a fourth top-level directory,
+    // `skills/`, to the real package templates root.
+    expect(entries.sort()).toEqual(['conductor', 'roles', 'skills', 'spec-schema']);
   });
+});
+
+describe('loadCanonicalTemplates — skill loading, sort order, and tolerated absence (Gu 9, Gu 12, Gu 18) (Task 4.26)', () => {
+  it('loads exactly the seven skill directories present in the well-formed fixture, byte-for-byte', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
+
+    const skills = (templates as any).skills as Map<string, { files: Array<{ name: string; contents: string }> }>;
+    expect(skills, 'CanonicalTemplates has no "skills" map yet').toBeDefined();
+    expect(skills.size).toBe(7);
+
+    for (const id of [
+      'harny-propose',
+      'harny-test',
+      'harny-implement',
+      'harny-audit',
+      'harny-document',
+      'harny-sync',
+      'harny-standards',
+    ]) {
+      expect(skills.has(id), `missing loaded skill "${id}"`).toBe(true);
+      const onDisk = await fs.readFile(
+        path.join(FIXTURES_TEMPLATES_ROOT, 'well-formed', 'skills', id, 'SKILL.md'),
+        'utf8',
+      );
+      const loaded = skills.get(id)!.files.find((f) => f.name === 'SKILL.md');
+      expect(loaded, `${id} has no loaded SKILL.md resource`).toBeDefined();
+      expect(loaded!.contents).toBe(onDisk);
+    }
+  });
+
+  it('tolerates a skill absent from templates/skills/ — harny-adr is not in the well-formed fixture, and no throw occurs', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
+    const skills = (templates as any).skills as Map<string, unknown>;
+
+    expect(skills.has('harny-adr')).toBe(false);
+  });
+
+  it('tolerates a templates/skills/ directory that does not exist at all (mutated-cost-tier fixture)', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('mutated-cost-tier'));
+    const skills = (templates as any).skills as Map<string, unknown>;
+
+    expect(skills).toBeDefined();
+    expect(skills.size).toBe(0);
+    expect((templates as any).skillsReadme).toBeUndefined();
+  });
+
+  it('sorts a skill\'s files by name, independent of filesystem enumeration order', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
+    const skills = (templates as any).skills as Map<string, { files: Array<{ name: string }> }>;
+
+    const syncFiles = skills.get('harny-sync')!.files.map((f) => f.name);
+    expect(syncFiles).toEqual(['SKILL.md', 'capability-template.md']);
+  });
+
+  it('loads templates/skills/README.md into skillsReadme when present, absent for the well-formed fixture (no README.md there)', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
+
+    expect((templates as any).skillsReadme).toBeUndefined();
+  });
+
 });
 
 describe('fixture sanity (test-writer plumbing, not a contract item)', () => {

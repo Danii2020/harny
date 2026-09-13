@@ -9,7 +9,7 @@ import { HarnessError, isHarnessError } from './errors.js';
 import { defaultConfig, loadConfigFile, mergeConfig, validateConfig } from './config.js';
 import type { HarnessConfig, PartialHarnessConfig } from './config.js';
 import { loadCanonicalTemplates } from './templates.js';
-import { buildPayload, buildSharedFiles } from './engine.js';
+import { buildPayload, buildSharedFiles, buildSkillFiles, skillRootsFor } from './engine.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { applyWrites, planWrites } from './writer.js';
@@ -117,6 +117,21 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     }
   }
 
+  // 6b. (NEW — templates-skill-library-parity.) The exact structural counterpart of
+  //     the roleOverrides re-check above, for a flag-supplied `--skills` selection:
+  //     warn, never error or silently drop, if a flag-named optional skill ends up
+  //     absent from the FINAL resolved skill set.
+  if (options.interactive && options.overrides?.optionalSkillIds) {
+    for (const skillId of options.overrides.optionalSkillIds) {
+      if (!config.skills.includes(skillId)) {
+        io.warn(
+          `--skills selection "${skillId}" was not applied: it was deselected at the ` +
+            'optional-skills prompt.',
+        );
+      }
+    }
+  }
+
   // 7. Fully validate the resolved config.
   config = validateConfig(config, 'resolved init configuration');
 
@@ -171,8 +186,10 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     );
   }
 
-  // 11. Render: role + conductor files per available generator, then the
-  //     tool-neutral shared files exactly once.
+  // 11. Render: role + conductor files per available generator, the tool-neutral
+  //     shared files exactly once, and selected skill files once per unique skill
+  //     root among the resolved generators (S3 — a widening of this step, not a
+  //     fourteenth step).
   const files: GeneratedFile[] = [];
   for (const generator of resolvedGenerators) {
     for (const rolePayload of payload.roles) {
@@ -181,6 +198,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     files.push(generator.renderConductor(payload.conductor));
   }
   files.push(...buildSharedFiles(payload));
+  files.push(...buildSkillFiles(payload, skillRootsFor(resolvedGenerators)));
 
   // 12. Plan writes.
   const plan = await planWrites(files, targetDir);

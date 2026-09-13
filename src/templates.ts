@@ -5,12 +5,13 @@
  * `templates/` is a strictly read-only input: nothing here ever writes to,
  * renames, or deletes anything under it (guarantee 5).
  */
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HarnessError } from './errors.js';
-import { CAPABILITY_NAMES, COST_TIERS, ROLE_IDS } from './vocabulary.js';
-import type { CostTier, RoleId } from './vocabulary.js';
+import { CAPABILITY_NAMES, COST_TIERS, ROLE_IDS, SKILL_IDS, SKILLS_README_NAME } from './vocabulary.js';
+import type { CostTier, RoleId, SkillId } from './vocabulary.js';
 
 export interface Capability {
   /** Raw token as written in the canonical file, e.g. `read-files`. */
@@ -71,12 +72,35 @@ export interface SpecSchemaTemplate {
   readonly sourcePath: string;
 }
 
+/** One file inside a skill directory: `SKILL.md` or a bundled resource (V5). */
+export interface SkillResource {
+  /** File name only, e.g. `SKILL.md`, `capability-template.md`. Never a path. */
+  readonly name: string;
+  /** Byte-for-byte file contents. Never reformatted, never parsed. */
+  readonly contents: string;
+  /** Path relative to the templates root, e.g. `skills/harny-sync/SKILL.md`. */
+  readonly sourcePath: string;
+}
+
+export interface SkillTemplate {
+  readonly id: SkillId;
+  /** `SKILL.md` plus every sibling regular file, sorted by `name` (determinism). */
+  readonly files: readonly SkillResource[];
+  /** Path relative to the templates root, e.g. `skills/harny-sync`. */
+  readonly sourcePath: string;
+}
+
 export interface CanonicalTemplates {
   /** Absolute path to the templates root actually loaded. */
   readonly root: string;
   readonly roles: ReadonlyMap<RoleId, RoleTemplate>;
   readonly conductor: ConductorTemplate;
   readonly specSchema: readonly SpecSchemaTemplate[];
+  /** Only the skill directories that exist under `templates/skills/`. A selected
+   *  skill absent from this map is a TEMPLATE error raised by `buildPayload`. */
+  readonly skills: ReadonlyMap<SkillId, SkillTemplate>;
+  /** `templates/skills/README.md` — the shape contract. Absent only in fixtures. */
+  readonly skillsReadme?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -332,5 +356,48 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     specSchema.push({ name, contents, sourcePath: relativePath });
   }
 
-  return { root: templatesRoot, roles, conductor, specSchema };
+  const skills = await loadSkillTemplates(templatesRoot);
+  const skillsReadme = await loadSkillsReadme(templatesRoot);
+
+  return { root: templatesRoot, roles, conductor, specSchema, skills, skillsReadme };
+}
+
+/**
+ * Loads every `templates/skills/<id>/` directory that exists, for each `id` in
+ * `SKILL_IDS`. Reads bytes only — no parser, no validator, no transform (Gu 9).
+ * A skill absent from disk is tolerated here and simply omitted from the map;
+ * `buildPayload` is what turns a *selected-but-absent* skill into a TEMPLATE error.
+ */
+async function loadSkillTemplates(templatesRoot: string): Promise<Map<SkillId, SkillTemplate>> {
+  const skills = new Map<SkillId, SkillTemplate>();
+  const skillsRoot = path.join(templatesRoot, 'skills');
+
+  for (const id of SKILL_IDS) {
+    const skillDir = path.join(skillsRoot, id);
+    const skillMdPath = path.join(skillDir, 'SKILL.md');
+    if (!fsSync.existsSync(skillMdPath)) continue;
+
+    const entries = await fs.readdir(skillDir, { withFileTypes: true });
+    const fileNames = entries.filter((e) => e.isFile()).map((e) => e.name).sort();
+
+    const files: SkillResource[] = [];
+    for (const name of fileNames) {
+      const relativePath = `skills/${id}/${name}`;
+      const contents = await readCanonicalFile(templatesRoot, relativePath);
+      files.push({ name, contents, sourcePath: relativePath });
+    }
+
+    skills.set(id, { id, files, sourcePath: `skills/${id}` });
+  }
+
+  return skills;
+}
+
+/** Loads `templates/skills/README.md`, tolerating its absence (fixtures may omit it). */
+async function loadSkillsReadme(templatesRoot: string): Promise<SkillResource | undefined> {
+  const relativePath = `skills/${SKILLS_README_NAME}`;
+  const absolute = path.join(templatesRoot, relativePath);
+  if (!fsSync.existsSync(absolute)) return undefined;
+  const contents = await readCanonicalFile(templatesRoot, relativePath);
+  return { name: SKILLS_README_NAME, contents, sourcePath: relativePath };
 }

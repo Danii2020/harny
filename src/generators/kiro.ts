@@ -149,6 +149,7 @@ export const kiroGenerator: Generator = {
   agentsDir: '.kiro/agents',
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.kiro/skills/sdd-conductor/SKILL.md',
+  skillsDir: '.kiro/skills',
   roleFileName,
   mapModel,
   mapCapabilities,

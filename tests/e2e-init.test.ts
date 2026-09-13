@@ -28,6 +28,25 @@
  * NO_GENERATOR (exit 4) until the executor registers the three new
  * generators — that is the expected red-phase failure here, not a spawn or
  * packaging error.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md Behavior Guarantees 1, 2, 3, 9, 13, 22; intent.md SC6,
+ * SC7, SC12, SC18; roadmap.md Phase 4.3; tasks.md Task 4.4. Every expected
+ * file set below is amended (S3/S4) to include the default skill-library
+ * artifacts this feature adds; the artifact-count table in `contract.md` §
+ * Data Models is the oracle for every total asserted here (21 / 33 / 63 / 69
+ * / 60). `.agents/skills/`, `.claude/skills/` and `.kiro/skills/` are new
+ * distinct roots that must be told apart from the tool-specific conductor
+ * artifact directory of the same name where they coincide (Claude Code,
+ * Kiro, Codex) — see `skillLibraryRelativePaths` and `isSkillLibraryPath`
+ * below.
+ *
+ * Red-phase note: at red time, none of the new skill-library file sets exist
+ * (no `templates/skills/`, no `skillsDir`, no `buildSkillFiles`), so every
+ * expected-path assertion below fails by omission — the actual written set
+ * is the old, pre-feature set, missing every `harny-*`/`README.md` path. That
+ * is the correct red-phase failure: a behavioral assertion failure naming
+ * exactly what is missing, not a spawn or typo error.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -79,8 +98,35 @@ async function listFilesRecursively(dir: string, root: string = dir): Promise<st
   return files;
 }
 
+/** A path is part of the shared skill-library artifact set (as opposed to a
+ *  tool's own `sdd-conductor/SKILL.md`, which can live in the same top-level
+ *  `skills/` directory for Claude Code, Kiro and Codex) when its second path
+ *  segment is `README.md` or a `harny-*` directory, never `sdd-conductor`. */
+function isSkillLibraryPath(relativePath: string): boolean {
+  return /^\.(agents|claude|kiro)\/skills\/(harny-[^/]+\/|README\.md$)/.test(relativePath);
+}
+
+/** The nine default-selection skill-library relative sub-paths (six core
+ *  skills + the default optional `harny-standards`, plus the shape-contract
+ *  README and harny-sync's bundled resource), rooted under `rootDir`. Mirrors
+ *  `contract.md`'s per-root file count for the default selection (1 + 7 + 1
+ *  = 9), independent of `src/vocabulary.ts`. */
+function defaultSkillLibraryPaths(rootDir: string): string[] {
+  return [
+    `${rootDir}/README.md`,
+    `${rootDir}/harny-audit/SKILL.md`,
+    `${rootDir}/harny-document/SKILL.md`,
+    `${rootDir}/harny-implement/SKILL.md`,
+    `${rootDir}/harny-propose/SKILL.md`,
+    `${rootDir}/harny-standards/SKILL.md`,
+    `${rootDir}/harny-sync/SKILL.md`,
+    `${rootDir}/harny-sync/capability-template.md`,
+    `${rootDir}/harny-test/SKILL.md`,
+  ];
+}
+
 describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
-  it('exits 0 with no TTY and produces exactly the twelve contracted files', async () => {
+  it('exits 0 with exactly the contracted twenty-one files (contract.md artifact-count table, default row)', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli(['init', targetDir, '--yes', '--tools', 'claude-code']);
@@ -96,6 +142,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.claude/agents/sdd-auditor.md',
         '.claude/agents/sdd-documentation.md',
         '.claude/skills/sdd-conductor/SKILL.md',
+        ...defaultSkillLibraryPaths('.claude/skills'),
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -104,6 +151,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
+    expect(files).toHaveLength(21);
   });
 });
 
@@ -129,7 +177,7 @@ describe('init --roles deselects independently of --gates (AL-2, guarantee 22, r
 });
 
 describe('--dry-run (guarantee 14) (T37)', () => {
-  it('writes nothing at all — not even .sdd/ — and prints the planned file list', async () => {
+  it('writes nothing at all — not even .sdd/ — and prints the planned file list, including skill artifacts (Gu 14, SC14)', async () => {
     const targetDir = await makeTempDir();
 
     const { code, stdout } = await runCli([
@@ -147,6 +195,7 @@ describe('--dry-run (guarantee 14) (T37)', () => {
 
     expect(stdout).toContain('.claude/agents/sdd-architect.md');
     expect(stdout).toContain('.sdd/harness.json');
+    expect(stdout).toContain('.claude/skills/harny-sync/SKILL.md');
   });
 });
 
@@ -198,7 +247,7 @@ describe('determinism (guarantee 16) (T39)', () => {
 });
 
 describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 11) (T22)', () => {
-  it('exits 0 and produces exactly the contracted Cursor file set', async () => {
+  it('exits 0 and produces exactly the contracted Cursor file set, with skills under .agents/skills (D2)', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli(['init', targetDir, '--yes', '--tools', 'cursor']);
@@ -213,6 +262,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.cursor/agents/sdd-auditor.md',
         '.cursor/agents/sdd-documentation.md',
         '.cursor/skills/sdd-conductor/SKILL.md',
+        ...defaultSkillLibraryPaths('.agents/skills'),
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -221,6 +271,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
+    expect(files).toHaveLength(21);
   });
 });
 
@@ -240,6 +291,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.kiro/agents/sdd-auditor.md',
         '.kiro/agents/sdd-documentation.md',
         '.kiro/skills/sdd-conductor/SKILL.md',
+        ...defaultSkillLibraryPaths('.kiro/skills'),
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -248,11 +300,12 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
+    expect(files).toHaveLength(21);
   });
 });
 
 describe('init --yes --tools github-copilot end to end (intent.md success criteria) (Gu 11) (T22)', () => {
-  it('exits 0 and produces exactly the contracted Copilot file set, under .github/ with <role>.agent.md naming', async () => {
+  it('exits 0 and produces exactly the contracted Copilot file set, under .github/ with <role>.agent.md naming, skills under .agents/skills (D2)', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli(['init', targetDir, '--yes', '--tools', 'github-copilot']);
@@ -267,6 +320,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.github/agents/sdd-auditor.agent.md',
         '.github/agents/sdd-documentation.agent.md',
         '.github/skills/sdd-conductor/SKILL.md',
+        ...defaultSkillLibraryPaths('.agents/skills'),
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -275,11 +329,12 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
+    expect(files).toHaveLength(21);
   });
 });
 
 describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task 4.4)', () => {
-  it('exits 0 and produces exactly the contracted Codex file set: 6 tool artifacts + 6 shared files', async () => {
+  it('exits 0 and produces exactly the contracted Codex file set: 6 tool artifacts + 9 skill artifacts + 6 shared files', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli(['init', targetDir, '--yes', '--tools', 'codex']);
@@ -293,6 +348,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.codex/agents/sdd-auditor.toml',
       '.codex/agents/sdd-documentation.toml',
       '.agents/skills/sdd-conductor/SKILL.md',
+      ...defaultSkillLibraryPaths('.agents/skills'),
       '.sdd/spec-schema/intent.md',
       '.sdd/spec-schema/contract.md',
       '.sdd/spec-schema/roadmap.md',
@@ -301,6 +357,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
+    expect(files).toHaveLength(21);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -342,7 +399,16 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
   // Extended from four tools / 24 tool artifacts to five tools / 30
   // (specs/codex-generator tasks.md Task 3.6, contract.md guarantee 14): codex
   // now ships its own generator too, so "all shipped tools" is five, not four.
-  it('emits 30 tool artifacts (5 tools x 5 roles + 1 conductor) plus exactly one copy of each shared artifact', async () => {
+  //
+  // specs/templates-skill-library-parity extends this again: the default
+  // skill selection now writes 27 more artifacts (9 files x 3 distinct
+  // roots), for a new total of 63 (contract.md § Data Models, "all
+  // (default skills)" row). Tool artifacts and skill-library artifacts must
+  // be told apart via `isSkillLibraryPath`, not by a "starts with .sdd/"
+  // filter alone, because Claude Code's, Kiro's and Codex's conductor
+  // artifacts share a top-level `skills/` directory with the new skill
+  // library files for those three tools.
+  it('emits 30 tool artifacts, 27 skill-library artifacts (3 roots x 9 files), and 6 shared files — 63 total', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli([
@@ -355,8 +421,21 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
+    expect(files).toHaveLength(63);
 
-    const toolArtifacts = files.filter((f) => !f.startsWith('.sdd/'));
+    const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
+    expect(sharedFiles).toHaveLength(6);
+
+    const skillLibraryFiles = files.filter(isSkillLibraryPath);
+    expect(skillLibraryFiles).toHaveLength(27);
+    expect(new Set(skillLibraryFiles.map((f) => f.split('/').slice(0, 2).join('/')))).toEqual(
+      new Set(['.agents/skills', '.claude/skills', '.kiro/skills']),
+    );
+    // Never under a fourth or fifth root.
+    expect(skillLibraryFiles.some((f) => f.startsWith('.cursor/skills/'))).toBe(false);
+    expect(skillLibraryFiles.some((f) => f.startsWith('.github/skills/'))).toBe(false);
+
+    const toolArtifacts = files.filter((f) => !f.startsWith('.sdd/') && !isSkillLibraryPath(f));
     expect(toolArtifacts).toHaveLength(30);
 
     const specSchemaFiles = files.filter((f) => f.startsWith('.sdd/spec-schema/'));
@@ -387,6 +466,80 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
       );
       expect(generated).toBe(canonical);
     }
+  });
+
+  it('every skill-library file under .agents/skills is byte-identical to its counterpart under .claude/skills and .kiro/skills (Gu 10)', async () => {
+    const targetDir = await makeTempDir();
+
+    const { code } = await runCli([
+      'init',
+      targetDir,
+      '--yes',
+      '--tools',
+      'claude-code,cursor,kiro,github-copilot,codex',
+    ]);
+    expect(code).toBe(0);
+
+    const agentsFiles = (await listFilesRecursively(path.join(targetDir, '.agents', 'skills'))).filter(
+      (f) => f === 'README.md' || f.startsWith('harny-'),
+    );
+    expect(agentsFiles.length).toBeGreaterThan(0);
+
+    for (const relative of agentsFiles) {
+      const agentsContents = await fs.readFile(path.join(targetDir, '.agents', 'skills', relative), 'utf8');
+      const claudeContents = await fs.readFile(path.join(targetDir, '.claude', 'skills', relative), 'utf8');
+      const kiroContents = await fs.readFile(path.join(targetDir, '.kiro', 'skills', relative), 'utf8');
+      expect(claudeContents).toBe(agentsContents);
+      expect(kiroContents).toBe(agentsContents);
+    }
+  });
+});
+
+describe('--skills all and --skills none amend the default skill-library artifact count (Gu 16, 17; contract.md artifact-count table)', () => {
+  it('--tools all --skills all writes 33 skill-library artifacts (3 roots x 11 files) for 69 total', async () => {
+    const targetDir = await makeTempDir();
+
+    const { code } = await runCli([
+      'init',
+      targetDir,
+      '--yes',
+      '--tools',
+      'claude-code,cursor,kiro,github-copilot,codex',
+      '--skills',
+      'all',
+    ]);
+
+    expect(code).toBe(0);
+    const files = await listFilesRecursively(targetDir);
+    expect(files).toHaveLength(69);
+
+    const skillLibraryFiles = files.filter(isSkillLibraryPath);
+    expect(skillLibraryFiles).toHaveLength(33);
+  });
+
+  it('--tools all --skills none writes 24 skill-library artifacts (3 roots x 8 files) for 60 total, core skills still present', async () => {
+    const targetDir = await makeTempDir();
+
+    const { code } = await runCli([
+      'init',
+      targetDir,
+      '--yes',
+      '--tools',
+      'claude-code,cursor,kiro,github-copilot,codex',
+      '--skills',
+      'none',
+    ]);
+
+    expect(code).toBe(0);
+    const files = await listFilesRecursively(targetDir);
+    expect(files).toHaveLength(60);
+
+    const skillLibraryFiles = files.filter(isSkillLibraryPath);
+    expect(skillLibraryFiles).toHaveLength(24);
+    // Core skills are never deselectable (Gu 14): harny-sync must still be present.
+    expect(skillLibraryFiles.some((f) => f.endsWith('harny-sync/SKILL.md'))).toBe(true);
+    // The optional harny-standards must be absent under --skills none.
+    expect(skillLibraryFiles.some((f) => f.includes('harny-standards'))).toBe(false);
   });
 });
 

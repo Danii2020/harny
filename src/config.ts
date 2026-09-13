@@ -6,8 +6,17 @@
  * directly, which is what keeps this module and `templates.ts` acyclic.
  */
 import { HarnessError } from './errors.js';
-import { COST_TIERS, GATE_IDS, ROLE_IDS, TOOL_IDS } from './vocabulary.js';
-import type { CostTier, GateId, RoleId, ToolId } from './vocabulary.js';
+import {
+  CORE_SKILL_IDS,
+  COST_TIERS,
+  DEFAULT_OPTIONAL_SKILL_IDS,
+  GATE_IDS,
+  OPTIONAL_SKILL_IDS,
+  ROLE_IDS,
+  SKILL_IDS,
+  TOOL_IDS,
+} from './vocabulary.js';
+import type { CostTier, GateId, OptionalSkillId, RoleId, SkillId, ToolId } from './vocabulary.js';
 import type { CanonicalTemplates } from './templates.js';
 
 export const CONFIG_VERSION = 1;
@@ -35,6 +44,8 @@ export interface HarnessConfig {
   readonly roles: readonly RoleSelection[];
   /** May be empty (see Behavior Guarantee 9). Deduped, in GATE_IDS order. */
   readonly gates: readonly GateId[];
+  /** Deduped, in SKILL_IDS order. ALWAYS contains every CORE_SKILL_IDS member. */
+  readonly skills: readonly SkillId[];
   /** Captured only; nothing in this feature consumes it. Omitted when blank. */
   readonly stack?: string;
 }
@@ -67,7 +78,19 @@ export interface PartialHarnessConfig {
   readonly roleOverrides?: readonly RoleOverride[];
   /** Wholesale replaces the active gate set. */
   readonly gates?: readonly GateId[];
+  /** **Wholesale replaces the OPTIONAL portion** of the skill set, exactly as
+   *  `roleIds` replaces role membership and `gates` replaces the gate set. The core
+   *  six are re-added unconditionally by `mergeConfig`; naming one here is a USAGE
+   *  error, never a silent no-op. Set by `--skills`. */
+  readonly optionalSkillIds?: readonly OptionalSkillId[];
   readonly stack?: string;
+}
+
+/** Re-adds every `CORE_SKILL_IDS` member (a no-op if already present) and returns
+ *  the result deduped and ordered per `SKILL_IDS` — the structural guarantee that
+ *  core membership can never be expressed as absent (Gu 14). */
+function withCoreSkills(ids: readonly SkillId[]): SkillId[] {
+  return orderedUnique([...CORE_SKILL_IDS, ...ids], SKILL_IDS);
 }
 
 function orderedUnique<T extends string>(values: readonly T[], order: readonly T[]): T[] {
@@ -142,6 +165,7 @@ export function defaultConfig(templates: CanonicalTemplates): HarnessConfig {
     tools: ['claude-code'],
     roles,
     gates: [...GATE_IDS],
+    skills: [...CORE_SKILL_IDS, ...DEFAULT_OPTIONAL_SKILL_IDS],
   };
 }
 
@@ -185,6 +209,7 @@ export function loadConfigFile(contents: string, sourcePath: string): PartialHar
     roleIds?: readonly RoleId[];
     roleOverrides?: readonly RoleOverride[];
     gates?: readonly GateId[];
+    optionalSkillIds?: readonly OptionalSkillId[];
     stack?: string;
   } = {};
 
@@ -206,6 +231,15 @@ export function loadConfigFile(contents: string, sourcePath: string): PartialHar
   }
   if (raw.gates !== undefined) {
     result.gates = validateIdList(raw.gates, GATE_IDS, 'gates', sourcePath);
+  }
+  if (raw.skills !== undefined) {
+    // A persisted full config legitimately lists all selected skills, core included
+    // — validateIdList against the full SKILL_IDS set accepts both, and only
+    // unrecognized ids are USAGE errors. Translate to the optional-only partial
+    // shape by intersecting with OPTIONAL_SKILL_IDS (same shape `roles` uses).
+    const validated = validateIdList(raw.skills, SKILL_IDS, 'skills', sourcePath);
+    const optionalSet = new Set<string>(OPTIONAL_SKILL_IDS);
+    result.optionalSkillIds = validated.filter((id): id is OptionalSkillId => optionalSet.has(id));
   }
   if (raw.stack !== undefined) {
     if (typeof raw.stack !== 'string') {
@@ -244,11 +278,20 @@ export function validateConfig(value: unknown, source: string): HarnessConfig {
 
   const gates = validateIdList(raw.gates, GATE_IDS, 'gates', source);
 
+  // A resolved config's "skills" always contains the core six (Gu 14); a persisted
+  // one may legitimately list them explicitly (Error Handling Contract). Absent
+  // entirely, it resolves to the same default `defaultConfig` uses.
+  const skills =
+    raw.skills === undefined
+      ? [...CORE_SKILL_IDS, ...DEFAULT_OPTIONAL_SKILL_IDS]
+      : withCoreSkills(validateIdList(raw.skills, SKILL_IDS, 'skills', source));
+
   const config: HarnessConfig = {
     version: CONFIG_VERSION,
     tools,
     roles,
     gates,
+    skills,
   };
 
   if (typeof raw.stack === 'string' && raw.stack.length > 0) {
@@ -331,6 +374,16 @@ export function mergeConfig(
 
   const roles = ROLE_IDS.filter((id) => roleMap.has(id)).map((id) => roleMap.get(id)!);
 
+  // Step 3: `optionalSkillIds`, when present, wholesale-replaces the OPTIONAL
+  // portion of the skill set (like `roleIds` for roles). The core six are then
+  // re-added unconditionally — never expressible as absent (Gu 14).
+  const baseOptionalSkillIds = base.skills.filter(
+    (id): id is OptionalSkillId => (OPTIONAL_SKILL_IDS as readonly string[]).includes(id),
+  );
+  const optionalSkillIds =
+    override.optionalSkillIds !== undefined ? override.optionalSkillIds : baseOptionalSkillIds;
+  const skills = withCoreSkills([...CORE_SKILL_IDS, ...optionalSkillIds]);
+
   const stack = override.stack !== undefined ? override.stack : base.stack;
 
   const merged: HarnessConfig = {
@@ -338,6 +391,7 @@ export function mergeConfig(
     tools,
     roles,
     gates,
+    skills,
   };
   return stack !== undefined && stack.length > 0 ? { ...merged, stack } : merged;
 }
@@ -355,6 +409,7 @@ export function serializeConfig(config: HarnessConfig): string {
       return entry;
     }),
     gates: config.gates,
+    skills: config.skills,
   };
   if (config.stack !== undefined && config.stack.length > 0) {
     ordered.stack = config.stack;
@@ -388,6 +443,52 @@ export function parseGateList(raw: string): readonly GateId[] {
     return [];
   }
   return parseCommaList(raw, GATE_IDS, 'gate');
+}
+
+/** `'all'` → both optional ids; `'none'` → `[]`; otherwise a comma list of OPTIONAL
+ *  ids. Naming a core skill id throws USAGE naming the always-on set. Throws USAGE on
+ *  any unknown id. `--skills` addresses only the optional two; the core six are
+ *  always scaffolded and cannot be named here. */
+export function parseSkillList(raw: string): readonly OptionalSkillId[] {
+  const trimmed = raw.trim();
+  if (trimmed === 'all') {
+    return [...OPTIONAL_SKILL_IDS];
+  }
+  if (trimmed === 'none') {
+    return [];
+  }
+
+  const values = trimmed
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+
+  for (const value of values) {
+    if ((CORE_SKILL_IDS as readonly string[]).includes(value)) {
+      throw new HarnessError(
+        'USAGE',
+        `Skill "${value}" is always scaffolded and cannot be named with --skills. ` +
+          `The core skills (${CORE_SKILL_IDS.join(', ')}) are always on; --skills only ` +
+          `selects the optional set: ${OPTIONAL_SKILL_IDS.join(', ')}.`,
+      );
+    }
+    if (!(OPTIONAL_SKILL_IDS as readonly string[]).includes(value)) {
+      throw new HarnessError(
+        'USAGE',
+        `Unknown skill id "${value}". Valid optional skills: ${OPTIONAL_SKILL_IDS.join(', ')}`,
+      );
+    }
+  }
+
+  const seen = new Set<string>();
+  const result: OptionalSkillId[] = [];
+  for (const value of values as OptionalSkillId[]) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      result.push(value);
+    }
+  }
+  return result;
 }
 
 function parseCommaList<T extends string>(raw: string, validValues: readonly T[], label: string): T[] {

@@ -163,6 +163,7 @@ export const codexGenerator: Generator = {
   agentsDir: '.codex/agents',
   wrapperFormat: 'toml',
   conductorPath: '.agents/skills/sdd-conductor/SKILL.md',
+  skillsDir: '.agents/skills',
   roleFileName,
   mapModel,
   mapCapabilities,

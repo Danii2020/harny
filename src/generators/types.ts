@@ -39,6 +39,13 @@ export interface Generator {
    *  `agentsDir`, because at least one target places it elsewhere entirely
    *  (Claude Code: `.claude/skills/sdd-conductor/SKILL.md`). */
   readonly conductorPath: string;
+  /** **(NEW — templates-skill-library-parity.)** This tool's own skill-discovery
+   *  root, POSIX, relative to the target repo root. A fixed per-generator constant:
+   *  it never varies with which other tools are selected (D2). Several generators
+   *  deliberately share one value — `.agents/skills` is read by Cursor (V9), Codex
+   *  (V13) and GitHub Copilot (V10) — which is what `buildSkillFiles`' dedup keys
+   *  on. */
+  readonly skillsDir: string;
 
   /** File name only. Accommodates `<role>.md`, `<role>.agent.md`, and `<role>.toml`. */
   roleFileName(roleId: RoleId): string;

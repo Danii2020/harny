@@ -163,9 +163,11 @@ converted into a `harny-*` skill.
 |---|---|---|
 | canonical-role-templates | 2026-07-26 | The five roles' portable content contract, the cost-tier/capability vocabularies, the conductor's content contract |
 | sdd-skill-library | 2026-09-09 | Extraction of each role's instructions into a `harny-*` skill; the thinned agent-file shape |
+| templates-skill-library-parity | 2026-09-13 | Decision to keep `templates/roles/sdd-*.md` as full-body role files (not thinned) in the portable layer; reconciliation of the live pipeline and `templates/` on archive lifecycle for scaffolded repos |
 
 ## Related ADRs
 
 | ADR | Title | Status |
 |---|---|---|
 | 0006 | Coding standards — single source of truth in AGENTS.md | Accepted |
+| 0013 | Template roles remain full-body, not thinned; no thin pointer layer in `templates/` | Accepted |

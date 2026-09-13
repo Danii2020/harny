@@ -209,9 +209,11 @@ note.
 | cli-skeleton | 2026-07-30 | The `Generator` interface and the first implementation, `claude-code.ts` |
 | cursor-kiro-copilot-generators | 2026-08-30 | `cursor.ts`, `kiro.ts`, `github-copilot.ts`, and the shared `markdown-yaml.ts` |
 | codex-generator | 2026-09-02 | `codex.ts` and the shared `toml.ts`, closing out all five targets |
+| templates-skill-library-parity | 2026-09-13 | Extended the `Generator` interface with `skillsDir` (per-tool skill-discovery root); narrowed TG-1's "no amendment" claim to role/conductor artifacts; extended TG-6 with Kiro's skill-discovery paths (workspace-priority, folder-name-equals-name rule) |
 
 ## Related ADRs
 
 | ADR | Title | Status |
 |---|---|---|
-| (none — these three features predate the ADR log; no backfill per `harny-adr`'s no-backfill rule) | | |
+| 0010 | GitHub Copilot skills route to `.agents/skills/` unconditionally | Accepted |
+| 0011 | Generator interface gains `skillsDir` member; no `renderSkill` method | Accepted |

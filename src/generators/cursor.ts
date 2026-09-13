@@ -129,6 +129,7 @@ export const cursorGenerator: Generator = {
   agentsDir: '.cursor/agents',
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.cursor/skills/sdd-conductor/SKILL.md',
+  skillsDir: '.agents/skills',
   roleFileName,
   mapModel,
   mapCapabilities,

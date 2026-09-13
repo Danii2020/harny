@@ -32,3 +32,28 @@ export const CAPABILITY_NAMES = [
   'task-tracking',
 ] as const;
 export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
+
+/** Skills always scaffolded, regardless of selection. Pipeline-role order, then sync. */
+export const CORE_SKILL_IDS = [
+  'harny-propose',
+  'harny-test',
+  'harny-implement',
+  'harny-audit',
+  'harny-document',
+  'harny-sync',
+] as const;
+export type CoreSkillId = (typeof CORE_SKILL_IDS)[number];
+
+/** Skills the user opts into. Never implicitly enabled by a tool or role choice. */
+export const OPTIONAL_SKILL_IDS = ['harny-adr', 'harny-standards'] as const;
+export type OptionalSkillId = (typeof OPTIONAL_SKILL_IDS)[number];
+
+/** Full closed set, in stable emission order: core first, then optional. */
+export const SKILL_IDS = [...CORE_SKILL_IDS, ...OPTIONAL_SKILL_IDS] as const;
+export type SkillId = (typeof SKILL_IDS)[number];
+
+/** Default opt-in set. See contract.md § "Default optional-skill set" for the argument. */
+export const DEFAULT_OPTIONAL_SKILL_IDS = ['harny-standards'] as const;
+
+/** File name of the shape-contract document written beside the skills in each root. */
+export const SKILLS_README_NAME = 'README.md';

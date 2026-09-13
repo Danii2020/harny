@@ -5,8 +5,8 @@
  */
 import { cancel, confirm, isCancel, multiselect, select, text } from '@clack/prompts';
 import { HarnessError } from './errors.js';
-import { COST_TIERS, GATE_IDS, ROLE_IDS, TOOL_IDS } from './vocabulary.js';
-import type { CostTier, GateId, RoleId, ToolId } from './vocabulary.js';
+import { CORE_SKILL_IDS, COST_TIERS, DEFAULT_OPTIONAL_SKILL_IDS, GATE_IDS, OPTIONAL_SKILL_IDS, ROLE_IDS, SKILL_IDS, TOOL_IDS } from './vocabulary.js';
+import type { CostTier, GateId, OptionalSkillId, RoleId, SkillId, ToolId } from './vocabulary.js';
 import type { HarnessConfig, PartialHarnessConfig, RoleSelection } from './config.js';
 import type { WritePlan } from './writer.js';
 import type { InitIO } from './init.js';
@@ -84,7 +84,26 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     roleIds = unwrapOrCancel(answer);
   }
 
-  // Q3: model per role. Preset per-role by `preset.roleOverrides` — a role named
+  // Q3: which optional skills? (the six core skills are always scaffolded)
+  let optionalSkillIds: readonly OptionalSkillId[];
+  if (preset.optionalSkillIds !== undefined) {
+    optionalSkillIds = preset.optionalSkillIds;
+    io.log(
+      `Optional skills already set by a flag: ${
+        optionalSkillIds.length > 0 ? optionalSkillIds.join(', ') : '(none)'
+      }`,
+    );
+  } else {
+    const answer = await multiselect<OptionalSkillId>({
+      message: 'Which optional skills should be scaffolded? (the six core skills are always on)',
+      options: OPTIONAL_SKILL_IDS.map((id) => ({ value: id, label: id })),
+      initialValues: [...DEFAULT_OPTIONAL_SKILL_IDS],
+      required: false,
+    });
+    optionalSkillIds = unwrapOrCancel(answer);
+  }
+
+  // Q4 (was Q3): model per role. Preset per-role by `preset.roleOverrides` — a role named
   // there is skipped and reported; every other selected role is asked normally.
   // `config` is already fully resolved (any flag-supplied roleOverride was already
   // applied by the merge that produced it), so the per-role default read off
@@ -127,7 +146,7 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     }
   }
 
-  // Q4: which human gates are active?
+  // Q5 (was Q4): which human gates are active?
   let gates: readonly GateId[];
   if (preset.gates !== undefined) {
     gates = preset.gates;
@@ -142,7 +161,7 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     gates = unwrapOrCancel(answer);
   }
 
-  // Q5: project stack (captured only).
+  // Q6 (was Q5): project stack (captured only).
   let stack: string | undefined;
   if (preset.stack !== undefined) {
     stack = preset.stack;
@@ -160,11 +179,15 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     (id) => roles.find((role) => role.id === id)!,
   );
 
+  const skillSet = new Set<SkillId>([...CORE_SKILL_IDS, ...optionalSkillIds]);
+  const skills = SKILL_IDS.filter((id) => skillSet.has(id));
+
   const result: HarnessConfig = {
     version: config.version,
     tools,
     roles: orderedRoles,
     gates,
+    skills,
   };
   return stack !== undefined ? { ...result, stack } : result;
 }

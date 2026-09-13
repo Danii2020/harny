@@ -135,6 +135,7 @@ export const githubCopilotGenerator: Generator = {
   agentsDir: '.github/agents',
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.github/skills/sdd-conductor/SKILL.md',
+  skillsDir: '.agents/skills',
   roleFileName,
   mapModel,
   mapCapabilities,

@@ -26,6 +26,16 @@
  * driven by test data rather than by codex being genuinely unshipped. A new
  * assertion is added confirming that with the real `availableToolIds()`
  * (all five `TOOL_IDS`, codex included) **no** tool option carries a hint.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md "Public API — src/prompts.ts" (the sequence grows from
+ * five questions to six, new Q3 inserted after role selection, former Q3-Q5
+ * renumbered to Q4-Q6); Behavior Guarantee 15; intent.md SC11; roadmap.md
+ * Phase 3.6; tasks.md Task 4.22. The pre-existing ordering test below is
+ * rewritten onto the six-question sequence (not merely extended) because the
+ * new Q3 shifts every subsequent `multiselect` call's mock queue position —
+ * exactly the risk `roadmap.md`'s risk table names and Task 3.6 addresses by
+ * "renumbering deliberately."
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -42,7 +52,14 @@ const clackMocks = vi.hoisted(() => ({
 vi.mock('@clack/prompts', () => clackMocks);
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // (Test-writer fix, templates-skill-library-parity.) `resetAllMocks`, not
+  // `clearAllMocks`: the latter clears call history but leaves queued
+  // `mockResolvedValueOnce` implementations in place, so a test whose queued
+  // values outnumber the calls the code under test actually makes (exactly
+  // the transitional state while Q3 doesn't exist yet) leaks its leftover
+  // queued value into the next test's first call — cross-test contamination,
+  // not a production bug. `resetAllMocks` also clears queued once-values.
+  vi.resetAllMocks();
   clackMocks.isCancel.mockReturnValue(false);
 });
 
@@ -54,7 +71,7 @@ async function loadDefaults() {
 }
 
 describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => {
-  it('asks the five questions in order with the contracted widgets and defaults', async () => {
+  it('asks the six questions in order with the contracted widgets and defaults (Q3 = optional skills)', async () => {
     const { runInitPrompts } = await import('../src/prompts.js');
     const { config } = await loadDefaults();
 
@@ -67,9 +84,10 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
         'sdd-auditor',
         'sdd-documentation',
       ]) // Q2: roles
-      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q4: gates
-    clackMocks.select.mockResolvedValue('most-capable'); // Q3: one per role
-    clackMocks.text.mockResolvedValue(''); // Q5: stack
+      .mockResolvedValueOnce(['harny-standards']) // Q3: optional skills
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q5: gates
+    clackMocks.select.mockResolvedValue('most-capable'); // Q4: one per role
+    clackMocks.text.mockResolvedValue(''); // Q6: stack
 
     const result = await runInitPrompts(
       { config, available: ['claude-code', 'cursor', 'kiro', 'github-copilot'], preset: {} },
@@ -95,7 +113,21 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
     expect(rolesCall.required).toBe(true);
     expect(rolesCall.initialValues).toHaveLength(5);
 
-    // Q3: one select per enabled role, defaulting to that role's canonical tier.
+    // Q3 (NEW): optional-skill selection — NOT required (the six core skills
+    // are always scaffolded regardless of this choice), defaults to
+    // DEFAULT_OPTIONAL_SKILL_IDS, and its options are exactly OPTIONAL_SKILL_IDS
+    // (never a core id).
+    const { OPTIONAL_SKILL_IDS, DEFAULT_OPTIONAL_SKILL_IDS, CORE_SKILL_IDS } = await import('../src/vocabulary.js');
+    const skillsCall = clackMocks.multiselect.mock.calls[2][0];
+    expect(skillsCall.required).toBe(false);
+    expect(skillsCall.initialValues).toEqual([...DEFAULT_OPTIONAL_SKILL_IDS]);
+    const skillOptionValues = skillsCall.options.map((o: any) => o.value);
+    expect(new Set(skillOptionValues)).toEqual(new Set(OPTIONAL_SKILL_IDS));
+    for (const coreId of CORE_SKILL_IDS) {
+      expect(skillOptionValues).not.toContain(coreId);
+    }
+
+    // Q4 (was Q3): one select per enabled role, defaulting to that role's canonical tier.
     expect(clackMocks.select).toHaveBeenCalledTimes(5);
     for (const call of clackMocks.select.mock.calls) {
       const options = call[0].options.map((o: any) => o.value);
@@ -103,12 +135,12 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
       expect(options.some((v: string) => /custom/i.test(v))).toBe(true);
     }
 
-    // Q4: gate selection — NOT required (fewer than three is permitted).
-    const gatesCall = clackMocks.multiselect.mock.calls[2][0];
+    // Q5 (was Q4): gate selection — NOT required (fewer than three is permitted).
+    const gatesCall = clackMocks.multiselect.mock.calls[3][0];
     expect(gatesCall.required).toBe(false);
     expect(gatesCall.initialValues).toEqual(['post-specs', 'post-red-tests', 'post-audit']);
 
-    // Q5: stack — free text, empty allowed.
+    // Q6 (was Q5): stack — free text, empty allowed.
     const stackCall = clackMocks.text.mock.calls[0][0];
     expect(stackCall.initialValue ?? '').toBe('');
 
@@ -127,8 +159,9 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
         'sdd-executor',
         'sdd-auditor',
         'sdd-documentation',
-      ])
-      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']);
+      ]) // Q2: roles
+      .mockResolvedValueOnce(['harny-standards']) // Q3: optional skills
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q5: gates
     clackMocks.select.mockResolvedValue('most-capable');
     clackMocks.text.mockResolvedValue('');
 
@@ -137,9 +170,37 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
       { log: () => {}, warn: () => {} },
     );
 
-    // Only 2 multiselect calls now: roles and gates — tools was preset.
-    expect(clackMocks.multiselect).toHaveBeenCalledTimes(2);
+    // Only 3 multiselect calls now: roles, skills and gates — tools was preset.
+    expect(clackMocks.multiselect).toHaveBeenCalledTimes(3);
     expect(result.tools).toEqual(['claude-code']);
+  });
+
+  it('skips Q3 (optional skills) when preset by a flag, reporting the preset selection', async () => {
+    const { runInitPrompts } = await import('../src/prompts.js');
+    const { config } = await loadDefaults();
+    const logs: string[] = [];
+
+    clackMocks.multiselect
+      .mockResolvedValueOnce(['claude-code']) // Q1: tools
+      .mockResolvedValueOnce([
+        'sdd-architect',
+        'sdd-test-writer',
+        'sdd-executor',
+        'sdd-auditor',
+        'sdd-documentation',
+      ]) // Q2: roles
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q5: gates
+    clackMocks.select.mockResolvedValue('most-capable');
+    clackMocks.text.mockResolvedValue('');
+
+    await runInitPrompts(
+      { config, available: ['claude-code'], preset: { optionalSkillIds: ['harny-adr'] } },
+      { log: (m: string) => logs.push(m), warn: () => {} },
+    );
+
+    // Only 3 multiselect calls now: tools, roles, gates — skills was preset.
+    expect(clackMocks.multiselect).toHaveBeenCalledTimes(3);
+    expect(logs.some((m) => m.includes('harny-adr'))).toBe(true);
   });
 
   it('carries no hint on any tool option when passed the real availableToolIds() (all five TOOL_IDS, codex included)', async () => {
@@ -156,6 +217,7 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
         'sdd-auditor',
         'sdd-documentation',
       ])
+      .mockResolvedValueOnce(['harny-standards'])
       .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']);
     clackMocks.select.mockResolvedValue('most-capable');
     clackMocks.text.mockResolvedValue('');

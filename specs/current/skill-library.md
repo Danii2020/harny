@@ -192,13 +192,13 @@ can see.
 | CR-2 | The canonical `.agents/skills/` location is not read by Claude Code at all (V3); the entire live pipeline depends on the symlink bridge surviving, mitigated by tracked symlinks, the missing-skill STOP guard, and the guard test | LOW | sdd-skill-library · audit.md "Carried reservations" |
 | AL-S15 | `contract.md` § Amendment A1 still prescribes a before/after differential mechanism that was not shipped (the delivered form is a filtered absolute assertion). Contract, `roadmap.md`, and `tasks.md` all state the superseded mechanism. Must be corrected in place before being archived (or will become a permanent historical error). | MEDIUM | sdd-skill-library · audit.md AL-S15 |
 | AL-S16 | The T41 filter is status-blind and hardcodes the eight skill names. A modification of a tracked bridge symlink may escape detection (M3), and a ninth `harny-*` skill causes a false positive (M4) against the advertised extension point. Filter must use `?? ` prefix and `harny-` discovery pattern rather than hardcoded names. | MEDIUM | sdd-skill-library · audit.md AL-S16 |
-| templates-parity | The live pipeline and `templates/` now disagree on "archive in place" until a named follow-up feature (`templates-skill-library-parity`) reconverges them; a pipeline scaffolded by `npx harny init` still gets today's five-monolith shape with no `harny-*` skills | MEDIUM | sdd-skill-library · contract.md § SUPERSEDES |
 
 ## Contributing features
 
 | Feature | Shipped | What it established |
 |---|---|---|
 | sdd-skill-library | 2026-09-09 | The entire `harny-*` skill library (eight skills), the shape contract, the symlink bridge, `harny-sync` (lookup/archive modes), `harny-adr` (global monotonic numbering, no backfill), `harny-standards` (pointer to AGENTS.md), and the `specs/current`/`specs/archived` knowledge base this file itself lives in; Amendment A2 (track all of specs/) |
+| templates-skill-library-parity | 2026-09-13 | Scaffolded skill library parity: the same eight `harny-*` skills now write as real files to each tool's native skill-discovery root (`.claude/skills/`, `.kiro/skills/`, `.agents/skills/` shared by three tools), with six core skills always scaffolded and two optional (selectable via `--skills` flag); closed the `templates-parity` reservation that diverged the live pipeline from `templates/` |
 
 ## Related ADRs
 
@@ -206,3 +206,5 @@ can see.
 |---|---|---|
 | 0001 | Symlink bridge for skill discovery | Accepted |
 | 0005 | Portable skill frontmatter — six keys | Accepted |
+| 0009 | Keep `allowed-tools` key uniformly across all skill roots | Accepted |
+| 0012 | Skills get stronger fidelity guarantees than roles (Gu 9/10 not TG-3/TG-4) | Accepted |

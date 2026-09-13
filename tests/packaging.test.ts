@@ -7,6 +7,14 @@
  * Covers: contract.md Behavior Guarantee 16 ("No dependency drift");
  * intent.md Non-Goals ("A general-purpose TOML serializer or a TOML
  * dependency"); roadmap.md Phase 4.3; tasks.md Task 4.3.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md Behavior Guarantee 26 ("Packaging manifest is closed
+ * and correct"), Supersession S4 (CLI-10's manifest grows from eleven to
+ * twenty-two `templates/**` files); intent.md SC15; roadmap.md Phase 4.2;
+ * tasks.md Tasks 4.2, 4.3. `EXPECTED_TEMPLATE_FILES` gains the eleven
+ * `templates/skills/**` paths listed in `contract.md` § Data Models — the
+ * `templates/skills/` file manifest.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -29,6 +37,17 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/spec-schema/roadmap.md',
   'templates/spec-schema/tasks.md',
   'templates/spec-schema/audit.md',
+  'templates/skills/README.md',
+  'templates/skills/harny-propose/SKILL.md',
+  'templates/skills/harny-test/SKILL.md',
+  'templates/skills/harny-implement/SKILL.md',
+  'templates/skills/harny-audit/SKILL.md',
+  'templates/skills/harny-document/SKILL.md',
+  'templates/skills/harny-sync/SKILL.md',
+  'templates/skills/harny-sync/capability-template.md',
+  'templates/skills/harny-adr/SKILL.md',
+  'templates/skills/harny-adr/adr-template.md',
+  'templates/skills/harny-standards/SKILL.md',
 ];
 
 async function packedFilePaths(): Promise<string[]> {
@@ -40,17 +59,18 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all eleven templates/** files', async () => {
+  it('includes bin/, dist/, and all twenty-two templates/** files (Gu 26, S4)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(22);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }
   });
 
-  it('excludes src/, tests/, and specs/ entirely', async () => {
+  it('excludes src/, tests/, and specs/ entirely, even after the manifest grows (Gu 26)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('src/'))).toBe(false);

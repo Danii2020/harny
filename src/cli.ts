@@ -8,9 +8,9 @@ import process from 'node:process';
 import { Command, CommanderError } from 'commander';
 import { EXIT, HarnessError, isHarnessError } from './errors.js';
 import type { ExitCode } from './errors.js';
-import { parseGateList, parseModelAssignment, parseRoleList, parseToolList } from './config.js';
+import { parseGateList, parseModelAssignment, parseRoleList, parseSkillList, parseToolList } from './config.js';
 import type { PartialHarnessConfig, RoleOverride } from './config.js';
-import type { GateId, RoleId, ToolId } from './vocabulary.js';
+import type { GateId, OptionalSkillId, RoleId, ToolId } from './vocabulary.js';
 import { runInit } from './init.js';
 import type { InitIO } from './init.js';
 
@@ -24,6 +24,7 @@ interface InitCommandOptions {
   readonly roles?: string;
   readonly model: readonly string[];
   readonly gates?: string;
+  readonly skills?: string;
   readonly stack?: string;
   readonly config?: string;
   readonly yes?: boolean;
@@ -61,6 +62,7 @@ function buildOverrides(opts: InitCommandOptions): PartialHarnessConfig {
     roleIds?: readonly RoleId[];
     roleOverrides?: readonly RoleOverride[];
     gates?: readonly GateId[];
+    optionalSkillIds?: readonly OptionalSkillId[];
     stack?: string;
   } = {};
 
@@ -76,6 +78,9 @@ function buildOverrides(opts: InitCommandOptions): PartialHarnessConfig {
   }
   if (opts.gates !== undefined) {
     overrides.gates = parseGateList(opts.gates);
+  }
+  if (opts.skills !== undefined) {
+    overrides.optionalSkillIds = parseSkillList(opts.skills);
   }
   if (opts.stack !== undefined) {
     overrides.stack = opts.stack;
@@ -159,6 +164,7 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('--roles <list>', 'Comma list of role ids, or "all"')
     .option('--model <assignment>', 'Repeatable: <role>=<tier-or-model-id>', collectModel, [] as string[])
     .option('--gates <list>', 'Comma list of gate ids, "all", or "none"')
+    .option('--skills <list>', 'Comma list of optional skill ids, "all", or "none"')
     .option('--stack <name>', 'Project stack (captured only)')
     .option('--config <path>', 'JSON config file; implies non-interactive')
     .option('-y, --yes', 'Accept defaults, skip all prompts and the final confirmation')

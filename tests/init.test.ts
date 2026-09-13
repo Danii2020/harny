@@ -9,6 +9,16 @@
  * AL-3 interactive-gap amendment round: a flag-supplied `roleOverride` for a
  * role deselected interactively at question 2 warns rather than errors or
  * silently drops — Behavior Guarantee 22, Task 5.18a, T5.18a.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md Behavior Guarantees 18, 19 ("Determinism, containment,
+ * trailing newline" and "Conflict detection covers skill paths"); intent.md
+ * SC14; roadmap.md Phase 4.8; tasks.md Tasks 4.28, 4.29. The well-formed
+ * fixture now carries a `skills/` subtree (`tests/fixtures/templates/
+ * well-formed/skills/**`, created for this feature per `roadmap.md`'s File
+ * Change Map) with exactly the default-selected seven skills, so a full
+ * `runInit` over it plans the nine skill-library files this feature adds,
+ * alongside the twelve pre-existing contracted files.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -84,6 +94,18 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.claude/agents/sdd-auditor.md',
         '.claude/agents/sdd-documentation.md',
         '.claude/skills/sdd-conductor/SKILL.md',
+        // No `.claude/skills/README.md` here: the well-formed fixture
+        // deliberately omits `skills/README.md` to exercise tolerated absence
+        // (see tests/templates.test.ts's matching assertion for this same
+        // fixture: "absent for the well-formed fixture (no README.md there)").
+        '.claude/skills/harny-audit/SKILL.md',
+        '.claude/skills/harny-document/SKILL.md',
+        '.claude/skills/harny-implement/SKILL.md',
+        '.claude/skills/harny-propose/SKILL.md',
+        '.claude/skills/harny-standards/SKILL.md',
+        '.claude/skills/harny-sync/SKILL.md',
+        '.claude/skills/harny-sync/capability-template.md',
+        '.claude/skills/harny-test/SKILL.md',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -92,6 +114,164 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
+    expect(result.planned).toHaveLength(20);
+  });
+});
+
+describe('runInit — skill artifacts inherit conflict detection, containment, and the trailing-newline rule (Gu 18, 19; templates-skill-library-parity) (Task 4.28, 4.29)', () => {
+  it('lists skill paths in a dry-run plan, writing nothing', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    const { io } = collectingIO();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: fixtureTemplatesRoot('well-formed'),
+      overrides: { tools: ['claude-code'] },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    expect(result.written).toEqual([]);
+    expect(result.planned).toContain('.claude/skills/harny-sync/SKILL.md');
+    // No `.claude/skills/README.md` here: the well-formed fixture deliberately
+    // omits `skills/README.md` (see tests/templates.test.ts and
+    // tests/skills-placement.test.ts, which cover README placement against the
+    // real, production `templates/skills/` tree).
+  });
+
+  it('raises CONFLICT (exit 3) and writes nothing when a planned skill path already exists, without --force', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const targetDir = await makeTempDir();
+    const { io } = collectingIO();
+
+    await fs.mkdir(path.join(targetDir, '.claude', 'skills', 'harny-sync'), { recursive: true });
+    await fs.writeFile(
+      path.join(targetDir, '.claude', 'skills', 'harny-sync', 'SKILL.md'),
+      'pre-existing content\n',
+      'utf8',
+    );
+
+    try {
+      await runInit({
+        targetDir,
+        templatesRoot: fixtureTemplatesRoot('well-formed'),
+        overrides: { tools: ['claude-code'] },
+        interactive: false,
+        dryRun: false,
+        force: false,
+        io,
+      });
+      expect.unreachable('expected runInit to throw CONFLICT');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CONFLICT');
+      expect((err as any).details).toContain('.claude/skills/harny-sync/SKILL.md');
+    }
+
+    // Nothing else was written either: only the pre-existing file is present.
+    const stillThere = await fs.readFile(
+      path.join(targetDir, '.claude', 'skills', 'harny-sync', 'SKILL.md'),
+      'utf8',
+    );
+    expect(stillThere).toBe('pre-existing content\n');
+  });
+
+  it('overwrites the conflicting skill path with --force', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    const { io } = collectingIO();
+
+    await fs.mkdir(path.join(targetDir, '.claude', 'skills', 'harny-sync'), { recursive: true });
+    await fs.writeFile(
+      path.join(targetDir, '.claude', 'skills', 'harny-sync', 'SKILL.md'),
+      'pre-existing content\n',
+      'utf8',
+    );
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: fixtureTemplatesRoot('well-formed'),
+      overrides: { tools: ['claude-code'] },
+      interactive: false,
+      dryRun: false,
+      force: true,
+      io,
+    });
+
+    expect(result.written).toContain('.claude/skills/harny-sync/SKILL.md');
+    const overwritten = await fs.readFile(
+      path.join(targetDir, '.claude', 'skills', 'harny-sync', 'SKILL.md'),
+      'utf8',
+    );
+    expect(overwritten).not.toBe('pre-existing content\n');
+  });
+
+  it('every written skill artifact is relative, resolves inside targetDir, and ends in exactly one newline', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    const { io } = collectingIO();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: fixtureTemplatesRoot('well-formed'),
+      overrides: { tools: ['claude-code'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io,
+    });
+
+    const skillPaths = result.written.filter((p) => p.startsWith('.claude/skills/'));
+    expect(skillPaths.length).toBeGreaterThan(0);
+
+    for (const relativePath of skillPaths) {
+      expect(path.isAbsolute(relativePath)).toBe(false);
+      expect(relativePath.split('/')).not.toContain('..');
+
+      const contents = await fs.readFile(path.join(targetDir, relativePath), 'utf8');
+      expect(contents.endsWith('\n'), `${relativePath} does not end in a newline`).toBe(true);
+      expect(contents.endsWith('\n\n'), `${relativePath} ends in more than one newline`).toBe(false);
+    }
+  });
+
+  it('produces a byte-identical skill tree across two independent runs with the same config', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDirA = await makeTempDir();
+    const targetDirB = await makeTempDir();
+
+    const resultA = await runInit({
+      targetDir: targetDirA,
+      templatesRoot: fixtureTemplatesRoot('well-formed'),
+      overrides: { tools: ['claude-code'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+    const resultB = await runInit({
+      targetDir: targetDirB,
+      templatesRoot: fixtureTemplatesRoot('well-formed'),
+      overrides: { tools: ['claude-code'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    const skillPathsA = resultA.written.filter((p) => p.startsWith('.claude/skills/')).sort();
+    const skillPathsB = resultB.written.filter((p) => p.startsWith('.claude/skills/')).sort();
+    expect(skillPathsA.length).toBeGreaterThan(0);
+    expect(skillPathsA).toEqual(skillPathsB);
+
+    for (const relativePath of skillPathsA) {
+      const contentsA = await fs.readFile(path.join(targetDirA, relativePath), 'utf8');
+      const contentsB = await fs.readFile(path.join(targetDirB, relativePath), 'utf8');
+      expect(contentsA).toBe(contentsB);
+    }
   });
 });
 
@@ -300,7 +480,9 @@ describe('runInit — interactive-path AL-3 gap: a flag-supplied roleOverride fo
     const { io, warnings } = collectingIO();
 
     // Q2: the user deselects sdd-auditor at the role-selection prompt, even
-    // though --model already targeted it (below). Q4: all three gates.
+    // though --model already targeted it (below). Q3 (templates-skill-library-
+    // parity: new optional-skills question, inserted between roles and gates)
+    // defaults to harny-standards. Q5: all three gates.
     clackMocks.multiselect
       .mockResolvedValueOnce([
         'sdd-architect',
@@ -308,9 +490,10 @@ describe('runInit — interactive-path AL-3 gap: a flag-supplied roleOverride fo
         'sdd-executor',
         'sdd-documentation',
       ]) // Q2: roles (auditor deselected)
-      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q4: gates
-    clackMocks.select.mockResolvedValue('most-capable'); // Q3: one per selected role
-    clackMocks.text.mockResolvedValue(''); // Q5: stack
+      .mockResolvedValueOnce(['harny-standards']) // Q3: optional skills
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // Q5: gates
+    clackMocks.select.mockResolvedValue('most-capable'); // Q4: one per selected role
+    clackMocks.text.mockResolvedValue(''); // Q6: stack
 
     const result = await runInit({
       targetDir,

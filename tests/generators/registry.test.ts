@@ -20,6 +20,11 @@
  * of which tools are actually registered, and its `codex` row is now also
  * asserted against the real `codexGenerator`, promoting it from prediction to
  * regression test.
+ *
+ * Spec: specs/templates-skill-library-parity
+ * Covers: contract.md "Public API — src/generators/types.ts" (the new
+ * `skillsDir` member, D3) and its pinned-values table; Behavior Guarantees 2,
+ * 29; intent.md SC16; roadmap.md Phase 4.5; tasks.md Task 4.27.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
@@ -43,6 +48,22 @@ describe('generator registry (guarantee 1, 18) (T20, T25)', () => {
 
     expect(availableToolIds()).toEqual(['claude-code', 'cursor', 'kiro', 'github-copilot', 'codex']);
     expect(availableToolIds()).toEqual([...TOOL_IDS]);
+  });
+});
+
+describe('every generator exposes skillsDir, matching the pinned values table exactly (Gu 2, Gu 29, D2) (Task 4.27)', () => {
+  it('claude-code -> .claude/skills, cursor/github-copilot/codex -> .agents/skills, kiro -> .kiro/skills', async () => {
+    const { claudeCodeGenerator } = await import('../../src/generators/claude-code.js');
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+
+    expect((claudeCodeGenerator as any).skillsDir).toBe('.claude/skills');
+    expect((cursorGenerator as any).skillsDir).toBe('.agents/skills');
+    expect((kiroGenerator as any).skillsDir).toBe('.kiro/skills');
+    expect((githubCopilotGenerator as any).skillsDir).toBe('.agents/skills');
+    expect((codexGenerator as any).skillsDir).toBe('.agents/skills');
   });
 });
 
@@ -74,6 +95,7 @@ describe('Generator interface sufficiency for all five known targets (guarantee 
     agentsDir: string;
     conductorPath: string;
     wrapperFormat: WrapperFormat;
+    skillsDir: string;
     extension: (roleId: string) => string;
   }): Generator {
     return {
@@ -82,12 +104,13 @@ describe('Generator interface sufficiency for all five known targets (guarantee 
       agentsDir: descriptor.agentsDir,
       wrapperFormat: descriptor.wrapperFormat,
       conductorPath: descriptor.conductorPath,
+      skillsDir: descriptor.skillsDir,
       roleFileName: (roleId) => descriptor.extension(roleId),
       mapModel: (tier, override) => override ?? tier,
       mapCapabilities: (): CapabilityMapping => ({ tokens: [], notes: [] }),
       renderRole: (): GeneratedFile => ({ path: 'unused.md', contents: '\n' }),
       renderConductor: (): GeneratedFile => ({ path: 'unused.md', contents: '\n' }),
-    };
+    } as Generator;
   }
 
   const expectedTargets: Array<{
@@ -95,46 +118,53 @@ describe('Generator interface sufficiency for all five known targets (guarantee 
     agentsDir: string;
     wrapperFormat: WrapperFormat;
     expectedRolePath: string;
+    skillsDir: string;
   }> = [
     {
       id: 'claude-code',
       agentsDir: '.claude/agents',
       wrapperFormat: 'markdown-yaml',
       expectedRolePath: '.claude/agents/sdd-architect.md',
+      skillsDir: '.claude/skills',
     },
     {
       id: 'cursor',
       agentsDir: '.cursor/agents',
       wrapperFormat: 'markdown-yaml',
       expectedRolePath: '.cursor/agents/sdd-architect.md',
+      skillsDir: '.agents/skills',
     },
     {
       id: 'kiro',
       agentsDir: '.kiro/agents',
       wrapperFormat: 'markdown-yaml',
       expectedRolePath: '.kiro/agents/sdd-architect.md',
+      skillsDir: '.kiro/skills',
     },
     {
       id: 'github-copilot',
       agentsDir: '.github/agents',
       wrapperFormat: 'markdown-yaml',
       expectedRolePath: '.github/agents/sdd-architect.agent.md',
+      skillsDir: '.agents/skills',
     },
     {
       id: 'codex',
       agentsDir: '.codex/agents',
       wrapperFormat: 'toml',
       expectedRolePath: '.codex/agents/sdd-architect.toml',
+      skillsDir: '.agents/skills',
     },
   ];
 
   it.each(expectedTargets)(
-    'expresses $id\'s agentsDir/roleFileName/wrapperFormat exactly as fixed by intent.md Constraints',
-    ({ id, agentsDir, wrapperFormat, expectedRolePath }) => {
+    'expresses $id\'s agentsDir/roleFileName/wrapperFormat/skillsDir exactly as fixed by contract.md Constraints',
+    ({ id, agentsDir, wrapperFormat, expectedRolePath, skillsDir }) => {
       const generator = fakeGenerator({
         id,
         agentsDir,
         wrapperFormat,
+        skillsDir,
         // conductorPath deliberately NOT derived from agentsDir, proving the two
         // are independent for every target, not only Claude Code.
         conductorPath: `.somewhere-else/${id}/sdd-conductor.${wrapperFormat === 'toml' ? 'toml' : 'md'}`,
@@ -145,6 +175,7 @@ describe('Generator interface sufficiency for all five known targets (guarantee 
       expect(`${generator.agentsDir}/${generator.roleFileName('sdd-architect')}`).toBe(expectedRolePath);
       expect(generator.wrapperFormat).toBe(wrapperFormat);
       expect(generator.conductorPath.startsWith(generator.agentsDir)).toBe(false);
+      expect((generator as any).skillsDir).toBe(skillsDir);
     },
   );
 });

@@ -104,6 +104,7 @@ export const claudeCodeGenerator: Generator = {
   agentsDir: '.claude/agents',
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.claude/skills/sdd-conductor/SKILL.md',
+  skillsDir: '.claude/skills',
   roleFileName,
   mapModel,
   mapCapabilities,

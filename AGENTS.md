@@ -46,15 +46,12 @@ Nothing floats without a stated justification.
 Once a feature's `audit.md` reaches a final verdict of `APPROVED` or
 `APPROVED WITH RESERVATIONS` and a human signs off, the `sdd-documentation` role
 runs automatically, updates this repo's docs, and stamps that feature's `intent.md`
-with a `Shipped: <date>` header, in place. **SUPERSEDES note (scoped to the live
-Claude Code pipeline only, per the `sdd-skill-library` feature's `contract.md`
-§ SUPERSEDES):** after the in-place stamp, the `harny-sync` skill's archive mode then
-moves the stamped directory to `specs/archived/<feature-name>/`, byte-identical. The
-rule is therefore: a spec directory is never moved, renamed, or deleted **except
-through `harny-sync` archive mode**, and never edited once archived. This diverges
-deliberately from `templates/roles/sdd-documentation.md`, which still says "do NOT
-move" the spec directory — a portable-layer reconvergence is tracked as the named
-follow-up feature `templates-skill-library-parity`.
+with a `Shipped: <date>` header, in place. After the in-place stamp, the `harny-sync`
+skill's archive mode then moves the stamped directory to `specs/archived/<feature-name>/`,
+byte-identical. The rule is therefore: a spec directory is never moved, renamed, or
+deleted **except through `harny-sync` archive mode**, and never edited once archived.
+This rule is now unified across both the live pipeline and the `templates/roles/`
+portable layer (closed by `templates-skill-library-parity`).
 
 ## The `templates/` structure
 
@@ -68,12 +65,32 @@ templates/
 │   └── sdd-documentation.md
 ├── conductor/
 │   └── sdd-conductor.md
-└── spec-schema/
-    ├── intent.md
-    ├── contract.md
-    ├── roadmap.md
-    ├── tasks.md
-    └── audit.md
+├── spec-schema/
+│   ├── intent.md
+│   ├── contract.md
+│   ├── roadmap.md
+│   ├── tasks.md
+│   └── audit.md
+└── skills/
+    ├── README.md                    # Shape contract and extension guide
+    ├── harny-propose/               # Architect's spec-drafting protocol
+    │   └── SKILL.md
+    ├── harny-test/                  # Test-writer's red-phase rules
+    │   └── SKILL.md
+    ├── harny-implement/             # Executor's phase and contract rules
+    │   └── SKILL.md
+    ├── harny-audit/                 # Auditor's 7-step audit process
+    │   └── SKILL.md
+    ├── harny-document/              # Documentation trigger and hand-off
+    │   └── SKILL.md
+    ├── harny-sync/                  # Knowledge base lookup and archive
+    │   ├── SKILL.md
+    │   └── capability-template.md   # Bundled resource for new capabilities
+    ├── harny-adr/                   # ADR generation and registry
+    │   ├── SKILL.md
+    │   └── adr-template.md          # Bundled resource for new ADRs
+    └── harny-standards/             # Coding standards checklist
+        └── SKILL.md
 ```
 
 Each file in `templates/roles/` follows one shared, tool-agnostic document schema:
@@ -108,6 +125,15 @@ format (it is plain content, not framed as a Claude Code Skill).
 `templates/spec-schema/*.md` are the blank scaffolds the architect role emits for
 each of the five spec files, extracted so they exist as a single reusable source
 rather than being duplicated inline in the architect's prompt.
+
+`templates/skills/` contains the canonical, tool-neutral source for eight `harny-*`
+skills plus their bundled resources and a shape contract. Each skill declares only the
+six portable Agent Skills frontmatter keys (name, description, license, compatibility,
+metadata, allowed-tools) and carries five required body sections (title, "When to use
+this", Inputs, Steps, Guardrails). The skills conform to https://agentskills.io/specification
+and are portable across all agent tools. Every scaffolded repository receives these skills
+as real files (never symlinks) written to each tool's native skill-discovery root, with
+six skills always included and two optional (selectable via `--skills` flag).
 
 ## The live pipeline (Claude Code)
 

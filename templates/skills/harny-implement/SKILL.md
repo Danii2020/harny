@@ -73,7 +73,10 @@ conventions. Rules that apply to every implementation:
    blocked items; ready for next phase (yes/no).
 4. **Run the `harny-standards` skill before marking any task done**, and confirm the
    change satisfies every standard that document marks as binding on implementation
-   work, per that skill's own procedure.
+   work, per that skill's own procedure. **Also run the `harny-feedback` skill**
+   alongside it — unconditionally, since `harny-feedback` is a core skill and always
+   present — to consult and run this stack's mapped lint/type-check commands over the
+   files the task touched, and address any finding before moving on.
 5. **Final checklist**, after all phases are complete:
    - All tasks in `tasks.md` are marked `[x]` or `[!]` with explanation.
    - All interfaces from `contract.md` are implemented.
@@ -83,6 +86,8 @@ conventions. Rules that apply to every implementation:
    - The test suite passes via the project's own runner — including any pre-existing
      red-phase tests for this feature.
    - `harny-standards` was checked (this skill's own addition to the checklist).
+   - `harny-feedback` was checked (this skill's own addition to the checklist,
+     alongside `harny-standards`).
    Update `tasks.md` with a completion timestamp at the bottom.
 
 ## Guardrails

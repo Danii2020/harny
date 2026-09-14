@@ -10,14 +10,55 @@
  * `src/generators/github-copilot.ts` does not exist yet at red time — every
  * test here is expected to fail on module resolution or on a missing export,
  * not on a typo in this file.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Public API — src/generators/types.ts (MODIFIED)" (the new
+ * `renderHook` method) and § Verified per-tool facts V1 (Copilot's
+ * `.github/hooks/*.json`, `{"version":1,"hooks":{"agentStop":[{"type":"command",
+ * "bash":…}]}}` wrapper — note the `"bash"` key, not `"command"`), V3
+ * (`postToolUse` is the accumulation surface), V4 (Copilot's only `agentStop`
+ * channel is `{"decision":"block","reason":…}`, a forced continuation, respecting
+ * the 8-consecutive-block override via the `stop_hook_active` field Copilot's own
+ * `agentStop` payload carries per V2); Behavior Guarantees 2, 3, 5, 6; tasks.md
+ * Tasks 6.1, 6.7; roadmap.md Phase 6.
+ * `githubCopilotGenerator.renderHook` is a documented Phase 2 stub returning
+ * `undefined` at red time (Task 2.11) — every test in the new blocks below is
+ * expected to fail because the returned value has no `.path`/`.contents` to read.
  */
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { ROLE_IDS } from '../../src/vocabulary.js';
-import { REAL_TEMPLATES_ROOT } from '../helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, TESTS_DIR } from '../helpers/paths.js';
 
 async function loadRealTemplates() {
   const { loadCanonicalTemplates } = await import('../../src/templates.js');
   return loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+}
+
+/** Loads the real, canonical runner script verbatim (contract.md § Interfaces
+ *  `HookPayload.runner`). */
+async function loadRunnerContents(): Promise<string> {
+  return fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), 'utf8');
+}
+
+/** A minimal `HookPayload` fixture, mirroring `tests/generators/claude-code.test.ts`'s
+ *  own fixture exactly (contract.md § Interfaces "src/engine.ts (MODIFIED)"). */
+function fakeHookPayload(profile: unknown, runnerContents: string) {
+  return {
+    project: {
+      enabledRoles: ['sdd-architect'],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'],
+      specSchemaDir: '.sdd/spec-schema',
+      reducedGates: false,
+      stack: (profile as { id?: string } | undefined)?.id,
+      stackProfile: profile,
+    },
+    profile,
+    runner: { name: 'run-feedback.mjs', contents: runnerContents, sourcePath: 'hooks/run-feedback.mjs' },
+  } as any;
 }
 
 describe('githubCopilotGenerator.mapModel (guarantee 9) (T13)', () => {
@@ -301,5 +342,222 @@ describe('GitHub Copilot vendor-limit guards (guarantee 10, Error Handling Contr
     expect((caught as any).code).toBe('TEMPLATE');
     expect((caught as any).message).toContain('1024');
     expect((caught as any).message).toContain('1025');
+  });
+});
+
+describe('renderHook — both registrations, .github/hooks/harny-feedback.json wrapper shape with the "bash" key (BG-2, V1) (Task 6.1)', () => {
+  it('emits {"version":1,"hooks":{"postToolUse":[…],"agentStop":[…]}} with entries shaped {"type":"command","bash":…} — never "command"', async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = githubCopilotGenerator.renderHook(fakeHookPayload(profile, runnerContents));
+
+    expect(generated).toBeDefined();
+    expect(generated!.path).toBe('.github/hooks/harny-feedback.json');
+    expect(generated!.contents.endsWith('\n')).toBe(true);
+    expect(generated!.contents.endsWith('\n\n')).toBe(false);
+
+    const parsed = JSON.parse(generated!.contents);
+    expect(parsed.version).toBe(1);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['agentStop', 'postToolUse']);
+
+    for (const key of ['postToolUse', 'agentStop']) {
+      const entry = parsed.hooks[key][0];
+      expect(entry.type).toBe('command');
+      expect(typeof entry.bash).toBe('string');
+      expect(entry.command).toBeUndefined();
+    }
+  });
+
+  it('still registers both postToolUse and agentStop, same shape, in the escape-hatch (no resolved profile) case (BG-8)', async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const runnerContents = await loadRunnerContents();
+
+    const generated = githubCopilotGenerator.renderHook(fakeHookPayload(undefined, runnerContents));
+
+    expect(generated).toBeDefined();
+    const parsed = JSON.parse(generated!.contents);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['agentStop', 'postToolUse']);
+  });
+});
+
+describe('renderHook — no mapped command is bound to the per-edit event (BG-3) (Task 6.1)', () => {
+  it("the postToolUse (accumulator) bash script invokes the runner's accumulate mode only — never the \"run\" mode that executes mapped commands", async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = githubCopilotGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const postToolUseBash: string = parsed.hooks.postToolUse[0].bash;
+    const agentStopBash: string = parsed.hooks.agentStop[0].bash;
+
+    expect(postToolUseBash).toContain('accumulate');
+    expect(postToolUseBash).not.toContain('--commands');
+
+    expect(agentStopBash).toContain('run-feedback.mjs');
+    expect(agentStopBash).toContain('--commands');
+  });
+
+  it('never binds a literal STACK_PROFILES command inside the postToolUse bash script, for either resolved stack profile', async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+
+    for (const profile of STACK_PROFILES) {
+      const generated = githubCopilotGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+      const parsed = JSON.parse(generated.contents);
+      const postToolUseBash: string = parsed.hooks.postToolUse[0].bash;
+
+      for (const command of profile.commands) {
+        for (const token of command.argv) {
+          if (token === 'npx') continue; // shared launcher, not distinctive on its own
+          expect(
+            postToolUseBash,
+            `postToolUse must not bind mapped-command token "${token}" from profile "${profile.id}"`,
+          ).not.toContain(token);
+        }
+      }
+    }
+  });
+});
+
+describe('renderHook — agentStop findings arrive via {"decision":"block","reason":…}, respecting the 8-consecutive-block override via stop_hook_active (BG-5, BG-6, V4) (Task 6.1)', () => {
+  const FAKE_RUNNER_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'fake-runner.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeFakeProjectDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-copilot-agentstop-hook-'));
+    tempDirs.push(dir);
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.copyFile(FAKE_RUNNER_PATH, path.join(runnerDir, 'run-feedback.mjs'));
+    return dir;
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  interface WrapperResult {
+    readonly code: number | null;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  function runAgentStopScript(script: string, projectDir: string, stdinPayload: Record<string, unknown>): Promise<WrapperResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', script], { cwd: projectDir, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify(stdinPayload));
+      child.stdin.end();
+    });
+  }
+
+  async function getAgentStopScript(): Promise<string> {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const generated = githubCopilotGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    return parsed.hooks.agentStop[0].bash;
+  }
+
+  it('wraps a runner exit-2 finding into {"decision":"block","reason":…} on its own stdout', async () => {
+    const script = await getAgentStopScript();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '2';
+      process.env.FAKE_STDOUT = 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n';
+      const result = await runAgentStopScript(script, projectDir, { sessionId: 'copilot-session-1' });
+
+      expect(result.stdout.trim().length).toBeGreaterThan(0);
+      const parsed = JSON.parse(result.stdout.trim());
+      expect(parsed.decision).toBe('block');
+      expect(typeof parsed.reason).toBe('string');
+      expect(parsed.reason).toContain('TS1234');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      delete process.env.FAKE_STDOUT;
+      await cleanupTempDirs();
+    }
+  });
+
+  it('produces no output on a clean runner pass (exit 0)', async () => {
+    const script = await getAgentStopScript();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '0';
+      const result = await runAgentStopScript(script, projectDir, { sessionId: 'copilot-session-2' });
+
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      await cleanupTempDirs();
+    }
+  });
+
+  // This one drives the REAL shared runner (not the fake-runner fixture): Copilot's
+  // own `agentStop` payload carries `stop_hook_active` under that exact name (V2), the
+  // same field `templates/hooks/run-feedback.mjs` already reads and suppresses on
+  // (BG-5, Task 1.7). So the guarantee this test protects is that the generated
+  // wrapper forwards its own stdin to the runner unmodified, letting the runner's
+  // already-tested suppression do the work — not a second, wrapper-owned re-entry
+  // check duplicating that logic.
+  it('emits no blocking decision when stop_hook_active is true on re-entry, even though a mapped command genuinely fails (loop safety, via the real shared runner)', async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+    const runnerContents = await loadRunnerContents();
+    const alwaysFailingProfile = {
+      id: 'typescript',
+      commands: [
+        {
+          id: 'always-fails',
+          kind: 'lint',
+          argv: ['node', '-e', 'process.exit(1)'],
+          pathMode: 'whole-project',
+          requires: {},
+        },
+      ],
+    };
+    const generated = githubCopilotGenerator.renderHook(fakeHookPayload(alwaysFailingProfile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const agentStopBash: string = parsed.hooks.agentStop[0].bash;
+
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-copilot-real-reentry-'));
+    try {
+      const runnerDir = path.join(dir, '.sdd', 'feedback');
+      await fs.mkdir(runnerDir, { recursive: true });
+      await fs.writeFile(path.join(runnerDir, 'run-feedback.mjs'), runnerContents, { mode: 0o755 });
+
+      // Pre-seed a turn file directly (bypassing the accumulator) so the runner
+      // treats this as a turn that touched one file, rather than an empty turn (BG-4).
+      const turnKey = 'copilot-real-reentry-turn';
+      const turnsDir = path.join(dir, '.sdd', 'feedback', '.turns');
+      await fs.mkdir(turnsDir, { recursive: true });
+      await fs.writeFile(path.join(turnsDir, turnKey), `${path.join(dir, 'touched.ts')}\n`);
+
+      const result = await new Promise<{ code: number | null; stdout: string }>((resolve, reject) => {
+        const child = spawn('sh', ['-c', agentStopBash], { cwd: dir, env: process.env });
+        let stdout = '';
+        child.stdout.on('data', (chunk) => (stdout += chunk));
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ code, stdout }));
+        child.stdin.write(JSON.stringify({ sessionId: turnKey, stop_hook_active: true }));
+        child.stdin.end();
+      });
+
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

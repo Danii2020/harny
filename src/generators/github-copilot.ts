@@ -6,16 +6,18 @@
  * "Verified per-tool facts" § GitHub Copilot).
  */
 import type { Capability } from '../templates.js';
-import type { ConductorPayload, RolePayload } from '../engine.js';
+import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import { HarnessError } from '../errors.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
+import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
   renderProvenance,
   renderSpecSchemaPointerBlock,
 } from './markdown-yaml.js';
+import { renderJson, wrapPosixShellArg } from './json.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
@@ -129,6 +131,78 @@ function renderConductor(payload: ConductorPayload): GeneratedFile {
   return { path: githubCopilotGenerator.conductorPath, contents };
 }
 
+/** Copilot hooks run with `cwd` already at the project root; no project-dir
+ *  macro is documented (V1), so the runner is addressed by its plain
+ *  repo-relative path. */
+function runnerInvocation(): string {
+  return FEEDBACK_RUNNER_PATH;
+}
+
+/** `postToolUse`'s bash script (V3): Copilot's tool-input payload already
+ *  matches the shape the shared, byte-frozen runner reads, so no reshaping
+ *  wrapper is needed. */
+function accumulateCommand(runner: string): string {
+  return `node "${runner}" accumulate`;
+}
+
+/**
+ * `agentStop`'s inline wrapper (V4/BG-6). Copilot's only channel is
+ * `{"decision":"block","reason":…}` — a forced continuation, since Copilot
+ * documents no non-blocking option on `agentStop` (V4). Copilot's own
+ * `agentStop` payload carries `stop_hook_active` under that exact name (V2) —
+ * the same field the shared runner already reads and suppresses on — so this
+ * wrapper simply forwards its own stdin unmodified and lets the runner's
+ * already-tested suppression do the loop-safety work (BG-5), rather than a
+ * second, wrapper-owned re-entry check duplicating it.
+ */
+const COPILOT_AGENT_STOP_WRAPPER_SCRIPT = [
+  'const cp=require("child_process");',
+  'const fs=require("fs");',
+  'const runner=process.argv[1];',
+  'const commands=process.argv[2];',
+  'let input;',
+  'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
+  'const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});',
+  'if(r.status===2){',
+  'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
+  'const reason=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
+  'process.stdout.write(JSON.stringify({decision:"block",reason:reason})+String.fromCharCode(10));',
+  '}',
+  'process.exit(0);',
+].join('');
+
+function agentStopScript(runner: string, commands: unknown): string {
+  const commandsJson = JSON.stringify(commands);
+  return (
+    `node --input-type=commonjs -e ${wrapPosixShellArg(COPILOT_AGENT_STOP_WRAPPER_SCRIPT)} ` +
+    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
+  );
+}
+
+/**
+ * `.github/hooks/harny-feedback.json`, carrying both registrations BG-2
+ * requires: a `postToolUse` accumulator and an `agentStop` runner, in the
+ * `{"version":1,"hooks":{"<event>":[{"type":"command","bash":…}]}}` shape
+ * (V1) — note the `"bash"` script key, not `"command"`. The escape hatch
+ * (BG-8) registers the identical shape with a zero-command `run` invocation —
+ * inert, never absent.
+ */
+function renderHook(payload: HookPayload): GeneratedFile {
+  const { profile } = payload;
+  const runner = runnerInvocation();
+  const commands = profile ? profile.commands : [];
+
+  const settings = {
+    version: 1,
+    hooks: {
+      postToolUse: [{ type: 'command', bash: accumulateCommand(runner) }],
+      agentStop: [{ type: 'command', bash: agentStopScript(runner, commands) }],
+    },
+  };
+
+  return { path: githubCopilotGenerator.hooksPath, contents: renderJson(settings) };
+}
+
 export const githubCopilotGenerator: Generator = {
   id: 'github-copilot',
   displayName: 'GitHub Copilot',
@@ -136,9 +210,11 @@ export const githubCopilotGenerator: Generator = {
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.github/skills/sdd-conductor/SKILL.md',
   skillsDir: '.agents/skills',
+  hooksPath: '.github/hooks/harny-feedback.json',
   roleFileName,
   mapModel,
   mapCapabilities,
   renderRole,
   renderConductor,
+  renderHook,
 };

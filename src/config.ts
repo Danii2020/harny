@@ -46,7 +46,9 @@ export interface HarnessConfig {
   readonly gates: readonly GateId[];
   /** Deduped, in SKILL_IDS order. ALWAYS contains every CORE_SKILL_IDS member. */
   readonly skills: readonly SkillId[];
-  /** Captured only; nothing in this feature consumes it. Omitted when blank. */
+  /** Resolved to a `StackProfile` (`src/feedback.ts`'s `resolveStackProfile`) for
+   *  the computational-feedback hook and CI gate (`agent-feedback-controls`).
+   *  Omitted when blank; unrecognized values are inert, never an error (SC2). */
   readonly stack?: string;
 }
 

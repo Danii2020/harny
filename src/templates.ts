@@ -101,6 +101,16 @@ export interface CanonicalTemplates {
   readonly skills: ReadonlyMap<SkillId, SkillTemplate>;
   /** `templates/skills/README.md` — the shape contract. Absent only in fixtures. */
   readonly skillsReadme?: SkillResource;
+  /** **(NEW — agent-feedback-controls.)** `templates/hooks/run-feedback.mjs`, read
+   *  byte-for-byte (BG-11). Tolerated absent — mirroring `skillsReadme` — so a
+   *  templates root that doesn't model the feedback subsystem at all (most test
+   *  fixtures) still loads cleanly; `buildFeedbackFiles` treats its absence as
+   *  "this templates root does not carry the feedback feature", not an error. */
+  readonly hookRunner?: SkillResource;
+  /** **(NEW — agent-feedback-controls.)** `templates/ci/harny-feedback.yml`, read
+   *  byte-for-byte before its generated block is filled in. Tolerated absent for
+   *  the same reason as `hookRunner`. */
+  readonly ciWorkflowTemplate?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -358,8 +368,23 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
 
   const skills = await loadSkillTemplates(templatesRoot);
   const skillsReadme = await loadSkillsReadme(templatesRoot);
+  const hookRunner = await loadOptionalResource(templatesRoot, 'hooks/run-feedback.mjs', 'run-feedback.mjs');
+  const ciWorkflowTemplate = await loadOptionalResource(
+    templatesRoot,
+    'ci/harny-feedback.yml',
+    'harny-feedback.yml',
+  );
 
-  return { root: templatesRoot, roles, conductor, specSchema, skills, skillsReadme };
+  return {
+    root: templatesRoot,
+    roles,
+    conductor,
+    specSchema,
+    skills,
+    skillsReadme,
+    hookRunner,
+    ciWorkflowTemplate,
+  };
 }
 
 /**
@@ -400,4 +425,21 @@ async function loadSkillsReadme(templatesRoot: string): Promise<SkillResource | 
   if (!fsSync.existsSync(absolute)) return undefined;
   const contents = await readCanonicalFile(templatesRoot, relativePath);
   return { name: SKILLS_README_NAME, contents, sourcePath: relativePath };
+}
+
+/** **(NEW — agent-feedback-controls.)** Loads a single optional canonical
+ *  resource by exact relative path, tolerating its absence entirely (returns
+ *  `undefined`) rather than raising a TEMPLATE error — the same tolerated-absence
+ *  posture as `loadSkillsReadme`, extended to `templates/hooks/` and
+ *  `templates/ci/` so a lean test-fixture templates root that never modeled the
+ *  feedback subsystem still loads cleanly. */
+async function loadOptionalResource(
+  templatesRoot: string,
+  relativePath: string,
+  name: string,
+): Promise<SkillResource | undefined> {
+  const absolute = path.join(templatesRoot, relativePath);
+  if (!fsSync.existsSync(absolute)) return undefined;
+  const contents = await readCanonicalFile(templatesRoot, relativePath);
+  return { name, contents, sourcePath: relativePath };
 }

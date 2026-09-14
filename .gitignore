@@ -1,5 +1,6 @@
 # Local agent config stays local; the harny-* skill bridge is tracked.
 .claude/*
+!.claude/settings.json
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/harny-*

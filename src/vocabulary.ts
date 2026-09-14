@@ -33,7 +33,11 @@ export const CAPABILITY_NAMES = [
 ] as const;
 export type CapabilityName = (typeof CAPABILITY_NAMES)[number];
 
-/** Skills always scaffolded, regardless of selection. Pipeline-role order, then sync. */
+/** Skills always scaffolded, regardless of selection. Pipeline-role order, then the
+ *  shared skills (`harny-sync`, `harny-feedback`). `harny-feedback` is appended last
+ *  because that is the only insertion position that preserves every other member's
+ *  index — and therefore `SKILL_IDS`' emission order (CLI-4) — see
+ *  agent-feedback-controls/contract.md § "Insertion position". */
 export const CORE_SKILL_IDS = [
   'harny-propose',
   'harny-test',
@@ -41,6 +45,7 @@ export const CORE_SKILL_IDS = [
   'harny-audit',
   'harny-document',
   'harny-sync',
+  'harny-feedback',
 ] as const;
 export type CoreSkillId = (typeof CORE_SKILL_IDS)[number];
 

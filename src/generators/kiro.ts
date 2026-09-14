@@ -4,10 +4,11 @@
  * per-tool token list (contract.md "Verified per-tool facts" § Kiro).
  */
 import type { Capability } from '../templates.js';
-import type { ConductorPayload, RolePayload } from '../engine.js';
+import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import { HarnessError } from '../errors.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
+import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -15,6 +16,7 @@ import {
   renderSpecSchemaPointerBlock,
   yamlFlowSequence,
 } from './markdown-yaml.js';
+import { renderJson, wrapPosixShellArg } from './json.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
@@ -143,6 +145,84 @@ function renderConductor(payload: ConductorPayload): GeneratedFile {
   return { path: kiroGenerator.conductorPath, contents };
 }
 
+/** Kiro hooks run with `cwd` already at the project root; no project-dir macro
+ *  is documented (V1), so the runner is addressed by its plain repo-relative
+ *  path, same as Cursor. */
+function runnerInvocation(): string {
+  return FEEDBACK_RUNNER_PATH;
+}
+
+/** `postToolUse`'s action (V3): Kiro's own tool-context JSON on STDIN already
+ *  matches the shape the shared, byte-frozen runner reads, so no reshaping
+ *  wrapper is needed — unlike Cursor's flat `afterFileEdit` payload. */
+function accumulateCommand(runner: string): string {
+  return `node "${runner}" accumulate`;
+}
+
+/**
+ * `agentStop`'s inline wrapper (V4/BG-6). Kiro's only channel is exit 0 +
+ * STDOUT — Kiro adds STDOUT directly to the agent's context and treats any
+ * non-zero exit as a warning, never context (V4) — so this wrapper always
+ * forwards the runner's combined output verbatim to its own STDOUT and always
+ * exits 0, regardless of the runner's own exit code. `run-feedback.mjs` itself
+ * still honors `stop_hook_active` on re-entry (forwarded stdin, unmodified),
+ * so a re-entered turn simply produces no output to forward (BG-5).
+ */
+const KIRO_AGENT_STOP_WRAPPER_SCRIPT = [
+  'const cp=require("child_process");',
+  'const fs=require("fs");',
+  'const runner=process.argv[1];',
+  'const commands=process.argv[2];',
+  'let input;',
+  'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
+  'const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});',
+  'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
+  'if(out.length>0){process.stdout.write(out+String.fromCharCode(10));}',
+  'process.exit(0);',
+].join('');
+
+function agentStopCommand(runner: string, commands: unknown): string {
+  const commandsJson = JSON.stringify(commands);
+  return (
+    `node --input-type=commonjs -e ${wrapPosixShellArg(KIRO_AGENT_STOP_WRAPPER_SCRIPT)} ` +
+    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
+  );
+}
+
+/**
+ * `.kiro/hooks/harny-feedback.json`, carrying both registrations BG-2
+ * requires: a `postToolUse` accumulator and an `agentStop` runner, in the
+ * array-of-hooks `{"version":"v1","hooks":[{"name":…,"trigger":…,"action":
+ * {"type":"command","command":…}}]}` shape (V1). Ships the `types/`-page
+ * camelCase `agentStop` trigger id per V6's resolution — see R1: this is not
+ * yet confirmed against a live Kiro install. The escape hatch (BG-8)
+ * registers the identical shape with a zero-command `run` invocation — inert,
+ * never absent.
+ */
+function renderHook(payload: HookPayload): GeneratedFile {
+  const { profile } = payload;
+  const runner = runnerInvocation();
+  const commands = profile ? profile.commands : [];
+
+  const settings = {
+    version: 'v1',
+    hooks: [
+      {
+        name: 'harny-feedback-accumulate',
+        trigger: 'postToolUse',
+        action: { type: 'command', command: accumulateCommand(runner) },
+      },
+      {
+        name: 'harny-feedback-agent-stop',
+        trigger: 'agentStop',
+        action: { type: 'command', command: agentStopCommand(runner, commands) },
+      },
+    ],
+  };
+
+  return { path: kiroGenerator.hooksPath, contents: renderJson(settings) };
+}
+
 export const kiroGenerator: Generator = {
   id: 'kiro',
   displayName: 'Kiro',
@@ -150,9 +230,11 @@ export const kiroGenerator: Generator = {
   wrapperFormat: 'markdown-yaml',
   conductorPath: '.kiro/skills/sdd-conductor/SKILL.md',
   skillsDir: '.kiro/skills',
+  hooksPath: '.kiro/hooks/harny-feedback.json',
   roleFileName,
   mapModel,
   mapCapabilities,
   renderRole,
   renderConductor,
+  renderHook,
 };

@@ -15,6 +15,13 @@
  * tasks.md Tasks 4.2, 4.3. `EXPECTED_TEMPLATE_FILES` gains the eleven
  * `templates/skills/**` paths listed in `contract.md` § Data Models — the
  * `templates/skills/` file manifest.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Amendments to shipped current-truth statements"
+ * (CLI-10, eleven/twenty-two → twenty-six `templates/**` files); intent.md
+ * SC19; roadmap.md Phase 5.4; tasks.md Task 5.6. `EXPECTED_TEMPLATE_FILES`
+ * gains `templates/skills/harny-feedback/SKILL.md`, `templates/hooks/README.md`,
+ * `templates/hooks/run-feedback.mjs`, and `templates/ci/harny-feedback.yml`.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -48,6 +55,10 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/skills/harny-adr/SKILL.md',
   'templates/skills/harny-adr/adr-template.md',
   'templates/skills/harny-standards/SKILL.md',
+  'templates/skills/harny-feedback/SKILL.md',
+  'templates/hooks/README.md',
+  'templates/hooks/run-feedback.mjs',
+  'templates/ci/harny-feedback.yml',
 ];
 
 async function packedFilePaths(): Promise<string[]> {
@@ -59,12 +70,12 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all twenty-two templates/** files (Gu 26, S4)', async () => {
+  it('includes bin/, dist/, and all twenty-six templates/** files (Gu 26, S4)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
-    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(22);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(26);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }

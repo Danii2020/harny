@@ -9,14 +9,55 @@
  * `src/generators/kiro.ts` does not exist yet at red time — every test here is
  * expected to fail on module resolution or on a missing export, not on a typo
  * in this file.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Public API — src/generators/types.ts (MODIFIED)" (the new
+ * `renderHook` method) and § Verified per-tool facts V1 (Kiro's
+ * `.kiro/hooks/<kebab-name>.json`, `{"version":"v1","hooks":[{"name":…,"trigger":…,
+ * "action":{"type":"command","command":…}}]}` array-of-hooks wrapper), V3
+ * (`postToolUse` is the accumulation surface on both Kiro IDE and Kiro CLI —
+ * `fileSave`/`fileCreate` are IDE-only and would leave Kiro CLI uninstrumented), V4
+ * (Kiro delivers findings via exit 0 + STDOUT added to context — non-blocking, like
+ * Claude Code), V6 (the camelCase `agentStop` trigger, reservation R1); Behavior
+ * Guarantees 2, 3, 6; tasks.md Tasks 6.1, 6.4; roadmap.md Phase 6.
+ * `kiroGenerator.renderHook` is a documented Phase 2 stub returning `undefined` at
+ * red time (Task 2.11) — every test in the new blocks below is expected to fail
+ * because the returned value has no `.path`/`.contents` to read.
  */
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { ROLE_IDS } from '../../src/vocabulary.js';
-import { REAL_TEMPLATES_ROOT } from '../helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, TESTS_DIR } from '../helpers/paths.js';
 
 async function loadRealTemplates() {
   const { loadCanonicalTemplates } = await import('../../src/templates.js');
   return loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+}
+
+/** Loads the real, canonical runner script verbatim (contract.md § Interfaces
+ *  `HookPayload.runner`). */
+async function loadRunnerContents(): Promise<string> {
+  return fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), 'utf8');
+}
+
+/** A minimal `HookPayload` fixture, mirroring `tests/generators/claude-code.test.ts`'s
+ *  own fixture exactly (contract.md § Interfaces "src/engine.ts (MODIFIED)"). */
+function fakeHookPayload(profile: unknown, runnerContents: string) {
+  return {
+    project: {
+      enabledRoles: ['sdd-architect'],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'],
+      specSchemaDir: '.sdd/spec-schema',
+      reducedGates: false,
+      stack: (profile as { id?: string } | undefined)?.id,
+      stackProfile: profile,
+    },
+    profile,
+    runner: { name: 'run-feedback.mjs', contents: runnerContents, sourcePath: 'hooks/run-feedback.mjs' },
+  } as any;
 }
 
 describe('kiroGenerator.mapModel (guarantee 9) (T9)', () => {
@@ -267,5 +308,170 @@ describe("the auditor's audit.md-only scope reaches the generated Kiro artifact 
     const generated = kiroGenerator.renderRole({ template: auditorTemplate, tier: 'most-capable' });
 
     expect(generated.contents).toContain('audit.md only');
+  });
+});
+
+describe('renderHook — both registrations, .kiro/hooks/harny-feedback.json array-of-hooks wrapper shape (BG-2, V1, V6) (Task 6.1)', () => {
+  it('emits {"version":"v1","hooks":[…]} with a postToolUse accumulator and a camelCase agentStop runner, each entry shaped {name,trigger,action:{type:"command",command}}', async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = kiroGenerator.renderHook(fakeHookPayload(profile, runnerContents));
+
+    expect(generated).toBeDefined();
+    expect(generated!.path).toBe('.kiro/hooks/harny-feedback.json');
+    expect(generated!.contents.endsWith('\n')).toBe(true);
+    expect(generated!.contents.endsWith('\n\n')).toBe(false);
+
+    const parsed = JSON.parse(generated!.contents);
+    expect(parsed.version).toBe('v1');
+    expect(Array.isArray(parsed.hooks)).toBe(true);
+
+    // V6: the camelCase form from the types/ page, not "Agent Stop" or "AgentStop" —
+    // the trigger id itself, not a display label.
+    const triggers = parsed.hooks.map((hook: any) => hook.trigger).sort();
+    expect(triggers).toEqual(['agentStop', 'postToolUse']);
+
+    for (const hook of parsed.hooks) {
+      expect(typeof hook.name).toBe('string');
+      expect(hook.action.type).toBe('command');
+      expect(typeof hook.action.command).toBe('string');
+    }
+  });
+
+  it('still registers both postToolUse and agentStop, in the same shape, in the escape-hatch (no resolved profile) case (BG-8)', async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const runnerContents = await loadRunnerContents();
+
+    const generated = kiroGenerator.renderHook(fakeHookPayload(undefined, runnerContents));
+
+    expect(generated).toBeDefined();
+    const parsed = JSON.parse(generated!.contents);
+    const triggers = parsed.hooks.map((hook: any) => hook.trigger).sort();
+    expect(triggers).toEqual(['agentStop', 'postToolUse']);
+  });
+});
+
+describe('renderHook — no mapped command is bound to the per-edit event (BG-3) (Task 6.1)', () => {
+  it("the postToolUse action invokes the runner's accumulate mode only — never the \"run\" mode that executes mapped commands", async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = kiroGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const postToolUseHook = parsed.hooks.find((hook: any) => hook.trigger === 'postToolUse');
+    const agentStopHook = parsed.hooks.find((hook: any) => hook.trigger === 'agentStop');
+
+    expect(postToolUseHook.action.command).toContain('accumulate');
+    expect(postToolUseHook.action.command).not.toContain('--commands');
+
+    expect(agentStopHook.action.command).toContain('run-feedback.mjs');
+    expect(agentStopHook.action.command).toContain('--commands');
+  });
+
+  it('never binds a literal STACK_PROFILES command inside the postToolUse action, for either resolved stack profile', async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+
+    for (const profile of STACK_PROFILES) {
+      const generated = kiroGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+      const parsed = JSON.parse(generated.contents);
+      const postToolUseHook = parsed.hooks.find((hook: any) => hook.trigger === 'postToolUse');
+
+      for (const command of profile.commands) {
+        for (const token of command.argv) {
+          if (token === 'npx') continue; // shared launcher, not distinctive on its own
+          expect(
+            postToolUseHook.action.command,
+            `postToolUse must not bind mapped-command token "${token}" from profile "${profile.id}"`,
+          ).not.toContain(token);
+        }
+      }
+    }
+  });
+});
+
+describe('renderHook — agentStop findings arrive via exit 0 + STDOUT added to context, never a warning (BG-6, V4) (Task 6.1)', () => {
+  const FAKE_RUNNER_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'fake-runner.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeFakeProjectDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-kiro-agentstop-hook-'));
+    tempDirs.push(dir);
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.copyFile(FAKE_RUNNER_PATH, path.join(runnerDir, 'run-feedback.mjs'));
+    return dir;
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  interface WrapperResult {
+    readonly code: number | null;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  function runAgentStopCommand(command: string, projectDir: string): Promise<WrapperResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', command], { cwd: projectDir, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify({ session_id: 'kiro-session-1' }));
+      child.stdin.end();
+    });
+  }
+
+  async function getAgentStopCommand(): Promise<string> {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const generated = kiroGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    return parsed.hooks.find((hook: any) => hook.trigger === 'agentStop').action.command;
+  }
+
+  it('surfaces a runner exit-2 finding on its own stdout while still exiting 0 — Kiro treats non-zero exit as a warning, not context', async () => {
+    const command = await getAgentStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '2';
+      process.env.FAKE_STDOUT = 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n';
+      const result = await runAgentStopCommand(command, projectDir);
+
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('TS1234');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      delete process.env.FAKE_STDOUT;
+      await cleanupTempDirs();
+    }
+  });
+
+  it('produces no output and exits 0 on a clean runner pass', async () => {
+    const command = await getAgentStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '0';
+      const result = await runAgentStopCommand(command, projectDir);
+
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      await cleanupTempDirs();
+    }
   });
 });

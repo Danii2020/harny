@@ -9,17 +9,55 @@
  * `src/generators/codex.ts` does not exist yet at red time — every test below
  * is expected to fail on module resolution or on a missing export, not on a
  * typo in this file.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Public API — src/generators/types.ts (MODIFIED)" (the new
+ * `renderHook` method) and § Verified per-tool facts V1 (Codex's `hooks.json`,
+ * carrying the same nested `{"hooks":{"<Event>":[{"hooks":[{"type":"command",
+ * "command":…,"timeout":…}]}]}}` wrapper as Claude Code — a first-party-confirmed
+ * fact contradicting secondary sources that claim root-level event names), V2/V3
+ * (`PostToolUse` is the accumulation surface, `turn_id` preferred as the turn key),
+ * V4 (Codex has a non-blocking channel like Claude Code: `systemMessage` on `Stop`);
+ * Behavior Guarantees 2, 3, 5, 6; tasks.md Tasks 6.1, 6.8; roadmap.md Phase 6.
+ * `codexGenerator.renderHook` is a documented Phase 2 stub returning `undefined` at
+ * red time (Task 2.11) — every test in the new blocks below is expected to fail
+ * because the returned value has no `.path`/`.contents` to read.
  */
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { ROLE_IDS } from '../../src/vocabulary.js';
-import { REAL_TEMPLATES_ROOT, REPO_ROOT } from '../helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, REPO_ROOT, TESTS_DIR } from '../helpers/paths.js';
 import { decodeToml } from '../helpers/toml-decode.js';
 
 async function loadRealTemplates() {
   const { loadCanonicalTemplates } = await import('../../src/templates.js');
   return loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+}
+
+/** Loads the real, canonical runner script verbatim (contract.md § Interfaces
+ *  `HookPayload.runner`). */
+async function loadRunnerContents(): Promise<string> {
+  return fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), 'utf8');
+}
+
+/** A minimal `HookPayload` fixture, mirroring `tests/generators/claude-code.test.ts`'s
+ *  own fixture exactly (contract.md § Interfaces "src/engine.ts (MODIFIED)"). */
+function fakeHookPayload(profile: unknown, runnerContents: string) {
+  return {
+    project: {
+      enabledRoles: ['sdd-architect'],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'],
+      specSchemaDir: '.sdd/spec-schema',
+      reducedGates: false,
+      stack: (profile as { id?: string } | undefined)?.id,
+      stackProfile: profile,
+    },
+    profile,
+    runner: { name: 'run-feedback.mjs', contents: runnerContents, sourcePath: 'hooks/run-feedback.mjs' },
+  } as any;
 }
 
 describe('codexGenerator.mapModel (guarantee 10) (T6)', () => {
@@ -516,5 +554,222 @@ describe('no TOML syntax literal outside toml.ts (guarantee 5) (Task 2.10)', () 
       code.includes('renderTomlKeyValues'),
       'codex.ts must render key/value lines via the shared renderTomlKeyValues',
     ).toBe(true);
+  });
+});
+
+describe('renderHook — both registrations, hooks.json nested wrapper shape identical to Claude Code (BG-2, V1) (Task 6.1)', () => {
+  it('emits hooks.json with a PostToolUse accumulator and a Stop runner in the nested {"hooks":{"<Event>":[{"hooks":[{"type":"command","command":…}]}]}} shape', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = codexGenerator.renderHook(fakeHookPayload(profile, runnerContents));
+
+    expect(generated).toBeDefined();
+    expect(generated!.path).toBe('hooks.json');
+    expect(generated!.contents.endsWith('\n')).toBe(true);
+    expect(generated!.contents.endsWith('\n\n')).toBe(false);
+
+    const parsed = JSON.parse(generated!.contents);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+
+    const postToolUseEntry = parsed.hooks.PostToolUse[0];
+    expect(Array.isArray(postToolUseEntry.hooks)).toBe(true);
+    expect(postToolUseEntry.hooks[0].type).toBe('command');
+    expect(typeof postToolUseEntry.hooks[0].command).toBe('string');
+
+    const stopEntry = parsed.hooks.Stop[0];
+    expect(Array.isArray(stopEntry.hooks)).toBe(true);
+    expect(stopEntry.hooks[0].type).toBe('command');
+    expect(typeof stopEntry.hooks[0].command).toBe('string');
+  });
+
+  it('still registers both PostToolUse and Stop, same nested shape, in the escape-hatch (no resolved profile) case (BG-8)', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const runnerContents = await loadRunnerContents();
+
+    const generated = codexGenerator.renderHook(fakeHookPayload(undefined, runnerContents));
+
+    expect(generated).toBeDefined();
+    const parsed = JSON.parse(generated!.contents);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+  });
+});
+
+describe('renderHook — no mapped command is bound to the per-edit event (BG-3) (Task 6.1)', () => {
+  it('the PostToolUse (accumulator) command invokes the runner\'s accumulate mode only — never the "run" mode that executes mapped commands', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = codexGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const postToolUseCommand: string = parsed.hooks.PostToolUse[0].hooks[0].command;
+    const stopCommand: string = parsed.hooks.Stop[0].hooks[0].command;
+
+    expect(postToolUseCommand).toContain('accumulate');
+    expect(postToolUseCommand).not.toContain('--commands');
+
+    expect(stopCommand).toContain('run-feedback.mjs');
+    expect(stopCommand).toContain('--commands');
+  });
+
+  it('never binds a literal STACK_PROFILES command inside the PostToolUse registration, for either resolved stack profile', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+
+    for (const profile of STACK_PROFILES) {
+      const generated = codexGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+      const parsed = JSON.parse(generated.contents);
+      const postToolUseCommand: string = parsed.hooks.PostToolUse[0].hooks[0].command;
+
+      for (const command of profile.commands) {
+        for (const token of command.argv) {
+          if (token === 'npx') continue; // shared launcher, not distinctive on its own
+          expect(
+            postToolUseCommand,
+            `PostToolUse must not bind mapped-command token "${token}" from profile "${profile.id}"`,
+          ).not.toContain(token);
+        }
+      }
+    }
+  });
+});
+
+describe('renderHook — Stop findings arrive via {"systemMessage":…}, never a forced continuation (BG-6, V4) (Task 6.1)', () => {
+  const FAKE_RUNNER_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'fake-runner.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeFakeProjectDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-codex-stop-hook-'));
+    tempDirs.push(dir);
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.copyFile(FAKE_RUNNER_PATH, path.join(runnerDir, 'run-feedback.mjs'));
+    return dir;
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  interface WrapperResult {
+    readonly code: number | null;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  function runStopCommand(command: string, projectDir: string, stdinPayload: Record<string, unknown>): Promise<WrapperResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', command], { cwd: projectDir, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify(stdinPayload));
+      child.stdin.end();
+    });
+  }
+
+  async function getStopCommand(): Promise<string> {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const generated = codexGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    return parsed.hooks.Stop[0].hooks[0].command;
+  }
+
+  it('wraps a runner exit-2 finding into {"systemMessage": "…"} on its own stdout and exits 0 (never forcing a continuation)', async () => {
+    const command = await getStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '2';
+      process.env.FAKE_STDOUT = 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n';
+      const result = await runStopCommand(command, projectDir, { turn_id: 'codex-turn-1' });
+
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim().length).toBeGreaterThan(0);
+      const parsed = JSON.parse(result.stdout.trim());
+      expect(typeof parsed.systemMessage).toBe('string');
+      expect(parsed.systemMessage).toContain('TS1234');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      delete process.env.FAKE_STDOUT;
+      await cleanupTempDirs();
+    }
+  });
+
+  it('produces no output and exits 0 on a clean runner pass (exit 0)', async () => {
+    const command = await getStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '0';
+      const result = await runStopCommand(command, projectDir, { turn_id: 'codex-turn-2' });
+
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      await cleanupTempDirs();
+    }
+  });
+
+  // Drives the REAL shared runner (not the fake-runner fixture): Codex's own `Stop`
+  // payload carries `stop_hook_active` (V2), the same field
+  // `templates/hooks/run-feedback.mjs` already reads and suppresses on (BG-5, Task
+  // 1.7). This protects the wrapper's stdin-forwarding, not a second, wrapper-owned
+  // re-entry check duplicating the runner's already-tested logic.
+  it('emits no systemMessage when stop_hook_active is true on re-entry, even though a mapped command genuinely fails (loop safety, via the real shared runner)', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const runnerContents = await loadRunnerContents();
+    const alwaysFailingProfile = {
+      id: 'typescript',
+      commands: [
+        {
+          id: 'always-fails',
+          kind: 'lint',
+          argv: ['node', '-e', 'process.exit(1)'],
+          pathMode: 'whole-project',
+          requires: {},
+        },
+      ],
+    };
+    const generated = codexGenerator.renderHook(fakeHookPayload(alwaysFailingProfile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const stopCommand: string = parsed.hooks.Stop[0].hooks[0].command;
+
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-codex-real-reentry-'));
+    try {
+      const runnerDir = path.join(dir, '.sdd', 'feedback');
+      await fs.mkdir(runnerDir, { recursive: true });
+      await fs.writeFile(path.join(runnerDir, 'run-feedback.mjs'), runnerContents, { mode: 0o755 });
+
+      const turnKey = 'codex-real-reentry-turn';
+      const turnsDir = path.join(dir, '.sdd', 'feedback', '.turns');
+      await fs.mkdir(turnsDir, { recursive: true });
+      await fs.writeFile(path.join(turnsDir, turnKey), `${path.join(dir, 'touched.ts')}\n`);
+
+      const result = await new Promise<{ code: number | null; stdout: string }>((resolve, reject) => {
+        const child = spawn('sh', ['-c', stopCommand], { cwd: dir, env: process.env });
+        let stdout = '';
+        child.stdout.on('data', (chunk) => (stdout += chunk));
+        child.on('error', reject);
+        child.on('close', (code) => resolve({ code, stdout }));
+        child.stdin.write(JSON.stringify({ turn_id: turnKey, stop_hook_active: true }));
+        child.stdin.end();
+      });
+
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

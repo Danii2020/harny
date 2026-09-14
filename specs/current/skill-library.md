@@ -14,19 +14,19 @@ and `specs/archived/` accurate.
 
 ## Requirements
 
-### Requirement: SL-1 — Eight harny-* skills satisfying the shape contract
+### Requirement: SL-1 — Nine harny-* skills satisfying the shape contract
 
-The system SHALL provide eight `harny-*` skills: `harny-propose`,
+The system SHALL provide nine `harny-*` skills: `harny-propose`,
 `harny-test`, `harny-implement`, `harny-audit`, `harny-document`,
-`harny-sync`, `harny-adr`, `harny-standards`, each satisfying a shape
+`harny-sync`, `harny-adr`, `harny-standards`, and `harny-feedback`, each satisfying a shape
 contract of six portable Agent Skills frontmatter keys and five required
 body sections.
 
-**Source:** sdd-skill-library · contract.md § Interfaces "Public API — the file manifest"; § "The harny-* skill shape contract"
+**Source:** sdd-skill-library · contract.md § Interfaces "Public API — the file manifest"; § "The harny-* skill shape contract"; agent-feedback-controls · intent.md § G4, contract.md § SC9
 
 #### Scenario: A `harny-*` skill is authored
 - **WHEN** any `harny-*` skill is authored
-- **THEN** it is one of the eight named skills and its `SKILL.md` declares
+- **THEN** it is one of the nine named skills and its `SKILL.md` declares
   exactly the six portable frontmatter keys and the five required body
   sections
 
@@ -157,24 +157,25 @@ both `sdd-executor` and `sdd-auditor`.
 - **THEN** `harny-standards` points it at `AGENTS.md` § "Coding standards"
   rather than restating the rules itself
 
-### Requirement: SL-10 — .gitignore tracks all of specs/ and the harny-* bridge
+### Requirement: SL-10 — .gitignore tracks all of specs/, the harny-* bridge, and shared feedback settings
 
 The system SHALL track all of `specs/` (including in-flight feature work
 under `specs/<feature-name>/`) in `.gitignore`, and SHALL track
 `.claude/skills/harny-*` (via `.claude/*` + `!.claude/skills/` +
 `.claude/skills/*` + `!.claude/skills/harny-*`, in that order — ordering is
-load-bearing). `.claude/agents/` and `.claude/settings.local.json` stay
-ignored. Tracking in-flight specs ensures that feature work is versioned
+load-bearing). Additionally, `.claude/settings.json` (the shared feedback hook
+settings) SHALL be tracked. `.claude/agents/` and `.claude/settings.local.json`
+stay ignored. Tracking in-flight specs ensures that feature work is versioned
 alongside code and that the working tree's state matches what `harny-sync`
 can see.
 
-**Source:** sdd-skill-library · contract.md § "Verified facts" V10–V13; § "State Changes"; § Amendment A2
+**Source:** sdd-skill-library · contract.md § "Verified facts" V10–V13; § "State Changes"; § Amendment A2; agent-feedback-controls · contract.md § Amendment SL-10
 
 #### Scenario: A fresh clone of the repo is checked out
 - **WHEN** a fresh clone of the repo is checked out
 - **THEN** `git ls-files` includes all of `specs/**` (current, archived, and
-  any in-flight feature directories) and the eight `.claude/skills/harny-*`
-  symlinks, and excludes `.claude/agents/**` and
+  any in-flight feature directories), the nine `.claude/skills/harny-*`
+  symlinks, and `.claude/settings.json`, and excludes `.claude/agents/**` and
   `.claude/settings.local.json`
 
 ## Invariants

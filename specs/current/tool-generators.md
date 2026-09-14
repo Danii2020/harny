@@ -19,17 +19,21 @@ vendor's first-party documentation.
 The system SHALL have every generator implement one `Generator` interface
 (`id`, `displayName`, `agentsDir`, `wrapperFormat`, `conductorPath`,
 `roleFileName`, `mapModel`, `mapCapabilities`, `renderRole`,
-`renderConductor`), deliberately sufficient for all five targets without
-amendment: `.claude/agents/<role>.md`, `.cursor/agents/<role>.md`,
+`renderConductor`, `hooksPath`, `renderHook`), sufficient for all five targets
+with two narrowing amendments (ADR 0011, agent-feedback-controls): the core
+interface handles role and conductor artifacts; `hooksPath` (declarative) and
+`renderHook` (method) extend it for turn-boundary feedback mechanism, covering
+`.claude/agents/<role>.md`, `.cursor/agents/<role>.md`,
 `.kiro/agents/<role>.md`, `.github/agents/<role>.agent.md` (all
-`markdown-yaml`), and `.codex/agents/<role>.toml` (`toml`).
+`markdown-yaml`), and `.codex/agents/<role>.toml` (`toml`), plus hook configs
+at each tool's native path.
 
-**Source:** cli-skeleton · contract.md § "Public API — src/generators/types.ts"; cursor-kiro-copilot-generators · contract.md § "Interface sufficiency finding"
+**Source:** cli-skeleton · contract.md § "Public API — src/generators/types.ts"; cursor-kiro-copilot-generators · contract.md § "Interface sufficiency finding"; agent-feedback-controls · contract.md § IF-1, Amendment TG-1
 
 #### Scenario: A new per-tool generator is implemented
 - **WHEN** a per-tool generator is implemented
-- **THEN** it implements the single `Generator` interface without requiring
-  the interface itself to be amended
+- **THEN** it implements the single `Generator` interface including `hooksPath`
+  and `renderHook` without requiring the interface itself to be further amended
 
 ### Requirement: TG-2 — All five tool ids resolve to real generators
 
@@ -45,20 +49,21 @@ the five resolves to a real `Generator`, none to `undefined`.
 - **THEN** all five resolve to a real `Generator` instance, none to
   `undefined`
 
-### Requirement: TG-3 — Byte-for-byte canonical body preservation
+### Requirement: TG-3 — Byte-for-byte canonical body preservation for body-carrying artifacts
 
-The system SHALL ensure that, for every role and the conductor, the
-canonical body sliced from the raw template file (read directly with
+The system SHALL ensure that, for every role and the conductor (the body-carrying
+artifacts), the canonical body sliced from the raw template file (read directly with
 `fs.readFile`, never through the parser) appears byte-for-byte as a
 contiguous substring of every generator's output — verified
 non-self-referentially so a parser bug that silently drops content cannot
-pass by comparing against its own extraction.
+pass by comparing against its own extraction. Hook and CI artifacts are generated,
+not sliced; this requirement governs only artifacts that carry template body prose.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantee 23; cursor-kiro-copilot-generators · contract.md Behavior Guarantee 12; codex-generator · contract.md Behavior Guarantee 4
+**Source:** cli-skeleton · contract.md Behavior Guarantee 23; cursor-kiro-copilot-generators · contract.md Behavior Guarantee 12; codex-generator · contract.md Behavior Guarantee 4; agent-feedback-controls · contract.md Amendment TG-3, § TG-3 resolution
 
 #### Scenario: A generator's output is checked against the raw template
 - **WHEN** a generator's rendered output is checked against the raw
-  template file read independently of the parser
+  template file read independently of the parser, for role or conductor artifacts
 - **THEN** the canonical body appears byte-for-byte as a contiguous
   substring of the generator's output
 
@@ -164,15 +169,20 @@ uses as its canonical, tool-neutral home.
 ### Requirement: TG-10 — Full artifact count with all five tools
 
 The system SHALL, with all five tools selected, emit one `init` run of
-5 × (5 role artifacts + 1 conductor artifact) = 30 tool artifacts, plus
-exactly one copy each of the five spec-schema files and `.sdd/harness.json`.
+5 × (5 role artifacts + 1 conductor artifact) = 30 tool artifacts, plus one
+hook artifact per resolved generator (5 additional files at each tool's native
+hook path), plus one shared `.sdd/feedback/run-feedback.mjs` runner and one
+shared `.github/workflows/harny-feedback.yml` CI workflow, plus exactly one
+copy each of the five spec-schema files and `.sdd/harness.json`.
 
-**Source:** codex-generator · contract.md Behavior Guarantee 14
+**Source:** codex-generator · contract.md Behavior Guarantee 14; agent-feedback-controls · contract.md Amendment TG-10
 
 #### Scenario: `runInit` selects all five tools
 - **WHEN** `runInit` selects all five tools
-- **THEN** it emits exactly 30 tool artifacts (5 tools × 6 each) plus one
-  copy each of the five spec-schema files and `.sdd/harness.json`
+- **THEN** it emits exactly 30 tool artifacts (5 tools × 6 each), 5 hook
+  artifacts (one per tool at its native path), one shared runner, one shared
+  CI workflow, plus one copy each of the five spec-schema files and
+  `.sdd/harness.json`
 
 ### Requirement: TG-11 — Cursor cheapest-tier model id forward-looking note
 

@@ -161,13 +161,15 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     gates = unwrapOrCancel(answer);
   }
 
-  // Q6 (was Q5): project stack (captured only).
+  // Q6 (was Q5): project stack — resolves the computational-feedback hook/CI
+  // profile (agent-feedback-controls); an unrecognized value is inert, never an
+  // error (SC2).
   let stack: string | undefined;
   if (preset.stack !== undefined) {
     stack = preset.stack;
   } else {
     const answer = await text({
-      message: 'Project stack? (captured only — nothing in this feature reads it)',
+      message: 'Project stack? (typescript/python built-in feedback profiles; anything else is inert)',
       placeholder: '(none)',
       initialValue: '',
     });

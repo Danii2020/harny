@@ -15,9 +15,10 @@
  * finding").
  */
 import type { Capability } from '../templates.js';
-import type { ConductorPayload, RolePayload } from '../engine.js';
+import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
+import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -26,6 +27,7 @@ import {
 } from './markdown-yaml.js';
 import type { TomlKeyValue } from './toml.js';
 import { renderTomlComments, renderTomlKeyValues, tomlBasicString, tomlMultilineLiteral } from './toml.js';
+import { renderJson, wrapPosixShellArg } from './json.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
@@ -157,6 +159,102 @@ function renderConductor(payload: ConductorPayload): GeneratedFile {
   return { path: codexGenerator.conductorPath, contents };
 }
 
+/** Codex hooks run with `cwd` already at the project root; no project-dir
+ *  macro is documented (V1) the way Claude Code's `${CLAUDE_PROJECT_DIR}` is
+ *  (V5), so the runner is addressed by its plain repo-relative path. */
+function runnerInvocation(): string {
+  return FEEDBACK_RUNNER_PATH;
+}
+
+/** Codex's own hook-registration `timeout` (seconds), matching the field V1
+ *  documents on its `Stop` example; applied uniformly to both registrations. */
+const CODEX_HOOK_TIMEOUT_SECONDS = 60;
+
+/** `PostToolUse`'s command (V3): Codex's `tool_input`/`tool_name` payload
+ *  already matches the shape the shared, byte-frozen runner reads, so no
+ *  reshaping wrapper is needed — unlike Cursor's flat `afterFileEdit`
+ *  payload. Scoped to Codex's edit tool (`apply_patch`, V3) via `matcher`,
+ *  mirroring Claude Code's `Edit|Write` matcher on the same event. */
+function accumulateCommand(runner: string): string {
+  return `node "${runner}" accumulate`;
+}
+
+/**
+ * The `Stop` hook's inline wrapper (V4/BG-6): spawns the shared runner in
+ * `run` mode, forwarding this process's own stdin unmodified. Codex's own
+ * `Stop` payload carries `stop_hook_active` (V2) — the same field the shared
+ * runner already reads and suppresses on — so this wrapper relies on the
+ * runner's already-tested suppression rather than a second, wrapper-owned
+ * re-entry check (BG-5). Findings return via `{"systemMessage": …}`, Codex's
+ * documented non-blocking channel on `Stop` (V4), so a clean run costs no
+ * extra turn — mirroring Claude Code's `additionalContext` wrapper closely,
+ * per contract.md's own note that the two are structurally alike.
+ */
+const CODEX_STOP_WRAPPER_SCRIPT = [
+  'const cp=require("child_process");',
+  'const fs=require("fs");',
+  'const runner=process.argv[1];',
+  'const commands=process.argv[2];',
+  'let input;',
+  'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
+  'const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});',
+  'if(r.status===2){',
+  'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
+  'const message=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
+  'process.stdout.write(JSON.stringify({systemMessage:message})+String.fromCharCode(10));',
+  '}',
+  'process.exit(0);',
+].join('');
+
+function stopCommand(runner: string, commands: unknown): string {
+  const commandsJson = JSON.stringify(commands);
+  return (
+    `node --input-type=commonjs -e ${wrapPosixShellArg(CODEX_STOP_WRAPPER_SCRIPT)} ` +
+    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
+  );
+}
+
+/**
+ * `hooks.json`, carrying both registrations BG-2 requires: a `PostToolUse`
+ * accumulator and a `Stop` runner, in the nested
+ * `{"hooks":{"<Event>":[{"hooks":[{"type":"command","command":…}]}]}}` shape
+ * (V1) — identical in structure to Claude Code's, per the first-party doc
+ * cited there (secondary sources claiming root-level event names are wrong).
+ * The escape hatch (BG-8) registers the identical shape with a zero-command
+ * `run` invocation — inert, never absent.
+ */
+function renderHook(payload: HookPayload): GeneratedFile {
+  const { profile } = payload;
+  const runner = runnerInvocation();
+  const commands = profile ? profile.commands : [];
+
+  const settings = {
+    hooks: {
+      PostToolUse: [
+        {
+          matcher: 'apply_patch',
+          hooks: [
+            { type: 'command', command: accumulateCommand(runner), timeout: CODEX_HOOK_TIMEOUT_SECONDS },
+          ],
+        },
+      ],
+      Stop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: stopCommand(runner, commands),
+              timeout: CODEX_HOOK_TIMEOUT_SECONDS,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  return { path: codexGenerator.hooksPath, contents: renderJson(settings) };
+}
+
 export const codexGenerator: Generator = {
   id: 'codex',
   displayName: 'Codex CLI',
@@ -164,9 +262,11 @@ export const codexGenerator: Generator = {
   wrapperFormat: 'toml',
   conductorPath: '.agents/skills/sdd-conductor/SKILL.md',
   skillsDir: '.agents/skills',
+  hooksPath: 'hooks.json',
   roleFileName,
   mapModel,
   mapCapabilities,
   renderRole,
   renderConductor,
+  renderHook,
 };

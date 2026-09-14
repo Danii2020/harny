@@ -52,7 +52,11 @@ export function renderProjectConfigBlock(project: ProjectConfigSummary): string 
     `- Active human gates: ${gatesText}`,
   ];
   if (project.stack) {
-    lines.push(`- Project stack: ${project.stack}`);
+    // (agent-feedback-controls, BG-8.) The escape hatch is legible here too: an
+    // explicitly configured stack that resolved to no built-in feedback profile
+    // says so, rather than looking identical to a resolved one.
+    const suffix = project.stackProfile ? '' : ' (no built-in profile)';
+    lines.push(`- Project stack: ${project.stack}${suffix}`);
   }
   lines.push(`- Spec schema directory: ${project.specSchemaDir}`);
   if (project.reducedGates) {

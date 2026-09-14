@@ -9,14 +9,56 @@
  * `src/generators/cursor.ts` does not exist yet at red time — every test here
  * is expected to fail on module resolution or on a missing export, not on a
  * typo in this file.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Public API — src/generators/types.ts (MODIFIED)" (the new
+ * `renderHook` method) and § Verified per-tool facts V1 (Cursor's
+ * `.cursor/hooks.json`, top-level `{"version":1,"hooks":{...}}` wrapper, each entry
+ * shaped `{"command":…,"type":"command","timeout":…}`), V3 (`afterFileEdit` is the
+ * accumulation surface — preferred over `postToolUse` because it yields `file_path`
+ * directly, not nested under `tool_input`), V4 (Cursor's only `stop` channel is
+ * `{"followup_message":…}`, a forced continuation with no non-blocking option, and
+ * its documented `loop_limit` default of 5); Behavior Guarantees 2, 3, 5, 6, 8;
+ * tasks.md Tasks 6.1, 6.3; roadmap.md Phase 6.
+ * `cursorGenerator.renderHook` is a documented Phase 2 stub returning `undefined`
+ * at red time (Task 2.11) — every test in the new blocks below is expected to fail
+ * because the returned value has no `.path`/`.contents` to read, not because of a
+ * wrong assumption about the wrapper shape.
  */
 import { describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { ROLE_IDS } from '../../src/vocabulary.js';
-import { REAL_TEMPLATES_ROOT } from '../helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, TESTS_DIR } from '../helpers/paths.js';
 
 async function loadRealTemplates() {
   const { loadCanonicalTemplates } = await import('../../src/templates.js');
   return loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+}
+
+/** Loads the real, canonical runner script verbatim (contract.md § Interfaces
+ *  `HookPayload.runner`). */
+async function loadRunnerContents(): Promise<string> {
+  return fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), 'utf8');
+}
+
+/** A minimal `HookPayload` fixture, mirroring `tests/generators/claude-code.test.ts`'s
+ *  own fixture exactly (contract.md § Interfaces "src/engine.ts (MODIFIED)"). */
+function fakeHookPayload(profile: unknown, runnerContents: string) {
+  return {
+    project: {
+      enabledRoles: ['sdd-architect'],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'],
+      specSchemaDir: '.sdd/spec-schema',
+      reducedGates: false,
+      stack: (profile as { id?: string } | undefined)?.id,
+      stackProfile: profile,
+    },
+    profile,
+    runner: { name: 'run-feedback.mjs', contents: runnerContents, sourcePath: 'hooks/run-feedback.mjs' },
+  } as any;
 }
 
 describe('cursorGenerator.mapModel (guarantee 9) (T4)', () => {
@@ -284,5 +326,221 @@ describe("the auditor's audit.md-only scope reaches the generated Cursor artifac
     const generated = cursorGenerator.renderRole({ template: auditorTemplate, tier: 'most-capable' });
 
     expect(generated.contents).toContain('audit.md only');
+  });
+});
+
+describe('renderHook — both registrations, .cursor/hooks.json wrapper shape (BG-2, V1) (Task 6.1)', () => {
+  it('emits .cursor/hooks.json with a top-level version:1 and afterFileEdit (accumulator) plus stop (runner) registrations, each entry shaped {"command":…,"type":"command","timeout":…}', async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = cursorGenerator.renderHook(fakeHookPayload(profile, runnerContents));
+
+    expect(generated).toBeDefined();
+    expect(generated!.path).toBe('.cursor/hooks.json');
+    expect(generated!.contents.endsWith('\n')).toBe(true);
+    expect(generated!.contents.endsWith('\n\n')).toBe(false);
+
+    const parsed = JSON.parse(generated!.contents);
+    expect(parsed.version).toBe(1);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop']);
+
+    for (const key of ['afterFileEdit', 'stop']) {
+      const entry = parsed.hooks[key][0];
+      expect(entry.type).toBe('command');
+      expect(typeof entry.command).toBe('string');
+      expect(typeof entry.timeout).toBe('number');
+      expect(entry.timeout).toBeGreaterThan(0);
+    }
+  });
+
+  it('still registers both afterFileEdit and stop, in the same wrapper shape, in the escape-hatch (no resolved profile) case (BG-8)', async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const runnerContents = await loadRunnerContents();
+
+    const generated = cursorGenerator.renderHook(fakeHookPayload(undefined, runnerContents));
+
+    expect(generated).toBeDefined();
+    const parsed = JSON.parse(generated!.contents);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop']);
+  });
+});
+
+describe('renderHook — no mapped command is bound to the per-edit event (BG-3) (Task 6.1)', () => {
+  it('the afterFileEdit (accumulator) command invokes the runner\'s accumulate mode only — never the "run" mode that executes mapped commands', async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = cursorGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const afterFileEditCommand: string = parsed.hooks.afterFileEdit[0].command;
+    const stopCommand: string = parsed.hooks.stop[0].command;
+
+    expect(afterFileEditCommand).toContain('accumulate');
+    expect(afterFileEditCommand).not.toContain('--commands');
+
+    expect(stopCommand).toContain('run-feedback.mjs');
+    expect(stopCommand).toContain('--commands');
+  });
+
+  it('never binds a literal STACK_PROFILES command inside the afterFileEdit registration, for either resolved stack profile', async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+
+    for (const profile of STACK_PROFILES) {
+      const generated = cursorGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+      const parsed = JSON.parse(generated.contents);
+      const afterFileEditCommand: string = parsed.hooks.afterFileEdit[0].command;
+
+      for (const command of profile.commands) {
+        for (const token of command.argv) {
+          if (token === 'npx') continue; // shared launcher, not distinctive on its own
+          expect(
+            afterFileEditCommand,
+            `afterFileEdit must not bind mapped-command token "${token}" from profile "${profile.id}"`,
+          ).not.toContain(token);
+        }
+      }
+    }
+  });
+});
+
+describe("renderHook — afterFileEdit accumulates Cursor's flat file_path payload into the shared runner's turn file (V3)", () => {
+  async function makeProjectDir(runnerContents: string): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-cursor-accumulate-'));
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.writeFile(path.join(runnerDir, 'run-feedback.mjs'), runnerContents, { mode: 0o755 });
+    return dir;
+  }
+
+  it("appends the resolved path to .sdd/feedback/.turns/<session_id> even though Cursor's afterFileEdit payload has no tool_input wrapper (unlike Claude Code's PostToolUse)", async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = cursorGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    const afterFileEditCommand: string = parsed.hooks.afterFileEdit[0].command;
+
+    const projectDir = await makeProjectDir(runnerContents);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn('sh', ['-c', afterFileEditCommand], { cwd: projectDir });
+        child.on('error', reject);
+        child.on('close', () => resolve());
+        child.stdin.write(JSON.stringify({ file_path: 'src/touched.ts', session_id: 'cursor-turn-1' }));
+        child.stdin.end();
+      });
+
+      const turnFile = path.join(projectDir, '.sdd', 'feedback', '.turns', 'cursor-turn-1');
+      const contents = await fs.readFile(turnFile, 'utf8');
+      expect(contents).toContain('touched.ts');
+    } finally {
+      await fs.rm(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('renderHook — stop hook findings arrive via {"followup_message":…}, respecting the loop guard on re-entry (BG-5, BG-6, V4, R3) (Task 6.1)', () => {
+  const FAKE_RUNNER_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'fake-runner.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeFakeProjectDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-cursor-stop-hook-'));
+    tempDirs.push(dir);
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.copyFile(FAKE_RUNNER_PATH, path.join(runnerDir, 'run-feedback.mjs'));
+    return dir;
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  interface WrapperResult {
+    readonly code: number | null;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  function runStopCommand(command: string, projectDir: string, stdinPayload: Record<string, unknown>): Promise<WrapperResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', command], { cwd: projectDir, env: process.env });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify(stdinPayload));
+      child.stdin.end();
+    });
+  }
+
+  async function getStopCommand(): Promise<string> {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const generated = cursorGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const parsed = JSON.parse(generated.contents);
+    return parsed.hooks.stop[0].command;
+  }
+
+  it('wraps a runner exit-2 finding into {"followup_message": "…"} on its own stdout — Cursor\'s only stop channel, a forced continuation', async () => {
+    const command = await getStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '2';
+      process.env.FAKE_STDOUT = 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n';
+      const result = await runStopCommand(command, projectDir, { session_id: 'cursor-session-1' });
+
+      expect(result.stdout.trim().length).toBeGreaterThan(0);
+      const parsed = JSON.parse(result.stdout.trim());
+      expect(typeof parsed.followup_message).toBe('string');
+      expect(parsed.followup_message).toContain('TS1234');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      delete process.env.FAKE_STDOUT;
+      await cleanupTempDirs();
+    }
+  });
+
+  it('produces no output on a clean runner pass (exit 0)', async () => {
+    const command = await getStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '0';
+      const result = await runStopCommand(command, projectDir, { session_id: 'cursor-session-2' });
+
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      await cleanupTempDirs();
+    }
+  });
+
+  it("emits no followup_message once the incoming loop_count has already reached Cursor's documented loop_limit of 5, even though the runner reports a finding", async () => {
+    const command = await getStopCommand();
+    const projectDir = await makeFakeProjectDir();
+    try {
+      process.env.FAKE_EXIT_CODE = '2';
+      process.env.FAKE_STDOUT = 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n';
+      const result = await runStopCommand(command, projectDir, { session_id: 'cursor-session-3', loop_count: 5 });
+
+      expect(result.stdout.trim()).toBe('');
+    } finally {
+      delete process.env.FAKE_EXIT_CODE;
+      delete process.env.FAKE_STDOUT;
+      await cleanupTempDirs();
+    }
   });
 });

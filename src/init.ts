@@ -9,13 +9,15 @@ import { HarnessError, isHarnessError } from './errors.js';
 import { defaultConfig, loadConfigFile, mergeConfig, validateConfig } from './config.js';
 import type { HarnessConfig, PartialHarnessConfig } from './config.js';
 import { loadCanonicalTemplates } from './templates.js';
-import { buildPayload, buildSharedFiles, buildSkillFiles, skillRootsFor } from './engine.js';
+import { buildFeedbackFiles, buildPayload, buildSharedFiles, buildSkillFiles, skillRootsFor } from './engine.js';
+import type { HookPayload } from './engine.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { applyWrites, planWrites } from './writer.js';
 import { confirmWrite, runInitPrompts } from './prompts.js';
 import { GATE_IDS } from './vocabulary.js';
 import type { ToolId } from './vocabulary.js';
+import { STACK_PROFILE_IDS } from './feedback.js';
 
 export interface InitIO {
   readonly log: (message: string) => void;
@@ -147,6 +149,18 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // 9. Build the payload.
   const payload = buildPayload(config, templates);
 
+  // 9b. (NEW — agent-feedback-controls.) Escape-hatch warning (BG-8): an
+  // explicitly configured stack that matches no built-in feedback profile is
+  // inert, never fatal — but never silent either. A blank/absent stack is not
+  // warned about here; it is the ordinary default, not a misconfiguration.
+  if (config.stack && !payload.conductor.project.stackProfile) {
+    io.warn(
+      `Unrecognized project stack "${config.stack}": no built-in feedback profile matched. ` +
+        `Built-in profiles: ${STACK_PROFILE_IDS.join(', ')}. Lint/typecheck commands are skipped ` +
+        'for this stack; hook and CI artifacts are still written.',
+    );
+  }
+
   // (NEW — audit AL-7, task 4.7a.) Warn once per run for every unknown capability
   // token an enabled role's canonical file carries, naming the token and the file
   // it came from. The token is already preserved (`known: false`) and already
@@ -199,6 +213,29 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
   files.push(...buildSharedFiles(payload));
   files.push(...buildSkillFiles(payload, skillRootsFor(resolvedGenerators)));
+
+  // (NEW — agent-feedback-controls.) Hook artifacts per resolved generator, plus
+  // the tool-neutral runner + CI workflow exactly once per run (BG-10) — joined
+  // into this same render step, never a fourteenth step (CLI-1). Gated on the
+  // loaded templates root actually carrying the feedback subsystem's canonical
+  // resources: a lean templates root that never modeled them (some test
+  // fixtures) contributes neither, rather than raising a packaging error for
+  // content it never claimed to have. The real, packaged templates root always
+  // carries both.
+  if (payload.hookRunner && payload.ciWorkflowTemplate) {
+    const hookPayload: HookPayload = {
+      project: payload.conductor.project,
+      profile: payload.conductor.project.stackProfile,
+      runner: payload.hookRunner,
+    };
+    for (const generator of resolvedGenerators) {
+      const hookFile = generator.renderHook(hookPayload);
+      if (hookFile) {
+        files.push(hookFile);
+      }
+    }
+    files.push(...buildFeedbackFiles(payload));
+  }
 
   // 12. Plan writes.
   const plan = await planWrites(files, targetDir);

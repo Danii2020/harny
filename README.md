@@ -18,7 +18,7 @@ sdd-test-writer   (red phase - tests that must fail for the right reason)
      |
 sdd-executor      (green phase - implements until tests pass)
      |
-sdd-auditor       (verifies the contract + runs the toolchain)
+sdd-auditor       (verifies the contract + confirms the per-turn hook fired and CI is green)
      |
 [HUMAN GATE: review the final verdict]
      |
@@ -66,9 +66,9 @@ per tool's skill-discovery root:
 - `.kiro/skills/harny-*/` for Kiro  
 - `.agents/skills/harny-*/` for Cursor, GitHub Copilot, and Codex (shared root)
 
-Six skills are always scaffolded (`harny-propose`, `harny-test`, `harny-implement`,
-`harny-audit`, `harny-document`, `harny-sync`); two are optional (`harny-adr` and
-`harny-standards`, selectable via the `--skills` flag).
+Seven skills are always scaffolded (`harny-propose`, `harny-test`, `harny-implement`,
+`harny-audit`, `harny-document`, `harny-sync`, `harny-feedback`); two are optional
+(`harny-adr` and `harny-standards`, selectable via the `--skills` flag).
 
 ### Knowledge base and documentation
 
@@ -132,7 +132,7 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 **Key flags:**
 - `--tools <list>` — comma-separated tool ids or `all` (default: `claude-code`)
 - `--roles <list>` — comma-separated role ids or `all` (default: all five; conductor always included)
-- `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the six core skills are always included)
+- `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the seven core skills are always included)
 - `--model <role>=<value>` — repeatable; `<value>` is a cost tier or a literal model id
 - `--gates <list>` — comma-separated gate ids, `all`, or `none` (default: all three)
 - `--stack <name>` — project stack (captured only, for future MCP provisioning)
@@ -149,10 +149,10 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
-- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 8 core skills (one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 20 files total
-- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 8 core skills per unique root (24 total for the three roots), plus 6 shared files = 60 files total
-- With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 10 skills per root instead of 8
-- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 30 skill artifacts (10 per root) + 6 shared = 66 files total
+- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 7 core skills (one per tool's root) + 2 optional skills (1 default-included `harny-standards`) + 6 shared files (5 spec schema templates + configuration) = 22 files total
+- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 9 skills per unique root (7 core + 1 default `harny-standards` + 1 non-default `harny-adr` = 9 for three roots = 27 total), plus 6 shared files = 63 files total
+- With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 9 skills per root instead of 8
+- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 45 skill artifacts (9 per root) + 6 shared = 81 files total
 
 ## Portable templates
 

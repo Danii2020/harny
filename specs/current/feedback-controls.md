@@ -1,0 +1,299 @@
+# Feedback Controls Specification
+
+> Last synced: 2026-09-14. Owned artifacts: per-turn hooks (`templates/hooks/**`), CI workflow (`templates/ci/**`), shared runner (`templates/hooks/run-feedback.mjs`), `harny-feedback` skill.
+
+## Purpose
+
+Agent feedback controls close the gap between feedforward guidance (steering the agent *before* it acts) and computational feedback (sensors that observe *after* it acts and let it self-correct), per Fowler's harness-engineering framing. This capability provides two feedback surfaces: native per-tool hooks firing at turn-boundary (pre-integration) and a GitHub Actions workflow firing per PR (post-integration). Both surfaces invoke the same shared runner over the same command set (`STACK_PROFILES` mapped from `config.stack`), deduping across multiple edits in the same turn and skipping absent tooling (e.g., eslint in a repo without an eslint config).
+
+## Requirements
+
+### Requirement: FC-1 — Single canonical source maps stack to commands
+
+The system SHALL establish exactly one named module/table that maps `config.stack` to a set of lint/type-check commands, and no command string from that table SHALL appear as a literal string in any template, skill body, or generated artifact.
+
+**Source:** agent-feedback-controls · intent.md § G1, contract.md § BG-7
+
+#### Scenario: no command literals in shipped code
+- **WHEN** searching all of `src/`, `templates/`, and `.agents/skills/` for complete command strings (e.g., `npx eslint`, `npx tsc --noEmit`)
+- **THEN** every command string appears only in `src/feedback.ts` and in generated inline-JSON blocks within hook configs and the CI workflow, never as a source-level literal
+
+#### Scenario: installation candidates similarly constrained
+- **WHEN** searching for install-step commands (e.g., `npm ci`, `npm install`)
+- **THEN** they appear only in `src/feedback.ts` entries and in generated blocks, never as literals
+
+### Requirement: FC-2 — Unrecognized or blank stack is non-fatal
+
+The system SHALL handle an unrecognized or blank `config.stack` by writing all hook/workflow artifacts as-is (valid JSON/YAML/TOML, syntactically correct) and marking the commands as an escape hatch that produces only a notice, not a crash or silent failure.
+
+**Source:** agent-feedback-controls · intent.md § G1, contract.md § BG-8
+
+#### Scenario: unrecognized stack scaffolding
+- **WHEN** `npx harny init --stack cobol` (an unrecognized profile)
+- **THEN** all hook configs and workflow are written; they include an inert command `'[]'` or equivalent notice; `io.warn` lists the unrecognized value and all valid profile ids; the conductor's markdown block notes "Project stack: cobol (no built-in profile)"
+
+### Requirement: FC-3 — Stack is consumed beyond capture
+
+The system SHALL read `config.stack` by a code path affecting output beyond the markdown-yaml generator's single capture-only line.
+
+**Source:** agent-feedback-controls · intent.md § G1, contract.md § SC3
+
+#### Scenario: stack affects hook/CI rendering
+- **WHEN** `config.stack` is set to a recognized profile (e.g., `typescript`, `python`)
+- **THEN** `buildPayload` resolves the corresponding profile, `renderCiWorkflow` emits profile-specific install and runner steps, and `renderHook` (all five generators) embed the profile's commands as inline JSON in each hook config
+
+### Requirement: FC-4 — Hook behavior is tool-neutral
+
+The system SHALL specify turn-boundary feedback behavior in tool-neutral language in `templates/hooks/README.md`, stating exactly six properties of the per-turn batching, deduplication, execution, findings delivery, and loop-safety model.
+
+**Source:** agent-feedback-controls · intent.md § G2, contract.md § SC4
+
+#### Scenario: canonical README describes behavior without naming tools
+- **WHEN** reading `templates/hooks/README.md` § "The behavior"
+- **THEN** it states all six properties (turn is the unit, accumulate-dedup-run-once, empty turn silent, probe-false skip, findings before yielding, re-entry guard) with no tool named; each tool appears only under § "Attributed examples" afterwards
+
+### Requirement: FC-5 — Five generators emit hooks at verified native paths
+
+The system SHALL emit per-tool hook configurations at each tool's native discovery path, bound to each tool's verified turn-completion event, with dated first-party citations for every per-tool fact.
+
+**Source:** agent-feedback-controls · intent.md § G2, contract.md § V1
+
+#### Scenario: Claude Code hook path and event
+- **WHEN** generating for Claude Code with `--stack typescript`
+- **THEN** a `Stop` hook is registered in `.claude/settings.json` under nested `hooks.Stop` structure
+
+#### Scenario: Cursor hook path and event
+- **WHEN** generating for Cursor with `--stack typescript`
+- **THEN** a `stop` hook is registered in `.cursor/hooks.json` with `version: 1`
+
+#### Scenario: Kiro hook path and event
+- **WHEN** generating for Kiro with `--stack typescript`
+- **THEN** an `agentStop` hook is registered in `.kiro/hooks/harny-feedback.json` with `version: "v1"`
+
+#### Scenario: GitHub Copilot hook path and event
+- **WHEN** generating for GitHub Copilot with `--stack typescript`
+- **THEN** an `agentStop` hook is registered in `.github/hooks/harny-feedback.json` with `"bash"` key (not `command`)
+
+#### Scenario: Codex CLI hook path and event
+- **WHEN** generating for Codex with `--stack typescript`
+- **THEN** a `Stop` hook is registered in `hooks.json` under nested `hooks.Stop` structure
+
+### Requirement: FC-6 — Canonical behavior survives per-tool adaptation
+
+The system SHALL guarantee that canonical batching and deduplication semantics (one run per turn, covering M deduped paths for N edits) hold on all five tools, and no tool's integration shall silently drop findings or skip them without notice.
+
+**Source:** agent-feedback-controls · intent.md § G2, contract.md § BG-6, SC6, SC6a
+
+#### Scenario: multiple edits across multiple files batch to one run
+- **WHEN** a turn edits 3 files in sequence but only 2 distinct paths
+- **THEN** exactly one invocation of the runner occurs, receiving exactly 2 deduped paths
+
+#### Scenario: findings reach agent via each tool's documented channel
+- **WHEN** the runner produces findings
+- **THEN** each tool delivers them via its own non-blocking or blocking channel (Claude Code `additionalContext`, Kiro STDOUT, Cursor/Copilot forced-continuation, Codex `systemMessage`)
+
+### Requirement: FC-7 — CI gate produces exactly one workflow
+
+The system SHALL generate exactly one `.github/workflows/harny-feedback.yml` regardless of how many tools are selected, triggering on `pull_request` and running the resolved profile's lint/type-check commands via the shared runner.
+
+**Source:** agent-feedback-controls · intent.md § G3, contract.md § SC7, SC8
+
+#### Scenario: one workflow for all tool selections
+- **WHEN** generating for 1, 3, or 5 tools
+- **THEN** exactly one workflow file is written, byte-identical across all selections
+
+#### Scenario: workflow contains only install and runner steps
+- **WHEN** generating with `--stack typescript`
+- **THEN** the workflow declares `on: pull_request` and contains exactly two step kinds: one install step (`npm ci`) and one runner invocation (`node .sdd/feedback/run-feedback.mjs run --whole-project`)
+
+### Requirement: FC-8 — CI gate honors probe requirements
+
+The system SHALL ensure that absent tooling (e.g., eslint in a repo without an eslint config) is skipped with a notice in CI, not failed, matching the skip behavior of the per-turn hook.
+
+**Source:** agent-feedback-controls · intent.md § G3, contract.md § BG-9
+
+#### Scenario: CI skips absent linter with notice
+- **WHEN** running the generated workflow on a repo without eslint installed
+- **THEN** the runner step outputs `skipped \`eslint\`: requirement not met` and exits 0 (green)
+
+### Requirement: FC-9 — Harny-feedback skill is core and always scaffolded
+
+The system SHALL add `harny-feedback` as a core skill (always scaffolded, not optional) to `CORE_SKILL_IDS`, counting 7 core skills total (up from 6), and no CLI flag SHALL permit naming it with `--skills`.
+
+**Source:** agent-feedback-controls · intent.md § G4, contract.md § SC9, SC9a, BG-15
+
+#### Scenario: core skill always present in --skills none
+- **WHEN** invoking `npx harny init --tools claude-code --skills none`
+- **THEN** `harny-feedback` is still scaffolded; `--skills none` suppresses only optional skills
+
+#### Scenario: skill counts are 7 core, 2 optional, 9 total
+- **WHEN** checking `src/vocabulary.ts` `CORE_SKILL_IDS`, `OPTIONAL_SKILL_IDS`, and `SKILL_IDS`
+- **THEN** lengths are 7, 2, and 9 respectively, with `harny-feedback` last in core
+
+### Requirement: FC-10 — Severity definitions not duplicated
+
+The system SHALL map all findings to `harny-audit`'s existing severity buckets (CRITICAL, HIGH, MEDIUM, LOW) by reference, never restating severity definitions in `harny-feedback` itself.
+
+**Source:** agent-feedback-controls · intent.md § G4, contract.md § SC10, BG-10
+
+#### Scenario: harny-feedback maps to harny-audit severities
+- **WHEN** reading `.agents/skills/harny-feedback/SKILL.md` Step 4
+- **THEN** it maps finding kinds onto `harny-audit`'s severity table by reference, not by restating definitions
+
+### Requirement: FC-11 — Skill updates propagate to both roots
+
+The system SHALL update `harny-implement` and `harny-audit` in both `.agents/skills/` and `templates/skills/` in the same feature, maintaining byte-identical parity.
+
+**Source:** agent-feedback-controls · intent.md § G4, contract.md § SC11, BG-16
+
+#### Scenario: both skill roots updated identically
+- **WHEN** comparing `.agents/skills/harny-implement/SKILL.md` and `templates/skills/harny-implement/SKILL.md`
+- **THEN** the new feedback-related guidance (Step 4 / final checklist) is character-for-character identical
+
+### Requirement: FC-12 — Auditor verifies without re-running
+
+The system SHALL specify that `harny-audit` Step 6 verifies the per-turn hook fired and the CI gate is green, **without** re-invoking the mapped lint/type-check commands.
+
+**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC12, BG-17
+
+#### Scenario: auditor confirms CI ran, does not re-run linter/type-checker
+- **WHEN** `harny-audit` Step 6 runs
+- **THEN** it reads the per-turn hook's output and the CI workflow's exit status, and does not execute `eslint` or `tsc --noEmit` itself
+
+### Requirement: FC-13 — Dogfood artifacts derive from canonical templates
+
+The system SHALL ensure this repo's own `.claude/settings.json`, `.github/workflows/harny-feedback.yml`, and `.sdd/feedback/run-feedback.mjs` are byte-identical to what `npx harny init --tools claude-code --stack typescript` produces for a downstream repo.
+
+**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC14
+
+#### Scenario: no dogfood divergence
+- **WHEN** running `npx harny init` against a scratch target with matching configuration
+- **THEN** the three feedback artifacts are byte-identical to this repo's committed versions
+
+### Requirement: FC-14 — Feedback-controls capability created from template
+
+The system SHALL create `specs/current/feedback-controls.md` from `capability-template.md` with all sections filled and stable requirement IDs in a fresh `FC-` namespace.
+
+**Source:** agent-feedback-controls · intent.md § G6, contract.md § SC15
+
+#### Scenario: new capability doc exists post-archive
+- **WHEN** `harny-sync` archive mode completes
+- **THEN** `specs/current/feedback-controls.md` exists with all Requirements, Invariants, Open reservations, Contributing features, and Related ADRs sections filled
+
+### Requirement: FC-15 — Index keywords registered
+
+The system SHALL add keyword rows to `specs/current/_index.md` for `hook`, `lint / type-check`, `CI / GitHub Actions`, `stack`, and `feedback` routing to this capability.
+
+**Source:** agent-feedback-controls · intent.md § G6, contract.md § SC16
+
+#### Scenario: _index.md keywords route to feedback-controls
+- **WHEN** searching `specs/current/_index.md` § Keyword lookup
+- **THEN** rows exist for `hook`, `lint / type-check`, `CI / GitHub Actions`, `stack`, `feedback` with capability `feedback-controls`
+
+### Requirement: FC-16 — AGENTS.md feedforward/feedback vocabulary
+
+The system SHALL add a new section to `AGENTS.md` classifying all controls (role prompts, conventions, gates, hooks, CI) into Fowler's feedforward-computational/feedback-computational/feedforward-inferential/feedback-inferential quadrants, naming inferential feedback as deliberately empty.
+
+**Source:** agent-feedback-controls · intent.md § G7, contract.md § SC17
+
+#### Scenario: feedforward vs. feedback classification table
+- **WHEN** reading `AGENTS.md` § "Feedforward vs. feedback"
+- **THEN** a table classifies role prompts/conventions/gates (feedforward-inferential), native hooks/CI (feedback-computational), and explicitly names inferential feedback as "deliberately empty"
+
+### Requirement: FC-17 — Documentation accuracy corrected
+
+The system SHALL reword README.md:21, `plan.md` lines 27 and 45 from "runs the toolchain" to "confirms the per-turn hook fired and CI is green", and ensure `AGENTS.md` lines 25-26 accurately state the CI deployment status.
+
+**Source:** agent-feedback-controls · intent.md § G7, contract.md § SC18
+
+#### Scenario: README describes audit behavior accurately
+- **WHEN** reading `README.md` line 21 and `plan.md` lines 27, 45
+- **THEN** they state "confirms" behavior (verification) rather than "runs" behavior (re-execution)
+
+### Requirement: FC-18 — Amendments to current-truth statements
+
+The system SHALL apply all seven amendments to `specs/current/*.md` files (SL-1, CLI-10, TG-10, TG-1, TG-3, AGENTS.md:25-26, SL-10) documenting the impact of this feature on existing capability statements.
+
+**Source:** agent-feedback-controls · intent.md § All, contract.md § AM-1–AM-7
+
+#### Scenario: skill-library.md reflects nine total skills
+- **WHEN** reading `specs/current/skill-library.md` SL-1
+- **THEN** it states nine total skills (up from eight), listing `harny-feedback` as core
+
+#### Scenario: cli-init.md reflects correct template count
+- **WHEN** reading `specs/current/cli-init.md` CLI-10
+- **THEN** it states 26 `templates/**` files (corrected from 22/25)
+
+#### Scenario: tool-generators.md reflects hook artifacts
+- **WHEN** reading `specs/current/tool-generators.md` TG-10
+- **THEN** it counts 30 tool artifacts plus one hook artifact per resolved generator plus shared runner/workflow
+
+### Requirement: FC-19 — CI gate findings cause PR to fail
+
+The system SHALL ensure that findings reported by the CI workflow's lint/type-check step cause the workflow to exit with status 2, failing the PR gate until findings are addressed.
+
+**Source:** agent-feedback-controls · post-audit amendment A1, contract.md § BG-19
+
+#### Scenario: CI exits 2 on findings
+- **WHEN** the shared runner detects findings (exit 1 from a command)
+- **THEN** the workflow step exits 2, failing the CI check
+
+### Requirement: FC-20 — CI whole-project mode
+
+The system SHALL implement a `--whole-project` mode in the shared runner that checks the entire project (not a per-turn file set), never reads or writes turn state, and never honors the re-entry guard.
+
+**Source:** agent-feedback-controls · post-audit amendment A1, contract.md § BG-20
+
+#### Scenario: CI runner ignores turn state
+- **WHEN** invoking the runner with `--whole-project`
+- **THEN** `.sdd/feedback/.turns/` is not consulted or modified, and `--whole-project` does not appear in any generated hook config (CI-only flag)
+
+### Requirement: FC-21 — Python profile CI is probe-skip-only
+
+The system SHALL define the `python` profile's CI gate with no install step, so both `ruff` and `mypy` skip with notices on a stock runner, by deliberate scope decision. Installable Python linters are not assumed.
+
+**Source:** agent-feedback-controls · post-audit amendment A1, contract.md § BG-21, R6
+
+#### Scenario: python profile has no ciInstall
+- **WHEN** generating with `--stack python`
+- **THEN** the CI workflow contains no install step, only a runner invocation, and both commands skip with legible notices
+
+## Invariants
+
+**I1 — Turn as the batch unit.** All five tools' hooks fire at turn-boundary, never per-edit, so the agent sees findings from its complete set of edits in one batch before it yields control.
+
+**I2 — Deduplication across the turn.** If a turn edits the same file twice, the runner receives that path exactly once, not twice.
+
+**I3 — Probe-skip is deterministic.** A command is skipped if and only if its `requires` check fails (e.g., no eslint config, tool not in PATH); the result is the same whether reached via per-turn hook or CI gate.
+
+**I4 — Findings never fail the agent's own process.** All five hook wrappers exit 0 even when findings are reported, so a linter failure cannot crash the agent; CI's exit-2 signal is reserved for the PR gate, not the agent's turn.
+
+**I5 — Runner byte-for-byte fidelity.** `templates/hooks/run-feedback.mjs` is copied verbatim into `.sdd/feedback/run-feedback.mjs` during generation; no per-tool variant exists.
+
+**I6 — Loop safety via re-entry guard.** The runner checks `stop_hook_active` (where present) and suppresses blocking responses on re-entry, so it cannot drive runaway agent loops.
+
+## Open reservations
+
+| ID | Reservation | Severity | Source |
+|---|---|---|---|
+| R1 | Kiro docs disagree on post-file-save event casing (`agentStop` vs. Kiro's older `PostFileSave` example). Shipped with camelCase `agentStop` per V6 types page; unverifiable without live Kiro run. | MEDIUM (human-gated) | agent-feedback-controls · audit.md MA-5/R1 |
+| R2 | SC13 (live-session hook firing) unverifiable in audit session; requires human restart and re-entry. Accumulator half was observed firing live; Stop delivery was executed verbatim; only in-context delivery to live agent remains. | MEDIUM (human-gated) | agent-feedback-controls · audit.md MA-2/R2 |
+| R5 | Kiro's and GitHub Copilot's post-edit payload field shape (carrying `tool_input.file_path` and turn key) is assumed but not cited in a first-party source. AL-30 class: wrong field name exits 0 recording nothing, turn looks empty. | MEDIUM (human-gated) | agent-feedback-controls · audit.md F3/R5 |
+| R6 | Python profile CI gate is deliberately probe-skip-only (no install step, no assumed Python convention); both ruff/mypy skip on stock runner. Closeable only by a future feature adding `ciInstall` to python profile. | MEDIUM (scope, deliberate) | agent-feedback-controls · audit.md R6 |
+| R7 | TypeScript profile install candidates cover npm only; pnpm/Yarn-Berry repo can fall through to `npm install` not actually populating node_modules, re-entering F1's exact failure. Needs a `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | agent-feedback-controls · audit.md R7 |
+
+## Contributing features
+
+| Feature | Shipped | What it established |
+|---|---|---|
+| agent-feedback-controls | 2026-09-14 | FC-1–FC-21: per-turn hooks (all five tools), CI workflow, harny-feedback core skill, stack→commands mapping, probe-skip behavior, turn-boundary batching, findings delivery channels, CI gate feedback, dogfood fidelity. Post-A1: `ciInstall`, `--whole-project` flag, CI whole-project step, Python probe-skip-only profile. |
+
+## Related ADRs
+
+| ADR | Title | Status |
+|---|---|---|
+| (TBD) | `renderHook` as method on `Generator` interface vs. ADR 0011 pattern | Approved |
+| (TBD) | No YAML dependency in canonical CI workflow | Approved |
+| (TBD) | `harny-feedback` as core-tier skill (always scaffolded) | Approved |
+| (TBD) | Reuse shared runner in CI via `--whole-project` flag rather than duplicate probe logic in YAML | Approved |
+

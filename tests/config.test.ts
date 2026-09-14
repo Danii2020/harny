@@ -8,6 +8,17 @@
  * Covers: contract.md Behavior Guarantees 14, 15, 16, 17; Error Handling
  * Contract rows for `--skills` and a config file's `skills` array; intent.md
  * SC11, SC12; roadmap.md Phase 4.8; tasks.md Tasks 4.18, 4.19, 4.20, 4.21.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md § Interfaces "Public API — src/vocabulary.ts (MODIFIED)"
+ * (`harny-feedback` appended to `CORE_SKILL_IDS`); Behavior Guarantee 15
+ * (`harny-feedback` is core); intent.md SC9a; roadmap.md Phase 3.3;
+ * tasks.md Tasks 3.1, 3.2.
+ *
+ * Red-phase note: `src/vocabulary.ts` has not yet gained `harny-feedback` (Task
+ * 3.10, deferred to `harny-implement`), so every assertion below is expected to
+ * fail against today's 6/2/8 CORE/OPTIONAL/SKILL_IDS counts and today's
+ * "unknown skill id" `parseSkillList` message.
  */
 import { describe, expect, it } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -461,5 +472,51 @@ describe('skills round-trip through serializeConfig / loadConfigFile / mergeConf
     const merged = mergeConfig(defaultConfig(templates), parsed, templates);
     expect(merged.skills).toEqual([...CORE_SKILL_IDS, ...DEFAULT_OPTIONAL_SKILL_IDS]);
     expect(merged.version).toBe(1);
+  });
+});
+
+describe('harny-feedback is core (Gu 15, SC9a) (agent-feedback-controls Task 3.1)', () => {
+  it('CORE_SKILL_IDS contains harny-feedback, OPTIONAL_SKILL_IDS does not, and the three arrays hold the contracted counts', async () => {
+    const { CORE_SKILL_IDS, OPTIONAL_SKILL_IDS, SKILL_IDS } = await import('../src/vocabulary.js');
+
+    expect(CORE_SKILL_IDS).toContain('harny-feedback');
+    expect(OPTIONAL_SKILL_IDS).not.toContain('harny-feedback');
+    expect(CORE_SKILL_IDS).toHaveLength(7);
+    expect(OPTIONAL_SKILL_IDS).toHaveLength(2);
+    expect(SKILL_IDS).toHaveLength(9);
+  });
+
+  it('harny-feedback is the last entry of CORE_SKILL_IDS — the only index-preserving insertion position', async () => {
+    const { CORE_SKILL_IDS } = await import('../src/vocabulary.js');
+
+    expect(CORE_SKILL_IDS[CORE_SKILL_IDS.length - 1]).toBe('harny-feedback');
+  });
+});
+
+describe('harny-feedback is always scaffolded, never nameable via --skills (Gu 15) (agent-feedback-controls Task 3.2)', () => {
+  it('mergeConfig still includes harny-feedback in the merged skill set for "--skills none" (optionalSkillIds: [])', async () => {
+    const { mergeConfig, defaultConfig } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+    const base = defaultConfig(templates);
+
+    const merged = mergeConfig(base, { optionalSkillIds: [] }, templates);
+
+    expect(merged.skills).toContain('harny-feedback');
+  });
+
+  it('parseSkillList throws USAGE naming harny-feedback as always scaffolded when named directly, distinct from an unknown-id error', async () => {
+    const { parseSkillList } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+
+    try {
+      parseSkillList('harny-feedback');
+      expect.unreachable('expected parseSkillList to throw for a core skill id');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+      const message = (err as Error).message;
+      expect(message).toContain('harny-feedback');
+      expect(message.toLowerCase()).toContain('always');
+    }
   });
 });

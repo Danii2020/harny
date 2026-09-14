@@ -165,7 +165,7 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('--model <assignment>', 'Repeatable: <role>=<tier-or-model-id>', collectModel, [] as string[])
     .option('--gates <list>', 'Comma list of gate ids, "all", or "none"')
     .option('--skills <list>', 'Comma list of optional skill ids, "all", or "none"')
-    .option('--stack <name>', 'Project stack (captured only)')
+    .option('--stack <name>', 'Project stack (resolves the feedback hook/CI profile; see agent-feedback-controls)')
     .option('--config <path>', 'JSON config file; implies non-interactive')
     .option('-y, --yes', 'Accept defaults, skip all prompts and the final confirmation')
     .option('--dry-run', 'Print the write plan; write nothing')

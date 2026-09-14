@@ -319,20 +319,26 @@ describe('resolveTemplatesRoot (C7)', () => {
 
     const entries = await fs.readdir(resolved);
     // templates-skill-library-parity (SC1) adds a fourth top-level directory,
-    // `skills/`, to the real package templates root.
-    expect(entries.sort()).toEqual(['conductor', 'roles', 'skills', 'spec-schema']);
+    // `skills/`, to the real package templates root. agent-feedback-controls
+    // (Phase 1, contract.md "Canonical templates — templates/hooks/") adds a
+    // fifth, `hooks/`, and Phase 2 (contract.md "templates/ci/harny-feedback.yml")
+    // adds a sixth, `ci/`.
+    expect(entries.sort()).toEqual(['ci', 'conductor', 'hooks', 'roles', 'skills', 'spec-schema']);
   });
 });
 
 describe('loadCanonicalTemplates — skill loading, sort order, and tolerated absence (Gu 9, Gu 12, Gu 18) (Task 4.26)', () => {
-  it('loads exactly the seven skill directories present in the well-formed fixture, byte-for-byte', async () => {
+  it('loads exactly the eight skill directories present in the well-formed fixture, byte-for-byte', async () => {
     const { loadCanonicalTemplates } = await import('../src/templates.js');
 
     const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
 
     const skills = (templates as any).skills as Map<string, { files: Array<{ name: string; contents: string }> }>;
     expect(skills, 'CanonicalTemplates has no "skills" map yet').toBeDefined();
-    expect(skills.size).toBe(7);
+    // agent-feedback-controls (Task 3.10) adds `harny-feedback` to CORE_SKILL_IDS,
+    // always scaffolded — the well-formed fixture gained a matching stub skill
+    // directory so a default runInit over this fixture can still resolve it.
+    expect(skills.size).toBe(8);
 
     for (const id of [
       'harny-propose',
@@ -342,6 +348,7 @@ describe('loadCanonicalTemplates — skill loading, sort order, and tolerated ab
       'harny-document',
       'harny-sync',
       'harny-standards',
+      'harny-feedback',
     ]) {
       expect(skills.has(id), `missing loaded skill "${id}"`).toBe(true);
       const onDisk = await fs.readFile(

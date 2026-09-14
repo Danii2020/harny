@@ -12,6 +12,7 @@
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/) |
 
 ## Keyword lookup
 
@@ -57,6 +58,11 @@
 | model override | tool-generators |
 | canonical fidelity | tool-generators |
 | .agents/skills | tool-generators, skill-library |
+| hook | feedback-controls |
+| lint / type-check | feedback-controls |
+| CI / GitHub Actions | feedback-controls |
+| stack (project) | feedback-controls |
+| feedback | feedback-controls |
 
 ## Synchronized Changes
 
@@ -68,6 +74,7 @@
 | codex-generator | [specs/archived/codex-generator/](../archived/codex-generator/) | [tool-generators.md](./tool-generators.md) |
 | sdd-skill-library | [specs/archived/sdd-skill-library/](../archived/sdd-skill-library/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md) |
 | templates-skill-library-parity | [specs/archived/templates-skill-library-parity/](../archived/templates-skill-library-parity/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md) |
+| agent-feedback-controls | [specs/archived/agent-feedback-controls/](../archived/agent-feedback-controls/) | [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 
 ## Decisions (ADR registry)
 
@@ -86,6 +93,10 @@
 | 0011 | Generator interface gains `skillsDir` member; no `renderSkill` method | Accepted | tool-generators | `specs/archived/templates-skill-library-parity/decisions/0011-generator-interface-gains-skillsdir-member.md` |
 | 0012 | Skills get stronger fidelity guarantees than roles (Gu 9/10 not TG-3/TG-4) | Accepted | skill-library | `specs/archived/templates-skill-library-parity/decisions/0012-skills-get-stronger-fidelity-guarantees-than-roles.md` |
 | 0013 | Template roles remain full-body, not thinned; no thin pointer layer in `templates/` | Accepted | pipeline-roles | `specs/archived/templates-skill-library-parity/decisions/0013-templates-roles-remain-full-body-not-thinned.md` |
+| 0014 | renderHook as method on Generator interface (departs from ADR 0011) | Accepted | tool-generators | `specs/archived/agent-feedback-controls/decisions/0014-renderhook-as-method-on-generator-interface.md` |
+| 0015 | No YAML dependency in canonical CI workflow | Accepted | feedback-controls | `specs/archived/agent-feedback-controls/decisions/0015-no-yaml-dependency-in-canonical-ci-workflow.md` |
+| 0016 | harny-feedback as core-tier skill (always scaffolded) | Accepted | skill-library | `specs/archived/agent-feedback-controls/decisions/0016-harny-feedback-core-tier-skill.md` |
+| 0017 | Reuse shared runner in CI via --whole-project flag | Accepted | feedback-controls | `specs/archived/agent-feedback-controls/decisions/0017-reuse-shared-runner-in-ci-via-whole-project-flag.md` |
 
 ## Open reservations
 
@@ -98,6 +109,11 @@
 | AL-30 | Per-tool facts (Cursor/Kiro/Copilot) were never re-verified against a live tool install | MEDIUM (human-gated) | `specs/archived/cursor-kiro-copilot-generators/audit.md` AL-30 | tool-generators |
 | CG-1 / O4 | Codex facts independently re-confirmed 2026-09-02, but the generated artifact set was never loaded into a live Codex CLI install | MEDIUM (human-gated) | `specs/archived/codex-generator/audit.md` CG-1, O4, CG-12 | tool-generators |
 | AL-S15 | `contract.md` § Amendment A1 still prescribes a before/after differential mechanism not shipped; the delivered form is filtered absolute. Contract, roadmap, and tasks text all describe the superseded mechanism and must be corrected before archival. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S15 | skill-library |
+| R1 | Kiro docs disagree on post-file-save event casing (`agentStop` vs. older `PostFileSave` example). Shipped with camelCase `agentStop` per V6 types page; unverifiable without live Kiro run. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R1 | feedback-controls |
+| R2 | SC13 (live-session hook firing) unverifiable in audit session; requires human restart and re-entry. Accumulator half was observed firing live; Stop delivery was executed verbatim; only in-context delivery remains. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R2 | feedback-controls |
+| R5 | Kiro's and GitHub Copilot's post-edit payload field shape is assumed but not cited. AL-30 class: wrong field name exits 0 recording nothing. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R5 | feedback-controls |
+| R6 | Python profile CI gate is deliberately probe-skip-only (no install, both ruff/mypy skip on stock runner). Closeable only by a future feature adding `ciInstall`. | MEDIUM (scope, deliberate) | `specs/archived/agent-feedback-controls/audit.md` R6 | feedback-controls |
+| R7 | TypeScript install candidates cover npm only; pnpm/Yarn-Berry can re-enter F1. Needs `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | `specs/archived/agent-feedback-controls/audit.md` R7 | feedback-controls |
 | AL-S16 | The T41 filter is status-blind and hardcodes eight skill names. A modification of a tracked bridge symlink may escape detection, and a ninth `harny-*` skill causes false positive. Must filter on `?? ` + `harny-` discovery pattern. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S16 | skill-library |
 | CR-1 | Live discovery of a symlinked skill and warning-free `skills:` preloading are unverified in-session (require a Claude Code restart) | MEDIUM | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
 | CR-2 | The entire live pipeline depends on the `.agents`↔`.claude` symlink bridge surviving | LOW | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |

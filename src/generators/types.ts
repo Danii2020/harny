@@ -4,7 +4,7 @@
  */
 import type { Capability } from '../templates.js';
 import type { CostTier, RoleId, ToolId } from '../vocabulary.js';
-import type { ConductorPayload, RolePayload } from '../engine.js';
+import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 
 export type WrapperFormat = 'markdown-yaml' | 'toml';
 
@@ -46,6 +46,10 @@ export interface Generator {
    *  (V13) and GitHub Copilot (V10) — which is what `buildSkillFiles`' dedup keys
    *  on. */
   readonly skillsDir: string;
+  /** **(NEW — agent-feedback-controls.)** Where this tool reads its hook config,
+   *  POSIX, relative to the target repo root. A fixed per-generator constant (V1).
+   *  Unlike `skillsDir`, no two generators share a value. */
+  readonly hooksPath: string;
 
   /** File name only. Accommodates `<role>.md`, `<role>.agent.md`, and `<role>.toml`. */
   roleFileName(roleId: RoleId): string;
@@ -58,4 +62,15 @@ export interface Generator {
 
   renderRole(payload: RolePayload): GeneratedFile;
   renderConductor(payload: ConductorPayload): GeneratedFile;
+
+  /** **(NEW — agent-feedback-controls.)** Renders this tool's native hook config.
+   *  Returns `undefined` when the tool's hook surface is unavailable for the
+   *  resolved profile, in which case the generator contributes no hook artifact
+   *  (never an empty or placeholder file at a path the tool would read).
+   *
+   *  A method, not a declarative member — a conscious departure from ADR 0011
+   *  (see contract.md § Interfaces): hook configs vary structurally per tool
+   *  (nested vs. flat, `command` vs. `bash`, …), which is exactly what
+   *  `renderRole`/`renderConductor` already exist for. */
+  renderHook(payload: HookPayload): GeneratedFile | undefined;
 }

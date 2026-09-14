@@ -25,6 +25,32 @@
  * Covers: contract.md "Public API — src/generators/types.ts" (the new
  * `skillsDir` member, D3) and its pinned-values table; Behavior Guarantees 2,
  * 29; intent.md SC16; roadmap.md Phase 4.5; tasks.md Task 4.27.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md "Public API — src/generators/types.ts (MODIFIED)" (the new
+ * `hooksPath`/`renderHook` members); roadmap.md Phase 2 step 3 ("guard the stubs so
+ * they cannot silently persist" — the AL-P9 silent-stub class: a ninth thing never
+ * shipped, with no test detecting it at authorship time); tasks.md Task 2.3; T10.
+ * `renderHook`/`hooksPath` do not exist on any generator yet at red time, so every
+ * test in the block below is expected to fail with a `TypeError`
+ * ("generator.renderHook is not a function") or a `hooksPath` of `undefined`, not a
+ * wrong assumption about which generators emit hooks.
+ *
+ * Spec: specs/agent-feedback-controls (Phase 6)
+ * Covers: contract.md § Verified per-tool facts V1 (all five tools' hook paths/
+ * wrapper shapes are now fixed and real); tasks.md Task 6.2 ("flip the guard set to
+ * assert all five generator ids emit hooks"); roadmap.md Phase 6.5. Supersedes this
+ * file's own Phase-2 assertion that only `claude-code` emits a hook artifact — at
+ * red time here, `cursor`/`kiro`/`github-copilot`/`codex`'s `renderHook` are still
+ * the documented Phase 2 stubs returning `undefined` (Task 2.11), so the first test
+ * below is expected to fail on the four now-required `toBeDefined()` assertions,
+ * not on a wrong assumption about which ids ship hooks.
+ *
+ * Spec: specs/agent-feedback-controls (Post-audit amendment A1)
+ * Covers: contract.md Behavior Guarantee 20 (CI never touches turn state / no
+ * generated hook config passes `--whole-project`), CI-only half. See the
+ * dedicated `it` at the end of the "hook-emitting generator set" describe block
+ * below for its own red-phase note.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
@@ -178,4 +204,93 @@ describe('Generator interface sufficiency for all five known targets (guarantee 
       expect((generator as any).skillsDir).toBe(skillsDir);
     },
   );
+});
+
+describe('hook-emitting generator set — guards the AL-P9 silent-stub class (Task 2.3, Task 6.2)', () => {
+  // Flipped to all five TOOL_IDS: Phase 6 ships the remaining four generators' real
+  // `renderHook` implementations (roadmap.md Phase 6.5, tasks.md Task 6.2). A
+  // forgotten stub among cursor/kiro/github-copilot/codex must fail this test, not
+  // ship quiet.
+  const HOOK_EMITTING_GENERATOR_IDS: readonly string[] = [
+    'claude-code',
+    'cursor',
+    'kiro',
+    'github-copilot',
+    'codex',
+  ];
+
+  function fakeHookPayload(profile: unknown) {
+    return {
+      project: {
+        enabledRoles: [],
+        gates: [],
+        specSchemaDir: '.sdd/spec-schema',
+        reducedGates: false,
+        stack: (profile as { id?: string } | undefined)?.id,
+        stackProfile: profile,
+      },
+      profile,
+      runner: { name: 'run-feedback.mjs', contents: '#!/usr/bin/env node\n', sourcePath: 'hooks/run-feedback.mjs' },
+    } as any;
+  }
+
+  it('renderHook returns a GeneratedFile only for the currently hook-emitting generators, and undefined for every other registered generator', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const payload = fakeHookPayload(profile);
+
+    for (const [id, generator] of generators) {
+      const result = (generator as any).renderHook(payload);
+      if (HOOK_EMITTING_GENERATOR_IDS.includes(id)) {
+        expect(result, `${id} was expected to emit a hook artifact at this phase`).toBeDefined();
+      } else {
+        expect(
+          result,
+          `${id} must not emit a hook artifact yet (Phase 6) — a forgotten stub should fail this test, not ship quiet`,
+        ).toBeUndefined();
+      }
+    }
+  });
+
+  it('every registered generator declares a non-empty hooksPath, and no two generators share one (contract V1)', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+
+    const hooksPaths: string[] = [];
+    for (const [id, generator] of generators) {
+      const hooksPath = (generator as any).hooksPath;
+      expect(typeof hooksPath, `${id}.hooksPath`).toBe('string');
+      expect(hooksPath.length, `${id}.hooksPath must not be empty`).toBeGreaterThan(0);
+      hooksPaths.push(hooksPath);
+    }
+    expect(new Set(hooksPaths).size, 'hooksPath values must be mutually distinct').toBe(hooksPaths.length);
+  });
+
+  // Spec: specs/agent-feedback-controls (Post-audit amendment A1)
+  // Covers: contract.md Behavior Guarantee 20's second half — "no generated hook
+  // config passes --whole-project" — the CI-only flag exists solely because CI has
+  // no turn to scope to; a hook that passed it would silently re-check the whole
+  // project on every turn, defeating BG-1's one-cheap-run-per-turn design.
+  //
+  // Red-phase note: `--whole-project` does not exist anywhere in this codebase yet,
+  // so this test is expected to PASS already today (there is nothing to violate) —
+  // the same "nothing to violate yet, becomes a live regression guard" situation
+  // `tests/feedback.test.ts`'s BG-7 grep gate documents for itself. It stays live
+  // and reported here, not skipped, so it starts protecting the instant any
+  // generator's `renderHook` is touched.
+  it('no generated hook config passes --whole-project — that flag is CI-only (BG-20)', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const payload = fakeHookPayload(profile);
+
+    for (const [id, generator] of generators) {
+      const result = (generator as any).renderHook(payload);
+      if (result === undefined) continue;
+      expect(
+        result.contents,
+        `${id}'s rendered hook config must never pass --whole-project (CI-only, BG-20)`,
+      ).not.toContain('--whole-project');
+    }
+  });
 });

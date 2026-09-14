@@ -19,12 +19,30 @@
  * Change Map) with exactly the default-selected seven skills, so a full
  * `runInit` over it plans the nine skill-library files this feature adds,
  * alongside the twelve pre-existing contracted files.
+ *
+ * Spec: specs/agent-feedback-controls (Phase 2)
+ * Covers: contract.md Behavior Guarantees 8 (escape hatch — inert, never fatal,
+ * never silent), 12 (determinism/containment/trailing newline), 13 (conflict
+ * detection extended to `.claude/settings.json`); intent.md SC2, SC20; roadmap.md
+ * Phase 2 steps 4, 6, 9; tasks.md Tasks 2.7, 2.8, 2.9; T14, T15, T16.
+ *
+ * These three `describe` blocks below drive `runInit` against `REAL_TEMPLATES_ROOT`
+ * (not the `well-formed` fixture): once Phase 2's green phase lands, generating a
+ * hook artifact requires `templates/hooks/**` and `templates/ci/harny-feedback.yml`
+ * to actually exist at the given `templatesRoot`, and only the real, production
+ * templates tree carries those (`tests/generators/claude-code.test.ts` already
+ * establishes this same real-templates-root convention for hook/role fidelity
+ * tests). At red time, `runInit`'s render step does not yet call `renderHook` or
+ * `buildFeedbackFiles` at all (Task 2.17 is pending), so `.claude/settings.json`
+ * is never part of the planned/written set — every test below is expected to fail
+ * because the expected artifact or behavior is simply absent, not because of a
+ * wrong assumption about file contents.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fixtureTemplatesRoot } from './helpers/paths.js';
+import { fixtureTemplatesRoot, REAL_TEMPLATES_ROOT } from './helpers/paths.js';
 
 // Only used by the T5.18a interactive-path block below; every other test in
 // this file drives runInit with interactive: false, so it never touches
@@ -100,6 +118,11 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         // fixture: "absent for the well-formed fixture (no README.md there)").
         '.claude/skills/harny-audit/SKILL.md',
         '.claude/skills/harny-document/SKILL.md',
+        // (agent-feedback-controls, Phase 3.) `harny-feedback` joined
+        // CORE_SKILL_IDS (appended last, contract.md § "Insertion position"),
+        // so it is always scaffolded too — including against this fixture,
+        // which now carries a matching `skills/harny-feedback/` stub.
+        '.claude/skills/harny-feedback/SKILL.md',
         '.claude/skills/harny-implement/SKILL.md',
         '.claude/skills/harny-propose/SKILL.md',
         '.claude/skills/harny-standards/SKILL.md',
@@ -114,7 +137,7 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(result.planned).toHaveLength(20);
+    expect(result.planned).toHaveLength(21);
   });
 });
 
@@ -515,5 +538,156 @@ describe('runInit — interactive-path AL-3 gap: a flag-supplied roleOverride fo
     const warningText = warnings.join(' ');
     expect(warningText).toContain('sdd-auditor');
     expect(warningText.toLowerCase()).toContain('not applied');
+  });
+});
+
+describe('runInit — a pre-existing .claude/settings.json is a CONFLICT before any write (BG-13) (Task 2.7)', () => {
+  it('raises CONFLICT naming .claude/settings.json and leaves it untouched, without --force', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const targetDir = await makeTempDir();
+    const { io } = collectingIO();
+
+    await fs.mkdir(path.join(targetDir, '.claude'), { recursive: true });
+    await fs.writeFile(
+      path.join(targetDir, '.claude', 'settings.json'),
+      '{"pre-existing": true}\n',
+      'utf8',
+    );
+
+    try {
+      await runInit({
+        targetDir,
+        templatesRoot: REAL_TEMPLATES_ROOT,
+        overrides: { tools: ['claude-code'], stack: 'typescript' },
+        interactive: false,
+        dryRun: false,
+        force: false,
+        io,
+      });
+      expect.unreachable('expected runInit to throw CONFLICT');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CONFLICT');
+      expect((err as any).details).toContain('.claude/settings.json');
+    }
+
+    const stillThere = await fs.readFile(path.join(targetDir, '.claude', 'settings.json'), 'utf8');
+    expect(stillThere).toBe('{"pre-existing": true}\n');
+    expect(await fs.readdir(path.join(targetDir, '.claude'))).toEqual(['settings.json']);
+  });
+});
+
+describe('runInit — hook and CI artifacts are deterministic, contained, and end in exactly one newline (BG-12, CLI-4/S3) (Task 2.8)', () => {
+  const FEEDBACK_PATHS_UNDER_TEST = [
+    '.claude/settings.json',
+    '.sdd/feedback/run-feedback.mjs',
+    '.sdd/feedback/.turns/.gitignore',
+    '.github/workflows/harny-feedback.yml',
+  ];
+
+  it('produces byte-identical hook and CI artifacts across two independent runs of the same config', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDirA = await makeTempDir();
+    const targetDirB = await makeTempDir();
+
+    const resultA = await runInit({
+      targetDir: targetDirA,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+    const resultB = await runInit({
+      targetDir: targetDirB,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    for (const relativePath of FEEDBACK_PATHS_UNDER_TEST) {
+      expect(resultA.written, `${relativePath} was not written in run A`).toContain(relativePath);
+      expect(resultB.written, `${relativePath} was not written in run B`).toContain(relativePath);
+
+      const contentsA = await fs.readFile(path.join(targetDirA, relativePath), 'utf8');
+      const contentsB = await fs.readFile(path.join(targetDirB, relativePath), 'utf8');
+      expect(contentsA).toBe(contentsB);
+    }
+  });
+
+  it('every hook/CI artifact path is relative, resolves inside targetDir, and ends in exactly one newline', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    for (const relativePath of FEEDBACK_PATHS_UNDER_TEST) {
+      expect(result.written).toContain(relativePath);
+      expect(path.isAbsolute(relativePath)).toBe(false);
+      expect(relativePath.split('/')).not.toContain('..');
+
+      const contents = await fs.readFile(path.join(targetDir, relativePath), 'utf8');
+      expect(contents.endsWith('\n'), `${relativePath} does not end in a newline`).toBe(true);
+      expect(contents.endsWith('\n\n'), `${relativePath} ends in more than one newline`).toBe(false);
+    }
+  });
+});
+
+describe('runInit — escape hatch: an unresolved stack still writes both feedback artifacts, inert and legible (BG-8, SC2) (Task 2.9)', () => {
+  it('writes the runner and workflow, warns naming the unresolved value and every STACK_PROFILE_ID, and records "(no built-in profile)" in the conductor block', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { STACK_PROFILE_IDS, FEEDBACK_RUNNER_PATH, CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const targetDir = await makeTempDir();
+    const { io, warnings } = collectingIO();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'some-unrecognized-stack-xyz' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io,
+    });
+
+    // Both tool-neutral feedback artifacts are still written — inert, never absent.
+    expect(result.written).toContain(FEEDBACK_RUNNER_PATH);
+    expect(result.written).toContain(CI_WORKFLOW_PATH);
+    expect(result.written).toContain('.claude/settings.json');
+
+    // io.warn names the unrecognized value and lists every built-in profile id.
+    const warningText = warnings.join(' ');
+    expect(warningText).toContain('some-unrecognized-stack-xyz');
+    for (const id of STACK_PROFILE_IDS) {
+      expect(warningText).toContain(id);
+    }
+
+    // The conductor's generated block records the escape hatch, naming the value.
+    const conductorContents = await fs.readFile(
+      path.join(targetDir, '.claude', 'skills', 'sdd-conductor', 'SKILL.md'),
+      'utf8',
+    );
+    expect(conductorContents).toContain('some-unrecognized-stack-xyz');
+    expect(conductorContents).toContain('(no built-in profile)');
+
+    // The workflow is still well-formed, carrying the same notice rather than any
+    // resolved profile's commands (BG-8: never silently empty).
+    const workflowContents = await fs.readFile(path.join(targetDir, CI_WORKFLOW_PATH), 'utf8');
+    expect(workflowContents.length).toBeGreaterThan(0);
+    expect(workflowContents).not.toContain('eslint');
+    expect(workflowContents).not.toContain('ruff');
   });
 });

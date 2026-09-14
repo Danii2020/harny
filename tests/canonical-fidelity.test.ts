@@ -207,8 +207,19 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     );
 
     const CONTRACTED_BRIDGE_SYMLINKS = new Set(
-      ['harny-propose', 'harny-test', 'harny-implement', 'harny-audit', 'harny-document', 'harny-sync', 'harny-adr', 'harny-standards']
-        .map((name) => `.claude/skills/${name}`),
+      [
+        'harny-propose',
+        'harny-test',
+        'harny-implement',
+        'harny-audit',
+        'harny-document',
+        'harny-sync',
+        'harny-adr',
+        'harny-standards',
+        // (agent-feedback-controls, Phase 3.) `harny-feedback`'s own tracked
+        // relative symlink, the ninth bridge (contract.md § Interfaces, SL-2).
+        'harny-feedback',
+      ].map((name) => `.claude/skills/${name}`),
     );
 
     // (templates-skill-library-parity amendment round.) Two more classes of
@@ -218,10 +229,30 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     // `templates/roles/sdd-documentation.md` is the single sanctioned
     // canonical-body content change (contract.md S5, Amendment A1). Neither
     // is a mutation this check exists to catch.
+    //
+    // (agent-feedback-controls, Phase 1 amendment round.) A third class joins
+    // the same way `templates/skills/**` did above: `templates/hooks/**` is new
+    // canonical content this feature introduces (Phase 1, contract.md "Canonical
+    // templates — templates/hooks/").
+    //
+    // (agent-feedback-controls, Phase 2 amendment round.) A fourth class joins:
+    // `templates/ci/**` (contract.md "templates/ci/harny-feedback.yml (NEW)") now
+    // exists as of this phase, so it is allowlisted here too — the same
+    // "new canonical content this feature introduces" rationale as the other
+    // three classes above, not a mutation this check exists to catch.
+    //
+    // (agent-feedback-controls, Phase 4 amendment round.) A fifth class joins:
+    // `.claude/settings.json` is this repo's own generated, now-tracked hook config
+    // (contract.md "`.gitignore` amendment (G5, SC13, SL-10)", Task 4.3) — a
+    // one-time re-inclusion contracted by this feature, not a mutation. Note this
+    // is a `.claude/` entry, not a `templates/` one, unlike the other four classes.
     const isContractedEntry = (relativePath: string): boolean =>
       CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
       relativePath.startsWith('templates/skills/') ||
-      relativePath === 'templates/roles/sdd-documentation.md';
+      relativePath.startsWith('templates/hooks/') ||
+      relativePath.startsWith('templates/ci/') ||
+      relativePath === 'templates/roles/sdd-documentation.md' ||
+      relativePath === '.claude/settings.json';
 
     // (templates-skill-library-parity fix.) Each porcelain line is a fixed-width
     // `XY <path>` — the 2-char status can legitimately be a leading space (e.g.

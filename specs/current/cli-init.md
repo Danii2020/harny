@@ -154,16 +154,16 @@ output.
 ### Requirement: CLI-10 — Packaged tarball contents
 
 The system SHALL ensure the packed npm tarball contains `bin/`, `dist/`, and
-all eleven `templates/**` files, and excludes everything under `src/`,
+all twenty-six `templates/**` files, and excludes everything under `src/`,
 `tests/`, and `specs/`.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`
+**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`; agent-feedback-controls · contract.md Amendment CLI-10
 
 #### Scenario: The npm package is packed
 - **WHEN** the npm package is packed
-- **THEN** the tarball contains `bin/`, `dist/`, and all eleven
-  `templates/**` files, and contains nothing under `src/`, `tests/`, or
-  `specs/`
+- **THEN** the tarball contains `bin/`, `dist/`, and all twenty-six
+  `templates/**` files (including hook and CI templates, from agent-feedback-controls),
+  and contains nothing under `src/`, `tests/`, or `specs/`
 
 ### Requirement: CLI-11 — No import cycles, vocabulary has no imports
 

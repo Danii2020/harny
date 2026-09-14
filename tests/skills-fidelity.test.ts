@@ -59,6 +59,20 @@
  * below is empty. Each discovery is asserted non-empty as a precondition
  * before any comparison runs, so an absent tree fails loudly rather than
  * vacuously matching an equally-empty "oracle absent" state.
+ *
+ * Spec: specs/agent-feedback-controls
+ * Covers: contract.md § "Public API — src/vocabulary.ts (MODIFIED)" naming
+ * `harny-feedback`; Behavior Guarantee 16 (skill parity); intent.md SC9;
+ * roadmap.md Phase 3.1–3.2, 3.5; tasks.md Task 3.4.
+ *
+ * `harny-feedback` is not yet authored (Task 3.6/3.8, deferred to
+ * `harny-implement`), so this is a genuinely new, targeted assertion rather
+ * than an extension of the generic, glob-driven bijection/`DIVERGENCE_TABLE`
+ * machinery above: that machinery discovers a skill only once it exists on
+ * disk under `.agents/skills/`, so it stays vacuously green for a
+ * not-yet-created ninth skill and cannot serve as red-phase coverage here.
+ * `harny-feedback`'s own `DIVERGENCE_TABLE` entry (if any) is `harny-implement`'s
+ * concern once the file exists, per its declared-divergence classification.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -214,6 +228,11 @@ const DIVERGENCE_TABLE: Readonly<Record<string, DivergenceExpectation>> = {
     kind: 'diverges',
     forbiddenInTemplate: ['ln -s ../../.agents/skills'],
   },
+
+  // agent-feedback-controls Task 3.6/3.8: byte-identical today, same as
+  // harny-propose/harny-test — no dogfood-only residue was authored into the
+  // shared-skill body, so no DC-1/DC-2/DC-3 divergence applies.
+  'harny-feedback': { kind: 'byte-identical' },
 };
 
 function expectationFor(name: string): DivergenceExpectation | undefined {
@@ -336,5 +355,19 @@ describe('allowed-tools is kept uniformly, never stripped for the shipped copy (
       ).toBe(true);
     }
     expect(checkedAtLeastOne, 'no dogfood skill declares allowed-tools — test fixture assumption broken').toBe(true);
+  });
+});
+
+describe('harny-feedback is byte-identical between the two skill roots (Gu 16, SC9) (agent-feedback-controls Task 3.4)', () => {
+  it('.agents/skills/harny-feedback/SKILL.md and templates/skills/harny-feedback/SKILL.md exist and are byte-identical', () => {
+    const agentsFile = path.join(AGENTS_SKILLS_ROOT, 'harny-feedback', 'SKILL.md');
+    const templateFile = path.join(TEMPLATES_SKILLS_ROOT, 'harny-feedback', 'SKILL.md');
+
+    const agentsSource = readIfExists(agentsFile);
+    expect(agentsSource, `${agentsFile} does not exist yet`).toBeDefined();
+    const templateSource = readIfExists(templateFile);
+    expect(templateSource, `${templateFile} does not exist yet`).toBeDefined();
+
+    expect(templateSource).toBe(agentsSource);
   });
 });

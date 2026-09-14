@@ -79,6 +79,16 @@ If the user has not specified a feature name, ask for one.
 6. **`harny-standards` compliance check.** Run the `harny-standards` skill and check
    every standard that project's conventions document declares; report any violation
    as a finding under the severity ratings below — never fix it in place.
+6a. **`harny-feedback` verification.** Run the `harny-feedback` skill and confirm the
+    per-turn hook actually ran during implementation and that its findings were heeded,
+    and that the generated CI workflow is present and its latest run is green. Do
+    **not** re-invoke the mapped lint/type-check commands yourself — that duplicates
+    work the hook and CI already did; this step verifies, it does not re-run. A green
+    conclusion alone is not sufficient evidence: read the run's log for the runner's
+    trailing `N of M command(s) ran, K skipped.` summary line, and treat `N = 0` (every
+    command probe-skipped) as a gap, exactly as a hook that never fired is a gap. Report
+    any gap (hook never fired, findings ignored, CI missing or red, or CI green having
+    run nothing) as a finding under the severity ratings below.
 7. **Produce the audit report.** Update `/specs/<feature-name>/audit.md` with your
    findings:
    - **Requirements Checklist**: change each item's status to one of PASS, FAIL,

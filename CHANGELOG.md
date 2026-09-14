@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Agent feedback controls** — per-turn and CI-gate feedback for code quality checks. `harny-feedback`
+  is a new core skill (seventh core, always scaffolded) that maps project stack (`--stack` flag)
+  to canonical lint/type-check commands via a shared `STACK_PROFILES` configuration. All five
+  target tools now scaffold native per-tool hook configs (Claude Code, Cursor, Kiro, GitHub
+  Copilot, Codex) that fire at turn-boundary (`Stop`/`stop`/`agentStop` events), accumulate
+  the list of edited files across the turn, and invoke the shared `run-feedback.mjs` runner
+  in `accumulate` mode — batching N edits across M files into exactly one run per turn covering
+  the M deduped paths. A new GitHub Actions workflow (`templates/ci/harny-feedback.yml`) provides
+  CI-gate feedback: it installs dependencies (per-profile, e.g., `npm ci` for TypeScript) and
+  invokes the same runner in `run --whole-project` mode, exiting 0 (green) on clean runs and
+  exiting 2 (red) on findings. Both surfaces deliver findings to the agent (via turn-completion
+  events) or the CI log (via the workflow step's stderr), without invoking the lint/type-check
+  commands in the auditor's step (BG-17: auditor verifies, does not re-run). Five open reservations
+  remain: Kiro casing (R1, first-party docs contradict), live-session restart (R2, verification
+  deferred to human), uncited Kiro/Copilot payload shape (R5), Python CI is probe-skip-only (R6,
+  deliberate scope), npm-only install can re-enter early findings on pnpm/Yarn-Berry (R7, design
+  deferred to a future feature). Updated `AGENTS.md` § "Feedforward vs. feedback" to classify
+  all controls (the five role prompts, this repo's conventions, and the three human gates as
+  feedforward-inferential; the native hooks as feedback-computational; and inferential feedback
+  as deliberately empty).
+
 - **Skill Library and Knowledge Base** — the live five-agent pipeline is now composed of
   eight reusable `harny-*` skills bridged via symlinks from `.agents/skills/` (harny-propose,
   harny-test, harny-implement, harny-audit, harny-document, harny-sync, harny-adr,

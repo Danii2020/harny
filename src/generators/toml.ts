@@ -60,6 +60,36 @@ export function renderTomlComments(comments: readonly string[]): string {
   return out;
 }
 
+// A dotted sequence of bare TOML keys: each segment is `[A-Za-z0-9_-]+`, joined by
+// `.`. Anything outside this shape (a space, a quote, an empty segment) would need
+// TOML's quoted-key form, which this codebase deliberately never emits (`SC14`).
+const BARE_DOTTED_HEADER = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
+
+/**
+ * **(NEW — context7-mcp.)** Renders a TOML table: a `[header]` line followed by
+ * one `key = value` line per field, via the existing `renderTomlKeyValues`. The
+ * only place a `[` table-header literal exists in this codebase (`TG-5`,
+ * invariant 1, `SC14`) — `src/mcp.ts` composes tables, it never writes brackets.
+ *
+ * `header` must be a dotted sequence of TOML bare keys; anything else throws
+ * `HarnessError('TEMPLATE')` naming the header, rather than silently emitting a
+ * header that would need quoting. This mirrors `tomlMultilineLiteral`'s existing
+ * "throw rather than silently switch forms" discipline (`TG-7`).
+ */
+export function renderTomlTable(header: string, fields: readonly TomlKeyValue[]): string {
+  if (!BARE_DOTTED_HEADER.test(header)) {
+    throw new HarnessError(
+      'TEMPLATE',
+      'Cannot render "' +
+        header +
+        '" as a TOML table header: it is not a dotted sequence of bare TOML keys ' +
+        '(letters, digits, "-", "_", joined by "."), so it would need quoting, which this codebase ' +
+        'deliberately never emits.',
+    );
+  }
+  return '[' + header + ']\n' + renderTomlKeyValues(fields);
+}
+
 // Control characters other than \n (0x0A) and \t (0x09), plus DEL (0x7F).
 const CONTROL_CHAR_CODES_ALLOWED = new Set([0x09, 0x0a]);
 

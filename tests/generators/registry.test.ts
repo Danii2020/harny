@@ -51,6 +51,17 @@
  * generated hook config passes `--whole-project`), CI-only half. See the
  * dedicated `it` at the end of the "hook-emitting generator set" describe block
  * below for its own red-phase note.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md "Public API — src/generators/types.ts" (the new,
+ * required `Generator.mcpConfig` member) and § "Verified per-tool MCP facts"
+ * (the normative per-tool path/rootKey/entry table); Behavior Guarantees MC-2,
+ * MC-13; intent.md SC13, SC15, SC17; audit.md Test Coverage T12.
+ *
+ * None of the five generators declares `mcpConfig` yet at red time, so every
+ * assertion in the new "mcpConfig" describe block below reads `undefined`
+ * where the table expects a real value, not a wrong assumption about the
+ * per-tool facts themselves.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
@@ -291,6 +302,82 @@ describe('hook-emitting generator set — guards the AL-P9 silent-stub class (Ta
         result.contents,
         `${id}'s rendered hook config must never pass --whole-project (CI-only, BG-20)`,
       ).not.toContain('--whole-project');
+    }
+  });
+});
+
+describe('mcpConfig — every generator declares the required member, matching the verified per-tool facts table exactly', () => {
+  const EXPECTED = [
+    {
+      id: 'claude-code',
+      path: '.mcp.json',
+      format: 'json',
+      rootKey: 'mcpServers',
+      entry: { type: 'http', url: 'https://mcp.context7.com/mcp' },
+    },
+    {
+      id: 'cursor',
+      path: '.cursor/mcp.json',
+      format: 'json',
+      rootKey: 'mcpServers',
+      entry: { url: 'https://mcp.context7.com/mcp' },
+    },
+    {
+      // The single highest-value row: GitHub Copilot's .vscode/mcp.json is
+      // the only one of the five that uses "servers", not "mcpServers".
+      id: 'github-copilot',
+      path: '.vscode/mcp.json',
+      format: 'json',
+      rootKey: 'servers',
+      entry: { type: 'http', url: 'https://mcp.context7.com/mcp' },
+    },
+    {
+      id: 'kiro',
+      path: '.kiro/settings/mcp.json',
+      format: 'json',
+      rootKey: 'mcpServers',
+      entry: { url: 'https://mcp.context7.com/mcp' },
+    },
+    {
+      id: 'codex',
+      path: '.codex/config.toml',
+      format: 'toml',
+      rootKey: 'mcp_servers',
+      entry: { url: 'https://mcp.context7.com/mcp' },
+    },
+  ] as const;
+
+  it.each(EXPECTED)('$id declares mcpConfig exactly as contract.md’s verified-facts table fixes it', async (expected) => {
+    const { generators } = await import('../../src/generators/index.js');
+    const generator = generators.get(expected.id as any) as any;
+
+    expect(generator).toBeDefined();
+    expect(generator.mcpConfig).toEqual({
+      path: expected.path,
+      format: expected.format,
+      rootKey: expected.rootKey,
+      entry: expected.entry,
+    });
+  });
+
+  it('GitHub Copilot’s rootKey is "servers", explicitly distinct from every other tool’s "mcpServers"/"mcp_servers"', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+
+    const rootKeys = [...generators.entries()].map(([id, generator]) => [id, (generator as any).mcpConfig?.rootKey]);
+    const copilotRootKey = rootKeys.find(([id]) => id === 'github-copilot')?.[1];
+    expect(copilotRootKey).toBe('servers');
+
+    for (const [id, rootKey] of rootKeys) {
+      if (id === 'github-copilot') continue;
+      expect(rootKey, `${id} unexpectedly shares GitHub Copilot's rootKey`).not.toBe('servers');
+    }
+  });
+
+  it('is a required member: every registered generator has an "mcpConfig" key, never simply missing', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+
+    for (const [id, generator] of generators) {
+      expect('mcpConfig' in (generator as object), `${id} has no mcpConfig key at all`).toBe(true);
     }
   });
 });

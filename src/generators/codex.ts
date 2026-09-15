@@ -19,6 +19,7 @@ import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
+import { CONTEXT7_MCP_URL } from '../mcp.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -268,6 +269,21 @@ export const codexGenerator: Generator = {
   // it needs no entry of its own. Verified against vendor documentation
   // 2026-09-14; carries the CG-1/O4 re-verification caveat.
   guidancePath: undefined,
+  // Codex's project-scope config file — not an MCP-only file, Codex CLI's entire
+  // project configuration (contract.md § "Verified per-tool MCP facts");
+  // ~/.codex/config.toml is the user file and is never written (SC19). Project
+  // `.codex/` layers load only for a project the user has trusted, and when
+  // trusted take precedence over the user file — the native trust prompt is the
+  // approval gate this feature leaves in place (G6). Verified against vendor
+  // documentation 2026-09-15; carries reservation `R-Codex` (openai/codex#13025:
+  // Codex Desktop reportedly ignores project-scope MCP servers) and the standing
+  // CG-1/O4 re-verification caveat.
+  mcpConfig: {
+    path: '.codex/config.toml',
+    format: 'toml',
+    rootKey: 'mcp_servers',
+    entry: { url: CONTEXT7_MCP_URL },
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

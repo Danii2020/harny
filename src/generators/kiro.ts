@@ -9,6 +9,7 @@ import { SPEC_SCHEMA_DIR } from '../engine.js';
 import { HarnessError } from '../errors.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
+import { CONTEXT7_MCP_URL } from '../mcp.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -36,9 +37,13 @@ const KIRO_TOKEN_BY_CAPABILITY: Record<string, string | undefined> = {
 
 const TASK_TRACKING_NOTE =
   "task-tracking has no Kiro-native tool category; the role body's own task discipline applies";
+// (context7-mcp, MC-15.) Retracts the earlier "harny does not write MCP
+// configuration" claim, which this feature falsifies: harny now writes
+// .kiro/settings/mcp.json. Names the file and states why Kiro still prompts per
+// tool call — harny deliberately never writes autoApprove (MC-11, G6).
 const DOCS_LOOKUP_NOTE =
-  'docs-lookup maps to the Context7 MCP server (@context7); harny does not write MCP configuration — ' +
-  'see plan.md §4 "future scope"';
+  'docs-lookup maps to the Context7 MCP server (@context7); harny writes its default configuration to ' +
+  '.kiro/settings/mcp.json, so every tool call still prompts for approval because harny does not write autoApprove';
 
 const KIRO_SKILL_DESCRIPTION_LIMIT = 1024;
 
@@ -237,6 +242,16 @@ export const kiroGenerator: Generator = {
   // covers. Verified against vendor documentation 2026-09-14; carries the AL-30
   // re-verification caveat.
   guidancePath: '.kiro/steering',
+  // Kiro's workspace MCP config file (contract.md § "Verified per-tool MCP
+  // facts"); ~/.kiro/settings/mcp.json is the user file and is never written
+  // (SC19) — workspace config takes precedence over it. Verified against vendor
+  // documentation 2026-09-15; carries the AL-30 re-verification caveat.
+  mcpConfig: {
+    path: '.kiro/settings/mcp.json',
+    format: 'json',
+    rootKey: 'mcpServers',
+    entry: { url: CONTEXT7_MCP_URL },
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

@@ -23,6 +23,14 @@
  * legitimately contain those same strings for unrelated, contract-mandated
  * reasons). Per the high-value-tests rubric, the stronger behavioral test wins
  * and the grep is intentionally not duplicated.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md § Integration Points ("templates/mcp/README.md" — new
+ * canonical content). `isContractedEntry` gains an eighth allowlisted class,
+ * `templates/mcp/`, the same "new canonical content this feature introduces"
+ * rationale as every prior class above — consequential test maintenance, not
+ * part of context7-mcp's own approved 55-test red phase; see the executor's
+ * final report.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -258,6 +266,11 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     // runners import) are new canonical content this feature introduces
     // (contract.md "Public API — the canonical runner", "Public API —
     // templates/shared/probes.mjs").
+    //
+    // (context7-mcp amendment round.) An eighth class joins the same way:
+    // `templates/mcp/**` (the tool-neutral Context7 MCP mechanism doc) is new
+    // canonical content this feature introduces (contract.md § Integration
+    // Points, "templates/mcp/README.md").
     const isContractedEntry = (relativePath: string): boolean =>
       CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
       relativePath.startsWith('templates/skills/') ||
@@ -265,6 +278,7 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
       relativePath.startsWith('templates/ci/') ||
       relativePath.startsWith('templates/doctor/') ||
       relativePath.startsWith('templates/shared/') ||
+      relativePath.startsWith('templates/mcp/') ||
       relativePath === 'templates/roles/sdd-documentation.md' ||
       relativePath === '.claude/settings.json';
 

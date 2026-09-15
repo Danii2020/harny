@@ -35,6 +35,11 @@ export async function planWrites(
   const conflicts: string[] = [];
   for (const file of files) {
     assertContained(file.path, targetDir);
+    // (NEW — context7-mcp, MC-7.) A merge-marked file's `contents` were already
+    // computed by extending whatever was on disk at this path, so a pre-existing
+    // file there is never a conflict — it is the input the merge already
+    // accounted for. Every other path keeps today's behavior exactly.
+    if (file.merge) continue;
     const absolute = path.join(targetDir, file.path);
     try {
       await fs.access(absolute);

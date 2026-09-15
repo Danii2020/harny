@@ -19,6 +19,7 @@ import {
 } from './engine.js';
 import type { HookPayload } from './engine.js';
 import { buildDoctorFiles } from './doctor.js';
+import { buildMcpFiles } from './mcp.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { applyWrites, planWrites } from './writer.js';
@@ -256,6 +257,18 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // from this single call site, never from `buildFeedbackFiles`/
   // `buildDoctorFiles` separately (which would duplicate the write-plan entry).
   files.push(...buildRuntimeSharedFiles(payload));
+
+  // (NEW — context7-mcp.) The default Context7 MCP server configuration, one file
+  // per resolved generator that declares an `mcpConfig` — joined into this same
+  // render step, never a fourteenth step (CLI-1). The first artifact family that
+  // READS from targetDir while building: each file's contents extend whatever is
+  // already there (G3), which is why this call is awaited and why its outputs are
+  // merge-marked (G4).
+  const mcp = await buildMcpFiles(resolvedGenerators, { targetDir, force: options.force });
+  files.push(...mcp.files);
+  for (const warning of mcp.warnings) {
+    io.warn(warning);
+  }
 
   // 12. Plan writes.
   const plan = await planWrites(files, targetDir);

@@ -34,6 +34,16 @@
  * these four files exist yet, so the `npm pack` assertion below is expected
  * to fail on the new count and the missing paths, not on a wrong assumption
  * about `npm pack`'s own output shape.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md "Amendments to shipped current-truth statements"
+ * (CLI-10, thirty → thirty-one `templates/**` files, for the new
+ * `templates/mcp/README.md`); intent.md SC20; audit.md Test Coverage T28.
+ *
+ * `templates/mcp/README.md` does not exist yet at red time, so the packaged
+ * count assertion below is expected to fail on thirty vs. the contracted
+ * thirty-one, and the membership assertion is expected to fail on the missing
+ * path, not on a wrong assumption about `npm pack`'s own output shape.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -76,6 +86,8 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/doctor/run-doctor.mjs',
   'templates/doctor/README.md',
   'templates/shared/probes.mjs',
+  // (context7-mcp)
+  'templates/mcp/README.md',
 ];
 
 async function packedFilePaths(): Promise<string[]> {
@@ -87,12 +99,12 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all thirty templates/** files (Gu 26, S4) (readiness-doctor amendment: 26 -> 30)', async () => {
+  it('includes bin/, dist/, and all thirty-one templates/** files (Gu 26, S4) (context7-mcp amendment: 30 -> 31)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
-    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(30);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(31);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }

@@ -20,16 +20,17 @@ canonical templates → compute tier defaults from `cost_tier` → merge a
 `--config` file over defaults → merge flag `overrides` over that → run
 interactive prompts if applicable → validate → warn on reduced gates → build
 the payload → resolve generators (collecting skips) → render role +
-conductor artifacts per available generator → plan writes →
+conductor + MCP config artifacts per available generator → plan writes →
 dry-run-or-write.
 
-**Source:** cli-skeleton · contract.md § "Public API — src/init.ts" "runInit sequence — normative"
+**Source:** cli-skeleton · contract.md § "Public API — src/init.ts" "runInit sequence — normative"; context7-mcp · contract.md Amendment CLI-1
 
 #### Scenario: `runInit` is called
 - **WHEN** `runInit` is called with any valid combination of flags and
   config
 - **THEN** it executes the 13 steps in the fixed order, from loading
-  canonical templates through dry-run-or-write
+  canonical templates through dry-run-or-write (step 11 includes MCP
+  config building, not a fourteenth step)
 
 ### Requirement: CLI-2 — HarnessError is the only deliberate error type
 
@@ -70,31 +71,38 @@ outside the enabled set is a `USAGE` error non-interactively, or an
 
 ### Requirement: CLI-4 — Determinism, containment, and trailing newline
 
-The system SHALL ensure two runs with the same config and templates produce
-byte-identical output (stable ordering, no timestamps, no randomness); every
-generated path is relative and resolves inside `targetDir`; every generated
-artifact ends in exactly one `\n`.
+The system SHALL ensure two runs with the same config, templates, and
+pre-existing contents at the merge-owned paths produce byte-identical output
+(stable ordering, no timestamps, no randomness); every generated path is
+relative and resolves inside `targetDir`; every generated artifact ends in
+exactly one `\n`.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantees 15, 16, 19
+**Source:** cli-skeleton · contract.md Behavior Guarantees 15, 16, 19; context7-mcp · contract.md Amendment CLI-4
 
-#### Scenario: `runInit` is run twice with identical config and templates
-- **WHEN** `runInit` is run twice with identical config and templates
+#### Scenario: `runInit` is run twice with identical config, templates, and merge-path contents
+- **WHEN** `runInit` is run twice with identical config, templates, and
+  pre-existing contents at the merge-owned MCP config paths
 - **THEN** the two output trees are byte-identical, every path is relative
   and resolves inside `targetDir`, and every artifact ends in exactly one
   `\n`
 
-### Requirement: CLI-5 — Conflict detection before any write
+### Requirement: CLI-5 — Conflict detection before any write, with merge-path exemption
 
 The system SHALL write nothing when any planned path already exists, unless
 `--force`; `--dry-run` writes nothing at all; conflict detection completes
-before the first write.
+before the first write; **paths explicitly marked as merge-owned (co-owned
+with the user and other tools) never enter the conflict set**, so a
+pre-existing MCP config file never blocks the entire `init` run.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantees 13, 14
+**Source:** cli-skeleton · contract.md Behavior Guarantees 13, 14; context7-mcp · contract.md Amendment CLI-5
 
 #### Scenario: A planned write path already exists without `--force`
 - **WHEN** a planned write path already exists and `--force` is not set
 - **THEN** nothing is written, and conflict detection completes before any
   write is attempted
+- **WHEN** a merge-marked path already exists (e.g. an MCP config file)
+- **THEN** it is never added to the conflict set, so its presence does not
+  block the run
 - **WHEN** `--dry-run` is set
 - **THEN** nothing is written regardless of conflicts
 
@@ -156,15 +164,15 @@ output.
 ### Requirement: CLI-10 — Packaged tarball contents
 
 The system SHALL ensure the packed npm tarball contains `bin/`, `dist/`, and
-all thirty `templates/**` files, and excludes everything under `src/`,
+all thirty-one `templates/**` files, and excludes everything under `src/`,
 `tests/`, and `specs/`.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`; agent-feedback-controls · contract.md Amendment CLI-10; readiness-doctor · contract.md State Changes
+**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`; agent-feedback-controls · contract.md Amendment CLI-10; readiness-doctor · contract.md State Changes; context7-mcp · contract.md Amendment CLI-10
 
 #### Scenario: The npm package is packed
 - **WHEN** the npm package is packed
-- **THEN** the tarball contains `bin/`, `dist/`, and all thirty
-  `templates/**` files (including hook, CI, doctor, and shared-probes templates, from agent-feedback-controls and readiness-doctor),
+- **THEN** the tarball contains `bin/`, `dist/`, and all thirty-one
+  `templates/**` files (including hook, CI, doctor, MCP, and shared-probes templates, from agent-feedback-controls, readiness-doctor, and context7-mcp),
   and contains nothing under `src/`, `tests/`, or `specs/`
 
 ### Requirement: CLI-11 — No import cycles, vocabulary has no imports
@@ -199,6 +207,7 @@ of `import type` erasure.
 | Feature | Shipped | What it established |
 |---|---|---|
 | cli-skeleton | 2026-07-30 | The entire CLI: `src/{cli,config,prompts,init,writer,errors,engine,templates,vocabulary}.ts`, the `Generator` interface, the Claude Code generator, packaging |
+| context7-mcp | 2026-09-15 | CLI-1/CLI-4/CLI-5/CLI-10: default Context7 MCP server wiring via merge-write to each tool's native config; exempts merge-marked paths from conflict detection; adds `templates/mcp/README.md` to packaged count |
 
 ## Related ADRs
 

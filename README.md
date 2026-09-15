@@ -149,10 +149,12 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
-- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 9 core/optional skills (8 core + 1 default `harny-standards`, one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 21 files total
-- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 9 skills per unique root (8 core + 1 default `harny-standards` for three roots = 27 total), plus 6 shared files = 63 files total
+- For a single tool with the default skill set: 7 tool-specific files (5 roles + conductor + 1 MCP config) + 9 core/optional skills (8 core + 1 default `harny-standards`, one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 22 files total
+- For multiple tools with defaults: 7 files per selected tool (35 total for all five), plus 9 skills per unique root (8 core + 1 default `harny-standards` for three roots = 27 total), plus 6 shared files = 68 files total
 - With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 10 skills per root instead of 9
-- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 50 skill artifacts (10 per root) + 6 shared = 86 files total
+- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 35 tool artifacts + 50 skill artifacts (10 per root) + 6 shared = 91 files total
+
+**Default MCP server wiring:** Each selected tool now gets a default Context7 MCP server entry written into its own native MCP configuration file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`), so the `docs-lookup` capability's canonical tool tokens (`mcp__context7__resolve-library-id` and `mcp__context7__query-docs` on Claude Code, `@context7` on Kiro) resolve to a real, connected server out of the box. These five files are repo-scoped configuration and are tracked in version control; they are never deleted or rewritten whole-file, only extended to add the Context7 entry if absent. The first time an agent calls a Context7 tool, that tool's own native first-use approval prompt remains the approval gate — harny writes the configuration only, never auto-approves or widens permissions.
 
 ## Checking whether a repository is ready
 

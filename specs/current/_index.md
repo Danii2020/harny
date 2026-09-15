@@ -1,7 +1,7 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-15 by ai-sdlc-readiness (archive mode: feature archived, capability docs updated, ADRs registered)
+> Last synced: 2026-09-15 by context7-mcp (archive mode: feature archived, capability docs updated)
 
 ## Capabilities
 
@@ -10,8 +10,8 @@
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/) |
 | readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
 
@@ -23,7 +23,8 @@
 |---|---|
 | cost_tier | pipeline-roles |
 | capabilities (vocabulary) | pipeline-roles |
-| docs-lookup / Context7 | pipeline-roles |
+| docs-lookup / Context7 / MCP | pipeline-roles, cli-init |
+| merge-write / merge-marked | cli-init |
 | human gate / verdict | pipeline-roles |
 | spec-schema | spec-workflow |
 | traceability | spec-workflow |
@@ -87,6 +88,7 @@
 | agent-feedback-controls | [specs/archived/agent-feedback-controls/](../archived/agent-feedback-controls/) | [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 | readiness-doctor | [specs/archived/readiness-doctor/](../archived/readiness-doctor/) | [skill-library.md](./skill-library.md), [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 | ai-sdlc-readiness | [specs/archived/ai-sdlc-readiness/](../archived/ai-sdlc-readiness/) | [readiness-checks.md](./readiness-checks.md), [tool-generators.md](./tool-generators.md), [pipeline-roles.md](./pipeline-roles.md) |
+| context7-mcp | [specs/archived/context7-mcp/](../archived/context7-mcp/) | [tool-generators.md](./tool-generators.md), [cli-init.md](./cli-init.md) |
 
 ## Decisions (ADR registry)
 
@@ -117,6 +119,8 @@
 | 0023 | Must-have/recommended tier split, a new `warn` outcome, and `conventions-doc` stays in family 2 | Accepted | readiness-checks | `specs/archived/ai-sdlc-readiness/decisions/0023-must-have-recommended-tiers-and-warn-outcome.md` |
 | 0024 | Presence checked in the deterministic runner; coherence judged one layer up, in the skill | Accepted | readiness-checks | `specs/archived/ai-sdlc-readiness/decisions/0024-presence-in-runner-coherence-in-skill.md` |
 | 0025 | `guidancePath` as a declarative `Generator` member, continuing ADR 0011 not ADR 0014 | Accepted | tool-generators | `specs/archived/ai-sdlc-readiness/decisions/0025-guidancepath-as-declarative-generator-member.md` |
+| 0026 | Merge-write, never whole-file, for co-owned MCP config | Accepted | cli-init | `specs/archived/context7-mcp/decisions/0026-merge-write-for-mcp-config.md` |
+| 0027 | mcpConfig as a declarative Generator member (continuing ADR 0011/0025) | Accepted | tool-generators | `specs/archived/context7-mcp/decisions/0027-declarative-mcpconfig-generator-member.md` |
 
 ## Open reservations
 
@@ -134,6 +138,7 @@
 | R5 | Kiro's and GitHub Copilot's post-edit payload field shape is assumed but not cited. AL-30 class: wrong field name exits 0 recording nothing. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R5 | feedback-controls |
 | R6 | Python profile CI gate is deliberately probe-skip-only (no install, both ruff/mypy skip on stock runner). Closeable only by a future feature adding `ciInstall`. | MEDIUM (scope, deliberate) | `specs/archived/agent-feedback-controls/audit.md` R6 | feedback-controls |
 | R7 | TypeScript install candidates cover npm only; pnpm/Yarn-Berry can re-enter F1. Needs `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | `specs/archived/agent-feedback-controls/audit.md` R7 | feedback-controls |
+| R8 | Only `Stop` is hooked, never `SubagentStop` — Stop fires only for the main conversation, so in a conductor-orchestrated pipeline the check only runs when the conductor's own turn ends, never while a subagent is working; a mid-implementation broken state inside a subagent's own turn is never caught live. Whether `PostToolUse` accumulation still attributes subagent edits to the same turn key as the conductor (so they're swept up at that next `Stop`) is plausible but not independently confirmed. Never examined when `agent-feedback-controls` shipped. | MEDIUM (design, unexamined) | `specs/current/feedback-controls.md` R8 — context7-mcp dogfood observation, 2026-09-15 | feedback-controls |
 | AL-S16 | The T41 filter is status-blind and hardcodes eight skill names. A modification of a tracked bridge symlink may escape detection, and a ninth `harny-*` skill causes false positive. Must filter on `?? ` + `harny-` discovery pattern. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S16 | skill-library |
 | CR-1 | Live discovery of a symlinked skill and warning-free `skills:` preloading are unverified in-session (require a Claude Code restart) | MEDIUM | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
 | CR-2 | The entire live pipeline depends on the `.agents`↔`.claude` symlink bridge surviving | LOW | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
@@ -153,6 +158,8 @@
 | RD-R7 | `harny-document` bootstrap mode's test assertion is weak — 4 of 5 required substrings pre-existed the feature | MEDIUM | `specs/archived/ai-sdlc-readiness/audit.md` F4 | readiness-checks |
 | RD-R8 | AR-16/RD-7 agreement now bounded at 64 MiB (`DOCTOR_RUNNER_MAX_BUFFER`); undocumented in `contract.md` | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F12 | readiness-checks |
 | RD-R9 | `'CLAUDE.md'` remains a literal in `src/doctor.ts` (`conventions-doc`) and `src/generators/claude-code.ts`, an accepted exception since moving `conventions-doc` was out of scope | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F5 | readiness-checks |
+| R-Cursor | MCP support in some Cursor installs may sit behind a settings toggle that defaults off; the generated `.cursor/mcp.json` would be correct but inert until toggled in Cursor settings | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Cursor | tool-generators |
+| R-Codex | Codex Desktop may ignore project-scope `.codex/config.toml` MCP servers per `openai/codex#13025`, loading only user-global config; the generated file is correct for Codex CLI surface | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Codex | tool-generators |
 
 ## Notes
 

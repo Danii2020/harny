@@ -2,6 +2,16 @@
  * Spec: specs/cli-skeleton
  * Covers: contract.md "Public API — src/writer.ts" (G8);
  * Behavior Guarantees 13, 15, 16; C15; T27, T28.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md "Public API — src/writer.ts" (MODIFY) — the merge-marked
+ * exemption from `WritePlan.conflicts`; Behavior Guarantee MC-7; intent.md
+ * SC8; audit.md Test Coverage T13.
+ *
+ * `GeneratedFile.merge` does not exist on the type yet at red time, so the
+ * merge-marked test below currently behaves exactly like an ordinary file
+ * (the flag is simply ignored), and its conflict-exemption assertion fails,
+ * not a wrong assumption about `planWrites`' existing behavior.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -127,5 +137,57 @@ describe('applyWrites (guarantees 13, 16) (T28)', () => {
     expect(new Set(written)).toEqual(new Set(['existing.md', 'nested/deep/new.md']));
     expect(await fs.readFile(path.join(targetDir, 'existing.md'), 'utf8')).toBe('new-content\n');
     expect(await fs.readFile(path.join(targetDir, 'nested', 'deep', 'new.md'), 'utf8')).toBe('deep\n');
+  });
+});
+
+describe('planWrites — merge-marked paths are exempt from conflict collection', () => {
+  it('excludes a merge-marked file at an existing path from conflicts, while an ordinary file at an existing path is still collected', async () => {
+    const { planWrites } = await import('../src/writer.js');
+    const targetDir = await makeTempDir();
+
+    await fs.mkdir(path.join(targetDir, '.vscode'), { recursive: true });
+    await fs.writeFile(path.join(targetDir, '.vscode', 'mcp.json'), '{"servers":{}}\n', 'utf8');
+    await fs.writeFile(path.join(targetDir, 'existing-role.md'), 'pre-existing\n', 'utf8');
+
+    const files = [
+      { path: '.vscode/mcp.json', contents: '{"servers":{"context7":{}}}\n', merge: true },
+      { path: 'existing-role.md', contents: 'new\n' },
+      { path: 'brand-new.md', contents: 'new\n' },
+    ];
+
+    const plan = await planWrites(files as any, targetDir);
+
+    expect(plan.conflicts).toEqual(['existing-role.md']);
+    expect(plan.conflicts).not.toContain('.vscode/mcp.json');
+  });
+
+  it('applyWrites still throws CONFLICT for the ordinary file even though a merge-marked file at an existing path is present in the same plan', async () => {
+    const { planWrites, applyWrites } = await import('../src/writer.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const targetDir = await makeTempDir();
+
+    await fs.writeFile(path.join(targetDir, '.mcp.json'), '{"mcpServers":{}}\n', 'utf8');
+    await fs.writeFile(path.join(targetDir, 'existing-role.md'), 'pre-existing\n', 'utf8');
+
+    const files = [
+      { path: '.mcp.json', contents: '{"mcpServers":{"context7":{}}}\n', merge: true },
+      { path: 'existing-role.md', contents: 'overwritten\n' },
+    ];
+
+    const plan = await planWrites(files as any, targetDir);
+
+    try {
+      await applyWrites(plan, { force: false });
+      expect.unreachable('expected applyWrites to throw CONFLICT');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CONFLICT');
+      expect((err as any).details).toContain('existing-role.md');
+      expect((err as any).details).not.toContain('.mcp.json');
+    }
+
+    // Neither file was touched: applyWrites throws before writing anything.
+    expect(await fs.readFile(path.join(targetDir, '.mcp.json'), 'utf8')).toBe('{"mcpServers":{}}\n');
+    expect(await fs.readFile(path.join(targetDir, 'existing-role.md'), 'utf8')).toBe('pre-existing\n');
   });
 });

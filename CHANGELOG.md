@@ -8,6 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Default Context7 MCP server wiring** — the `docs-lookup` capability now works out of the box.
+  Every `npx harny init` run writes the default Context7 MCP server configuration into each
+  selected tool's native MCP config file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`,
+  `.kiro/settings/mcp.json`, `.codex/config.toml`), so the `mcp__context7__resolve-library-id` /
+  `mcp__context7__query-docs` tokens (Claude Code), `@context7` tag (Kiro), and advisory
+  capability references (Cursor, GitHub Copilot, Codex) resolve to a real server instead of a
+  dangling artifact. The merge-write mechanism (read existing, extend with one entry, preserve
+  every other setting) ensures no pre-existing MCP server, unrelated Codex setting, or
+  tool-specific configuration is ever destroyed; a file harny cannot safely extend is left
+  byte-identical and reported, never mangled. Re-running `init` over a scaffolded repo is safe
+  and converges to byte-identical output. The generated configuration uses Context7's
+  unauthenticated hosted endpoint and never writes a credential, credential placeholder, or
+  environment-variable reference; trust remains gated by each tool's own native approval prompt
+  (no auto-trust, no permission widening). Five open reservations carry forward: `R-Cursor`
+  (MCP support possibly gated by a settings toggle), `R-Codex` (Desktop may ignore project
+  `.codex/config.toml`), and the standing `AL-30` / `CG-1`/`O4` (documentation-verified facts,
+  not live-install-verified). Amends five shipped current-truth statements in
+  `specs/current/tool-generators.md` and `specs/current/cli-init.md`: `TG-1` (adds declarative
+  `mcpConfig` member), `TG-10` (adds one MCP artifact per resolved generator), `CLI-1`/`CLI-4`/`CLI-5`
+  (integration into step 11, amended determinism clause, narrow exemption from conflict rule for
+  merge-owned paths).
+
 - **AI/SDLC readiness check** — extends `harny-doctor` with a fifth check family, `repo readiness`,
   that assesses whether a target repository carries the baseline documentation an AI coding agent
   needs to work safely. Introduces two priority tiers: **must-have** items (absent means the repo

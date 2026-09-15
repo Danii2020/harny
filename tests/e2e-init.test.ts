@@ -62,6 +62,18 @@
  * time none of these four new files exist yet, so every expected-path/count
  * assertion below fails by omission, not by a wrong assumption about the
  * spawned CLI's behavior.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md Behavior Guarantee MC-1 (`buildMcpFiles` joining `runInit`
+ * step 11); the `TG-10` amendment (one MCP config artifact per resolved
+ * generator declaring `mcpConfig`). Every single-tool scenario below gains
+ * exactly one MCP file at that tool's own path (`.mcp.json`, `.cursor/mcp.json`,
+ * `.kiro/settings/mcp.json`, `.vscode/mcp.json`, `.codex/config.toml`), and
+ * every `toHaveLength(30)` below becomes 31; the five-tool and `--skills`
+ * scenarios each gain all five MCP files (80 -> 85, 86 -> 91, 77 -> 82). This
+ * amendment is consequential test maintenance for a declared `TG-10`/`CLI-10`
+ * amendment, not part of context7-mcp's own approved 55-test red phase — see
+ * the executor's final report for why it was made here rather than left red.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -192,6 +204,9 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.claude/settings.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        // (context7-mcp.) The default Context7 MCP server, written to Claude
+        // Code's own project-scope config file.
+        '.mcp.json',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -200,7 +215,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(30);
+    expect(files).toHaveLength(31);
   });
 });
 
@@ -318,6 +333,9 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.cursor/hooks.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        // (context7-mcp.) The default Context7 MCP server, written to Cursor's
+        // own project-scope config file.
+        '.cursor/mcp.json',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -326,7 +344,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(30);
+    expect(files).toHaveLength(31);
   });
 });
 
@@ -353,6 +371,9 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.kiro/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        // (context7-mcp.) The default Context7 MCP server, written to Kiro's
+        // own workspace-scope config file.
+        '.kiro/settings/mcp.json',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -361,7 +382,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(30);
+    expect(files).toHaveLength(31);
   });
 });
 
@@ -388,6 +409,9 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.github/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        // (context7-mcp.) The default Context7 MCP server, written to VS
+        // Code's own MCP config file — Copilot's `mcpConfig`, root key `servers`.
+        '.vscode/mcp.json',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -396,7 +420,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(30);
+    expect(files).toHaveLength(31);
   });
 });
 
@@ -422,6 +446,11 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       'hooks.json',
       ...SHARED_FEEDBACK_PATHS,
       ...SHARED_DOCTOR_PATHS,
+      // (context7-mcp.) The default Context7 MCP server, appended to Codex's
+      // own project-scope config file — not an MCP-only file (contract.md §
+      // "The write model"), but empty here since no `.codex/config.toml`
+      // pre-existed.
+      '.codex/config.toml',
       '.sdd/spec-schema/intent.md',
       '.sdd/spec-schema/contract.md',
       '.sdd/spec-schema/roadmap.md',
@@ -430,7 +459,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(30);
+    expect(files).toHaveLength(31);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -502,7 +531,12 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
   // tool-neutral shared artifacts join `.sdd/`: `.sdd/doctor/run-doctor.mjs`,
   // `.sdd/doctor/checks.json`, `.sdd/shared/probes.mjs` (8 -> 11). Tool
   // artifacts are unaffected (still 36). New total: 36 + 33 + 11 = 80.
-  it('emits 36 tool artifacts, 33 skill-library artifacts (3 roots x 11 files), and 11 shared files — 80 total', async () => {
+  //
+  // (specs/context7-mcp extends this again.) All five resolved generators
+  // declare an `mcpConfig`, so all five MCP files join `toolArtifacts` (36 ->
+  // 41; none is a skill-library path and none lives under `.sdd/`). New total:
+  // 41 + 33 + 11 = 85.
+  it('emits 41 tool artifacts, 33 skill-library artifacts (3 roots x 11 files), and 11 shared files — 85 total', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli([
@@ -515,7 +549,7 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
-    expect(files).toHaveLength(80);
+    expect(files).toHaveLength(85);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
     expect(sharedFiles).toHaveLength(11);
@@ -530,13 +564,19 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
     expect(skillLibraryFiles.some((f) => f.startsWith('.github/skills/'))).toBe(false);
 
     const toolArtifacts = files.filter((f) => !f.startsWith('.sdd/') && !isSkillLibraryPath(f));
-    expect(toolArtifacts).toHaveLength(36);
+    expect(toolArtifacts).toHaveLength(41);
     expect(toolArtifacts).toContain('.claude/settings.json');
     expect(toolArtifacts).toContain('.cursor/hooks.json');
     expect(toolArtifacts).toContain('.kiro/hooks/harny-feedback.json');
     expect(toolArtifacts).toContain('.github/hooks/harny-feedback.json');
     expect(toolArtifacts).toContain('hooks.json');
     expect(toolArtifacts).toContain('.github/workflows/harny-feedback.yml');
+    // (context7-mcp.) One MCP config file per resolved generator.
+    expect(toolArtifacts).toContain('.mcp.json');
+    expect(toolArtifacts).toContain('.cursor/mcp.json');
+    expect(toolArtifacts).toContain('.kiro/settings/mcp.json');
+    expect(toolArtifacts).toContain('.vscode/mcp.json');
+    expect(toolArtifacts).toContain('.codex/config.toml');
 
     const specSchemaFiles = files.filter((f) => f.startsWith('.sdd/spec-schema/'));
     expect(specSchemaFiles).toHaveLength(5);
@@ -629,7 +669,10 @@ describe('--skills all and --skills none amend the default skill-library artifac
     // 36 -> 39) and +3 tool-neutral artifacts (`.sdd/doctor/run-doctor.mjs`,
     // `.sdd/doctor/checks.json`, `.sdd/shared/probes.mjs`) over the
     // pre-readiness-doctor 80.
-    expect(files).toHaveLength(86);
+    //
+    // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
+    // generator) over the pre-context7-mcp 86.
+    expect(files).toHaveLength(91);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(39);
@@ -657,7 +700,10 @@ describe('--skills all and --skills none amend the default skill-library artifac
     // --skills none too: +3 skill-library files (27 -> 30) and the same +3
     // tool-neutral artifacts as every other scenario, over the
     // pre-readiness-doctor 71.
-    expect(files).toHaveLength(77);
+    //
+    // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
+    // generator) over the pre-context7-mcp 77.
+    expect(files).toHaveLength(82);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(30);

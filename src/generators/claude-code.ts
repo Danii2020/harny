@@ -7,6 +7,7 @@ import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
+import { CONTEXT7_MCP_URL } from '../mcp.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -212,6 +213,15 @@ export const claudeCodeGenerator: Generator = {
   // instruction files"). Verified against vendor documentation 2026-09-14; this
   // repo's own CLAUDE.md is the worked example.
   guidancePath: 'CLAUDE.md',
+  // Claude Code's own project-scope MCP config file (contract.md § "Verified
+  // per-tool MCP facts"). Verified against vendor documentation 2026-09-15.
+  // `type: 'http'` is Claude Code's own field for a streamable-HTTP remote server.
+  mcpConfig: {
+    path: '.mcp.json',
+    format: 'json',
+    rootKey: 'mcpServers',
+    entry: { type: 'http', url: CONTEXT7_MCP_URL },
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

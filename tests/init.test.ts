@@ -52,6 +52,21 @@
  * `buildRuntimeSharedFiles` at all, so the new "doctor artifacts" describe
  * block below is expected to fail because those paths are absent from the
  * planned/written set entirely.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md § Integration Points ("`src/init.ts` step 11 — one
+ * `await buildMcpFiles(...)` call plus a warning loop"); Behavior Guarantees
+ * MC-1, MC-3, MC-4, MC-5, MC-6, MC-7, MC-8, MC-9, MC-14, MC-16, MC-17; Error
+ * Handling Contract rows for a JSONC bail-out and for all five MCP files
+ * pre-existing; intent.md SC1, SC2, SC3, SC4, SC5, SC7, SC8, SC9, SC10, SC19;
+ * audit.md Test Coverage T14-T21, T29.
+ *
+ * `runInit` does not yet call `buildMcpFiles` at all, so every describe block
+ * below is expected to fail because the five MCP paths are simply absent from
+ * the planned/written set, not because of a wrong assumption about their
+ * per-tool contents. Driven against `REAL_TEMPLATES_ROOT`, same as the
+ * feedback/doctor blocks above, since `mcpConfig` is a fixed per-generator
+ * fact independent of which templates root is loaded.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -153,6 +168,10 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.claude/skills/harny-sync/SKILL.md',
         '.claude/skills/harny-sync/capability-template.md',
         '.claude/skills/harny-test/SKILL.md',
+        // (context7-mcp.) The default Context7 MCP server, written to Claude
+        // Code's own project-scope config file — a fixed per-generator fact,
+        // independent of which templates root is loaded.
+        '.mcp.json',
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -161,7 +180,7 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(result.planned).toHaveLength(22);
+    expect(result.planned).toHaveLength(23);
   });
 });
 
@@ -783,5 +802,384 @@ describe('runInit — the doctor runner and checks.json join the existing render
     // same planned/written set init.ts already produces.
     expect(result.written).toContain(DOCTOR_RUNNER_PATH);
     expect(result.written).toContain('.sdd/harness.json');
+  });
+});
+
+const ALL_TOOLS = ['claude-code', 'cursor', 'kiro', 'github-copilot', 'codex'] as const;
+const ALL_MCP_PATHS = [
+  '.mcp.json',
+  '.cursor/mcp.json',
+  '.vscode/mcp.json',
+  '.kiro/settings/mcp.json',
+  '.codex/config.toml',
+];
+
+describe('runInit — Context7 MCP wiring: fresh five-file write in an empty repo', () => {
+  it('writes all five MCP config files, each carrying a context7 entry pointing at the Context7 endpoint under that tool’s own root key', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: [...ALL_TOOLS] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    for (const relativePath of ALL_MCP_PATHS) {
+      expect(result.written, `${relativePath} was not written`).toContain(relativePath);
+    }
+
+    const claudeJson = JSON.parse(await fs.readFile(path.join(targetDir, '.mcp.json'), 'utf8'));
+    expect(claudeJson.mcpServers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+
+    const cursorJson = JSON.parse(await fs.readFile(path.join(targetDir, '.cursor', 'mcp.json'), 'utf8'));
+    expect(cursorJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp' });
+
+    const copilotJson = JSON.parse(await fs.readFile(path.join(targetDir, '.vscode', 'mcp.json'), 'utf8'));
+    expect(copilotJson.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+    expect(copilotJson.mcpServers).toBeUndefined();
+
+    const kiroJson = JSON.parse(await fs.readFile(path.join(targetDir, '.kiro', 'settings', 'mcp.json'), 'utf8'));
+    expect(kiroJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp' });
+
+    const codexToml = await fs.readFile(path.join(targetDir, '.codex', 'config.toml'), 'utf8');
+    expect(codexToml).toContain('[mcp_servers.context7]');
+    expect(codexToml).toContain('url = "https://mcp.context7.com/mcp"');
+  });
+
+  it('every written MCP artifact is relative, resolves inside targetDir, and ends in exactly one newline', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: [...ALL_TOOLS] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    for (const relativePath of ALL_MCP_PATHS) {
+      expect(result.written).toContain(relativePath);
+      expect(path.isAbsolute(relativePath)).toBe(false);
+      expect(relativePath.split('/')).not.toContain('..');
+
+      const contents = await fs.readFile(path.join(targetDir, relativePath), 'utf8');
+      expect(contents.endsWith('\n'), `${relativePath} does not end in a newline`).toBe(true);
+      expect(contents.endsWith('\n\n'), `${relativePath} ends in more than one newline`).toBe(false);
+    }
+  });
+});
+
+describe('runInit — Context7 MCP wiring: a subset tool selection writes only that subset’s MCP files', () => {
+  it('selecting only claude-code and codex writes their two MCP files and none of the other three', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code', 'codex'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    expect(result.written).toContain('.mcp.json');
+    expect(result.written).toContain('.codex/config.toml');
+    expect(result.written).not.toContain('.cursor/mcp.json');
+    expect(result.written).not.toContain('.vscode/mcp.json');
+    expect(result.written).not.toContain('.kiro/settings/mcp.json');
+  });
+});
+
+describe('runInit — Context7 MCP wiring: a pre-existing .vscode/mcp.json with unrelated servers keeps everything', () => {
+  it('keeps both pre-existing servers, adds context7, and leaves every other top-level key untouched', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    await fs.mkdir(path.join(targetDir, '.vscode'), { recursive: true });
+    const preExisting =
+      '{\n' +
+      '  "$schema": "https://example.com/schema.json",\n' +
+      '  "servers": {\n' +
+      '    "existing-a": { "url": "https://a.example/mcp" },\n' +
+      '    "existing-b": { "type": "http", "url": "https://b.example/mcp" }\n' +
+      '  }\n' +
+      '}\n';
+    await fs.writeFile(path.join(targetDir, '.vscode', 'mcp.json'), preExisting, 'utf8');
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['github-copilot'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    expect(result.written).toContain('.vscode/mcp.json');
+
+    const parsed = JSON.parse(await fs.readFile(path.join(targetDir, '.vscode', 'mcp.json'), 'utf8'));
+    expect(parsed['$schema']).toBe('https://example.com/schema.json');
+    expect(parsed.servers['existing-a']).toEqual({ url: 'https://a.example/mcp' });
+    expect(parsed.servers['existing-b']).toEqual({ type: 'http', url: 'https://b.example/mcp' });
+    expect(parsed.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+    expect(Object.keys(parsed)).toEqual(['$schema', 'servers']);
+    expect(Object.keys(parsed.servers)).toEqual(['existing-a', 'existing-b', 'context7']);
+  });
+});
+
+describe('runInit — Context7 MCP wiring: a pre-existing .codex/config.toml keeps its bytes as an exact prefix', () => {
+  it('preserves the original Codex settings byte-for-byte and appends the context7 table once', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    await fs.mkdir(path.join(targetDir, '.codex'), { recursive: true });
+    const preExisting = 'model = "gpt-5.6-sol"\napproval_policy = "never"\n\n[sandbox]\nmode = "workspace-write"\n';
+    await fs.writeFile(path.join(targetDir, '.codex', 'config.toml'), preExisting, 'utf8');
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['codex'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    expect(result.written).toContain('.codex/config.toml');
+
+    const contents = await fs.readFile(path.join(targetDir, '.codex', 'config.toml'), 'utf8');
+    expect(contents.startsWith(preExisting)).toBe(true);
+    expect(contents).toContain('[mcp_servers.context7]');
+    expect(contents).toContain('url = "https://mcp.context7.com/mcp"');
+    expect(contents.endsWith('\n')).toBe(true);
+    expect(contents.endsWith('\n\n')).toBe(false);
+  });
+});
+
+describe('runInit — Context7 MCP wiring: idempotence across two consecutive runs', () => {
+  it('leaves all five MCP config files byte-identical between run 1 and run 2, warning "unchanged" on run 2, independently of the ~80 non-MCP artifacts correctly raising CONFLICT on that same second run', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const targetDir = await makeTempDir();
+
+    await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: [...ALL_TOOLS] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    const afterRunOne = new Map<string, string>();
+    for (const relativePath of ALL_MCP_PATHS) {
+      afterRunOne.set(relativePath, await fs.readFile(path.join(targetDir, relativePath), 'utf8'));
+    }
+
+    // A second run over the same target directory, still without --force, is
+    // NOT expected to succeed as a whole: the ~80 non-MCP artifacts (role,
+    // skill, hook files) from run 1 are ordinary planned paths, unaffected by
+    // this feature (CLI-5/MC-7 both explicitly stay unchanged for them), so
+    // they correctly raise CONFLICT. Only the five merge-marked MCP paths are
+    // exempted from that rule -- this test asserts idempotence for exactly
+    // those five, by reading them directly off disk rather than through the
+    // (never returned, because it throws) second result.
+    const { io, warnings } = collectingIO();
+    try {
+      await runInit({
+        targetDir,
+        templatesRoot: REAL_TEMPLATES_ROOT,
+        overrides: { tools: [...ALL_TOOLS] },
+        interactive: false,
+        dryRun: false,
+        force: false,
+        io,
+      });
+      expect.unreachable('expected the second run to throw CONFLICT on the ~80 non-MCP artifacts');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CONFLICT');
+      for (const relativePath of ALL_MCP_PATHS) {
+        expect((err as any).details, `${relativePath} unexpectedly appears as a CONFLICT`).not.toContain(
+          relativePath,
+        );
+      }
+    }
+
+    // Bytes on disk are untouched by the second run, for all five MCP paths.
+    for (const relativePath of ALL_MCP_PATHS) {
+      const afterRunTwo = await fs.readFile(path.join(targetDir, relativePath), 'utf8');
+      expect(afterRunTwo, `${relativePath} changed between run 1 and run 2`).toBe(afterRunOne.get(relativePath));
+    }
+
+    // Step 11 (which builds the MCP files and forwards their warnings) runs
+    // before planWrites/applyWrites raise CONFLICT on the unrelated paths, so
+    // the "unchanged" warning for each of the five is still observable even
+    // though the run as a whole then throws.
+    const warningText = warnings.join(' | ');
+    for (const relativePath of ALL_MCP_PATHS) {
+      expect(warningText, `no warning named ${relativePath}`).toContain(relativePath);
+    }
+  });
+});
+
+describe('runInit — Context7 MCP wiring: a JSONC .vscode/mcp.json triggers warn-and-skip, the run still succeeds', () => {
+  it('writes nothing to .vscode/mcp.json, warns naming the path, and still writes every other artifact', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    await fs.mkdir(path.join(targetDir, '.vscode'), { recursive: true });
+    const commented = '{\n  // a user comment\n  "servers": {}\n}\n';
+    await fs.writeFile(path.join(targetDir, '.vscode', 'mcp.json'), commented, 'utf8');
+
+    const { io, warnings } = collectingIO();
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['github-copilot', 'claude-code'] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io,
+    });
+
+    expect(result.written).not.toContain('.vscode/mcp.json');
+    const stillThere = await fs.readFile(path.join(targetDir, '.vscode', 'mcp.json'), 'utf8');
+    expect(stillThere).toBe(commented);
+
+    const warningText = warnings.join(' | ');
+    expect(warningText).toContain('.vscode/mcp.json');
+
+    // The run still succeeds and writes every other artifact, including the
+    // other selected tool's own MCP file.
+    expect(result.written).toContain('.mcp.json');
+    expect(result.written).toContain('.claude/agents/sdd-architect.md');
+  });
+});
+
+describe('runInit — Context7 MCP wiring: all five MCP files pre-existing still lets the run succeed without --force', () => {
+  async function seedAllFiveMcpFiles(targetDir: string): Promise<void> {
+    await fs.mkdir(path.join(targetDir, '.cursor'), { recursive: true });
+    await fs.mkdir(path.join(targetDir, '.vscode'), { recursive: true });
+    await fs.mkdir(path.join(targetDir, '.kiro', 'settings'), { recursive: true });
+    await fs.mkdir(path.join(targetDir, '.codex'), { recursive: true });
+
+    await fs.writeFile(
+      path.join(targetDir, '.mcp.json'),
+      '{"mcpServers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp"}}}\n',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(targetDir, '.cursor', 'mcp.json'),
+      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp"}}}\n',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(targetDir, '.vscode', 'mcp.json'),
+      '{"servers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp"}}}\n',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(targetDir, '.kiro', 'settings', 'mcp.json'),
+      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp"}}}\n',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(targetDir, '.codex', 'config.toml'),
+      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
+      'utf8',
+    );
+  }
+
+  it('succeeds without --force, warning "unchanged" for each of the five already-seeded MCP files', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    await seedAllFiveMcpFiles(targetDir);
+
+    const { io, warnings } = collectingIO();
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: [...ALL_TOOLS] },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io,
+    });
+
+    expect(result.written.length).toBeGreaterThan(0);
+    const warningText = warnings.join(' | ');
+    for (const relativePath of ALL_MCP_PATHS) {
+      expect(warningText, `no "unchanged" warning named ${relativePath}`).toContain(relativePath);
+    }
+  });
+
+  it('a pre-existing role file still raises CONFLICT, and none of the five pre-existing MCP paths appear among the conflicting paths', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const targetDir = await makeTempDir();
+    await seedAllFiveMcpFiles(targetDir);
+
+    await fs.mkdir(path.join(targetDir, '.claude', 'agents'), { recursive: true });
+    await fs.writeFile(path.join(targetDir, '.claude', 'agents', 'sdd-architect.md'), 'pre-existing\n', 'utf8');
+
+    try {
+      await runInit({
+        targetDir,
+        templatesRoot: REAL_TEMPLATES_ROOT,
+        overrides: { tools: [...ALL_TOOLS] },
+        interactive: false,
+        dryRun: false,
+        force: false,
+        io: collectingIO().io,
+      });
+      expect.unreachable('expected runInit to throw CONFLICT for the pre-existing role file');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CONFLICT');
+      expect((err as any).details).toContain('.claude/agents/sdd-architect.md');
+      for (const relativePath of ALL_MCP_PATHS) {
+        expect((err as any).details, `${relativePath} unexpectedly appears as a CONFLICT`).not.toContain(
+          relativePath,
+        );
+      }
+    }
+  });
+});
+
+describe('runInit — Context7 MCP wiring: --dry-run writes nothing but lists the five MCP paths', () => {
+  it('plans all five MCP paths without creating any of them on disk', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: [...ALL_TOOLS] },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.written).toEqual([]);
+    for (const relativePath of ALL_MCP_PATHS) {
+      expect(result.planned, `${relativePath} missing from the dry-run plan`).toContain(relativePath);
+      await expect(fs.access(path.join(targetDir, relativePath))).rejects.toThrow();
+    }
   });
 });

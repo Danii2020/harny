@@ -8,11 +8,52 @@ import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 
 export type WrapperFormat = 'markdown-yaml' | 'toml';
 
+/** **(NEW — context7-mcp.)** Which serializer a tool's MCP configuration file uses.
+ *  Exactly the two formats the five verified targets need; deliberately not an open
+ *  string, so a sixth generator cannot invent a third format without amending this
+ *  union and the merger that switches on it. */
+export type McpConfigFormat = 'json' | 'toml';
+
+/**
+ * **(NEW — context7-mcp.)** Everything that varies per tool about where and how its
+ * MCP server configuration is expressed. A fixed per-generator constant known at
+ * module load with no payload input — a declarative member in the `skillsDir`
+ * (ADR 0011) / `guidancePath` (ADR 0025) lineage, deliberately NOT a `renderMcp*`
+ * method in the `renderHook` lineage (ADR 0014): nothing here is rendered by the
+ * generator. Every byte of serialization happens in `src/mcp.ts` through the two
+ * shared modules (`TG-5`).
+ */
+export interface McpConfig {
+  /** POSIX path, relative to the target repo root. Never absolute, never `..`,
+   *  never a user-home path (`G3`, `SC19`). */
+  readonly path: string;
+  readonly format: McpConfigFormat;
+  /** The container the server entry lives under: the JSON root object key, or the
+   *  TOML table prefix. `mcpServers` for Claude Code, Cursor and Kiro; `servers`
+   *  for GitHub Copilot's `.vscode/mcp.json`; `mcp_servers` for Codex, where the
+   *  rendered header is `<rootKey>.<serverName>`. */
+  readonly rootKey: string;
+  /** The server entry's own fields, exactly as this tool expects them — the one
+   *  place per-tool shape divergence lives (e.g. Claude Code and VS Code carry
+   *  `type: 'http'`; Cursor, Kiro and Codex take a bare `url`). Values are strings
+   *  only: the five verified entries need nothing else, and restricting the type
+   *  keeps the TOML key/value renderer total over it. */
+  readonly entry: Readonly<Record<string, string>>;
+}
+
 export interface GeneratedFile {
   /** POSIX-style path relative to the target repo root. Never absolute, never `..`. */
   readonly path: string;
   /** Full file contents, ending in exactly one `\n`. */
   readonly contents: string;
+  /** **(NEW — context7-mcp.)** Marks a path harny co-owns with the user and with
+   *  other tools, whose `contents` were already computed by extending whatever was
+   *  on disk. `planWrites` keeps such a path out of `WritePlan.conflicts`, so a
+   *  pre-existing MCP config file never makes the whole run refuse (`G4`).
+   *  Deliberately `true | undefined` rather than `boolean`: absent is the default
+   *  for every artifact written before this feature, and no call site has to opt
+   *  out. */
+  readonly merge?: true;
 }
 
 export interface CapabilityMapping {
@@ -60,6 +101,14 @@ export interface Generator {
    *  departure (ADR 0014) does not apply. Generators may share a value or share
    *  `undefined`, which is what `dedupePreserveOrder` keys on. */
   readonly guidancePath: string | undefined;
+
+  /** **(NEW — context7-mcp.)** This tool's MCP configuration file and the shape it
+   *  expects a server entry in. `undefined` means this tool has no MCP
+   *  configuration surface harny writes. Required-but-possibly-`undefined`, exactly
+   *  like `guidancePath`: omitting the member is a `tsc` error, so a sixth
+   *  generator cannot skip the question (`SC13`). All five shipped generators
+   *  declare a real value; none is `undefined` today. */
+  readonly mcpConfig: McpConfig | undefined;
 
   /** File name only. Accommodates `<role>.md`, `<role>.agent.md`, and `<role>.toml`. */
   roleFileName(roleId: RoleId): string;

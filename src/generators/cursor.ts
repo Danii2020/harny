@@ -10,6 +10,7 @@ import type { ConductorPayload, HookPayload, RolePayload } from '../engine.js';
 import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
+import { CONTEXT7_MCP_URL } from '../mcp.js';
 import type { FrontmatterField } from './markdown-yaml.js';
 import {
   renderFrontmatter,
@@ -242,6 +243,19 @@ export const cursorGenerator: Generator = {
   // repo-readiness entry's `anyOf`. Verified against vendor documentation
   // 2026-09-14; carries the AL-30 re-verification caveat.
   guidancePath: undefined,
+  // Cursor's own project-scope MCP config file (contract.md § "Verified per-tool
+  // MCP facts"). Verified against vendor documentation 2026-09-15; no `type`
+  // field — Cursor's remote-server shape is a bare `url`. Carries reservation
+  // `R-Cursor`: one unverified, low-confidence secondary claim that MCP support in
+  // some Cursor installs sits behind a settings toggle defaulting off; Cursor's
+  // own documentation was unreachable during exploration. If true, this file is
+  // correct but inert until the user flips that toggle (the `AL-30` failure mode).
+  mcpConfig: {
+    path: '.cursor/mcp.json',
+    format: 'json',
+    rootKey: 'mcpServers',
+    entry: { url: CONTEXT7_MCP_URL },
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

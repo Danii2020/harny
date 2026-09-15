@@ -11,6 +11,7 @@ import { SPEC_SCHEMA_DIR } from '../engine.js';
 import { HarnessError } from '../errors.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
+import { CONTEXT7_MCP_URL } from '../mcp.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -215,6 +216,17 @@ export const githubCopilotGenerator: Generator = {
   // root instruction files"). Verified against vendor documentation 2026-09-14;
   // carries the AL-30 re-verification caveat.
   guidancePath: '.github/copilot-instructions.md',
+  // VS Code's own MCP config file — not Copilot's; it is shared with every other
+  // MCP user of that editor (contract.md § "Verified per-tool MCP facts").
+  // Verified against vendor documentation 2026-09-15. The root key is `servers`,
+  // the one fact that differs from every other of the five tools, which all use
+  // `mcpServers`/`mcp_servers`.
+  mcpConfig: {
+    path: '.vscode/mcp.json',
+    format: 'json',
+    rootKey: 'servers',
+    entry: { type: 'http', url: CONTEXT7_MCP_URL },
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

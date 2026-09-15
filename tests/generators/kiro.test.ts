@@ -30,6 +30,16 @@
  * Coverage T14. `guidancePath` does not exist on `Generator` yet at red time, so
  * `kiroGenerator.guidancePath` reads as `undefined` rather than
  * `'.kiro/steering'`, failing the assertion below.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md Behavior Guarantee MC-15 ("The stale claim is retracted
+ * in the same change") and its `DOCS_LOOKUP_NOTE` rewrite; intent.md SC16;
+ * audit.md Test Coverage T26. This supersedes, rather than merely extends,
+ * this file's own pre-existing "adds the Context7-MCP-server note" assertion
+ * below, which previously pinned the now-stale "harny does not write MCP
+ * configuration" sentence as expected output — that sentence is false after
+ * this feature and the test is updated in the same change its own contract
+ * amendment lands in, per MC-15's "not left to a later docs pass" rule.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -110,15 +120,21 @@ describe('kiroGenerator.mapCapabilities (guarantee 5) (T10)', () => {
     );
   });
 
-  it('adds the Context7-MCP-server note whenever docs-lookup is present', async () => {
+  it('adds a Context7-MCP-server note whenever docs-lookup is present, naming the file harny now writes rather than claiming harny writes none', async () => {
     const { kiroGenerator } = await import('../../src/generators/kiro.js');
 
     const mapping = kiroGenerator.mapCapabilities([{ name: 'docs-lookup', known: true }]);
 
     expect(mapping.tokens).toContain('@context7');
-    expect(mapping.notes).toContain(
-      'docs-lookup maps to the Context7 MCP server (@context7); harny does not write MCP configuration — see plan.md §4 "future scope"',
-    );
+    const docsLookupNote = mapping.notes.find((note) => note.includes('@context7'));
+    expect(docsLookupNote).toBeDefined();
+
+    // The stale claim (MC-15) must be gone...
+    expect(docsLookupNote).not.toMatch(/harny does not write mcp configuration/i);
+    // ...replaced by the file harny now writes...
+    expect(docsLookupNote).toContain('.kiro/settings/mcp.json');
+    // ...and a statement of why Kiro still prompts per tool call (no autoApprove, MC-11).
+    expect(docsLookupNote).toContain('autoApprove');
   });
 
   it('adds a scope note for a scoped capability, in addition to its token', async () => {
@@ -203,6 +219,21 @@ describe('kiroGenerator.renderRole (guarantees 3, 12) (T11)', () => {
       const template = templates.roles.get(roleId)!;
       expect(() => kiroGenerator.renderRole({ template, tier: template.metadata.costTier })).not.toThrow();
     }
+  });
+});
+
+describe('the retracted DOCS_LOOKUP_NOTE still reaches a rendered Kiro role file', () => {
+  it('a role declaring docs-lookup renders the updated note in .kiro/agents/<role>.md, never the retracted sentence', async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+    const templates = await loadRealTemplates();
+    const architectTemplate = templates.roles.get('sdd-architect')!;
+    const hasDocsLookup = architectTemplate.metadata.capabilities.some((c) => c.name === 'docs-lookup');
+    expect(hasDocsLookup).toBe(true);
+
+    const generated = kiroGenerator.renderRole({ template: architectTemplate, tier: 'most-capable' });
+
+    expect(generated.contents).toContain('.kiro/settings/mcp.json');
+    expect(generated.contents).not.toMatch(/harny does not write mcp configuration/i);
   });
 });
 

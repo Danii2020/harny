@@ -19,17 +19,18 @@ vendor's first-party documentation.
 The system SHALL have every generator implement one `Generator` interface
 (`id`, `displayName`, `agentsDir`, `wrapperFormat`, `conductorPath`,
 `roleFileName`, `mapModel`, `mapCapabilities`, `renderRole`,
-`renderConductor`, `hooksPath`, `renderHook`, `skillsDir`, `guidancePath`),
-sufficient for all five targets with narrowing amendments (ADR 0011,
-agent-feedback-controls; ai-sdlc-readiness): the core interface handles role
+`renderConductor`, `hooksPath`, `renderHook`, `skillsDir`, `guidancePath`,
+`mcpConfig`), sufficient for all five targets with narrowing amendments (ADR 0011,
+agent-feedback-controls; ai-sdlc-readiness; context7-mcp): the core interface handles role
 and conductor artifacts; `hooksPath` (declarative) and `renderHook` (method)
 extend it for turn-boundary feedback mechanism, covering
 `.claude/agents/<role>.md`, `.cursor/agents/<role>.md`,
 `.kiro/agents/<role>.md`, `.github/agents/<role>.agent.md` (all
 `markdown-yaml`), and `.codex/agents/<role>.toml` (`toml`), plus hook configs
-at each tool's native path.
+at each tool's native path; `mcpConfig` (declarative, following ADR 0011/0025,
+not ADR 0014) extends it for default MCP server configuration.
 
-**Source:** cli-skeleton · contract.md § "Public API — src/generators/types.ts"; cursor-kiro-copilot-generators · contract.md § "Interface sufficiency finding"; agent-feedback-controls · contract.md § IF-1, Amendment TG-1
+**Source:** cli-skeleton · contract.md § "Public API — src/generators/types.ts"; cursor-kiro-copilot-generators · contract.md § "Interface sufficiency finding"; agent-feedback-controls · contract.md § IF-1, Amendment TG-1; context7-mcp · contract.md § Amendments, § TG-1
 
 #### Scenario: A new per-tool generator is implemented
 - **WHEN** a per-tool generator is implemented
@@ -170,17 +171,17 @@ uses as its canonical, tool-neutral home.
 ### Requirement: TG-10 — Full artifact count with all five tools
 
 The system SHALL, with all five tools selected, emit one `init` run of
-5 × (5 role artifacts + 1 conductor artifact) = 30 tool artifacts, plus one
+5 × (5 role artifacts + 1 conductor artifact + 1 MCP config artifact) = 35 tool artifacts, plus one
 hook artifact per resolved generator (5 additional files at each tool's native
 hook path), plus one shared `.sdd/feedback/run-feedback.mjs` runner and one
 shared `.github/workflows/harny-feedback.yml` CI workflow, plus exactly one
 copy each of the five spec-schema files and `.sdd/harness.json`.
 
-**Source:** codex-generator · contract.md Behavior Guarantee 14; agent-feedback-controls · contract.md Amendment TG-10
+**Source:** codex-generator · contract.md Behavior Guarantee 14; agent-feedback-controls · contract.md Amendment TG-10; context7-mcp · contract.md Amendment TG-10
 
 #### Scenario: `runInit` selects all five tools
 - **WHEN** `runInit` selects all five tools
-- **THEN** it emits exactly 30 tool artifacts (5 tools × 6 each), 5 hook
+- **THEN** it emits exactly 35 tool artifacts (5 tools × 7 each: 5 roles + 1 conductor + 1 MCP config), 5 hook
   artifacts (one per tool at its native path), one shared runner, one shared
   CI workflow, plus one copy each of the five spec-schema files and
   `.sdd/harness.json`
@@ -232,6 +233,7 @@ The system SHALL declare, on every `Generator`, a `guidancePath: string | undefi
 | codex-generator | 2026-09-02 | `codex.ts` and the shared `toml.ts`, closing out all five targets |
 | templates-skill-library-parity | 2026-09-13 | Extended the `Generator` interface with `skillsDir` (per-tool skill-discovery root); narrowed TG-1's "no amendment" claim to role/conductor artifacts; extended TG-6 with Kiro's skill-discovery paths (workspace-priority, folder-name-equals-name rule) |
 | ai-sdlc-readiness | 2026-09-15 | TG-12: extended the `Generator` interface with `guidancePath` (per-tool root instruction-file path, required-but-possibly-`undefined`), consumed by the readiness-checks capability's new `repo readiness` family |
+| context7-mcp | 2026-09-15 | TG-1/TG-10: extended the `Generator` interface with `mcpConfig` (per-tool MCP server configuration path and shape, required-but-possibly-`undefined`); emits one MCP config artifact per resolved generator with default Context7 wiring |
 
 ## Related ADRs
 

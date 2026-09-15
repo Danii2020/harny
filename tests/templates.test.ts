@@ -35,6 +35,14 @@
  * assertion is amended in place (six entries -> eight, `doctor` and `shared`
  * added) — the exact "modified existing test, fails until the amendment
  * lands" case AGENTS.md S6 describes.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md § Integration Points ("`templates/` — one new
+ * documentation file, `templates/mcp/README.md`"). `resolveTemplatesRoot`'s
+ * directory-listing assertion is amended in place again (eight entries ->
+ * nine, `mcp` added) — consequential test maintenance for a declared
+ * `CLI-10` amendment, not part of context7-mcp's own approved 55-test red
+ * phase; see the executor's final report.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -339,8 +347,19 @@ describe('resolveTemplatesRoot (C7)', () => {
     // (Phase 1, contract.md "Canonical templates — templates/hooks/") adds a
     // fifth, `hooks/`, and Phase 2 (contract.md "templates/ci/harny-feedback.yml")
     // adds a sixth, `ci/`. readiness-doctor adds a seventh, `doctor/`, and an
-    // eighth, `shared/`.
-    expect(entries.sort()).toEqual(['ci', 'conductor', 'doctor', 'hooks', 'roles', 'shared', 'skills', 'spec-schema']);
+    // eighth, `shared/`. context7-mcp adds a ninth, `mcp/`
+    // (`templates/mcp/README.md`, documentation only, not scaffolded — SC20).
+    expect(entries.sort()).toEqual([
+      'ci',
+      'conductor',
+      'doctor',
+      'hooks',
+      'mcp',
+      'roles',
+      'shared',
+      'skills',
+      'spec-schema',
+    ]);
   });
 });
 

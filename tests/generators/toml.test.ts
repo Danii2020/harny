@@ -9,6 +9,17 @@
  * `src/generators/toml.ts` does not exist yet at red time — every test below is
  * expected to fail on module resolution or on a missing export, not on a typo
  * in this file.
+ *
+ * Spec: specs/context7-mcp
+ * Covers: contract.md "Public API — src/generators/toml.ts" (MODIFY) —
+ * `renderTomlTable`'s output shape and its bare-key header validation;
+ * Behavior Guarantee MC-12; Error Handling Contract's "renderTomlTable
+ * receives a header needing quoting" row; intent.md SC14; audit.md Test
+ * Coverage T11.
+ *
+ * `renderTomlTable` does not exist yet at red time either — the new describe
+ * block below fails on a missing export, not a wrong assumption about its
+ * shape.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -257,6 +268,83 @@ describe('renderTomlComments (T4)', () => {
     const { renderTomlComments } = await import('../../src/generators/toml.js');
 
     expect(renderTomlComments([]).trim()).toBe('');
+  });
+});
+
+describe('renderTomlTable', () => {
+  it('renders a [header] line followed by one "key = value" line per field, in order', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+
+    const rendered = renderTomlTable('mcp_servers.context7', [
+      { key: 'url', value: '"https://mcp.context7.com/mcp"' },
+    ]);
+
+    expect(rendered).toBe('[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n');
+  });
+
+  it('renders every field under a single header, preserving field order', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+
+    const rendered = renderTomlTable('a.b', [
+      { key: 'first', value: '"1"' },
+      { key: 'second', value: '"2"' },
+    ]);
+
+    const lines = rendered.split('\n').filter((line) => line.length > 0);
+    expect(lines).toEqual(['[a.b]', 'first = "1"', 'second = "2"']);
+  });
+
+  it('accepts a dotted sequence of bare keys as the header without throwing', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+
+    expect(() => renderTomlTable('mcp_servers.context7', [{ key: 'url', value: '"x"' }])).not.toThrow();
+    expect(() => renderTomlTable('a-b_c.d1.e2', [{ key: 'k', value: '"x"' }])).not.toThrow();
+  });
+
+  it('throws HarnessError(TEMPLATE) naming the header when it contains a character needing quoting', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+    const { isHarnessError } = await import('../../src/errors.js');
+
+    let caught: unknown;
+    try {
+      renderTomlTable('mcp servers.context7', [{ key: 'url', value: '"x"' }]);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(isHarnessError(caught)).toBe(true);
+    expect((caught as any).code).toBe('TEMPLATE');
+    expect((caught as any).message).toContain('mcp servers.context7');
+  });
+
+  it('throws HarnessError(TEMPLATE) for a header segment that is already quoted', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+    const { isHarnessError } = await import('../../src/errors.js');
+
+    let caught: unknown;
+    try {
+      renderTomlTable('mcp_servers."context7"', [{ key: 'url', value: '"x"' }]);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(isHarnessError(caught)).toBe(true);
+    expect((caught as any).code).toBe('TEMPLATE');
+  });
+
+  it('throws HarnessError(TEMPLATE) for an empty header', async () => {
+    const { renderTomlTable } = await import('../../src/generators/toml.js');
+    const { isHarnessError } = await import('../../src/errors.js');
+
+    let caught: unknown;
+    try {
+      renderTomlTable('', [{ key: 'url', value: '"x"' }]);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(isHarnessError(caught)).toBe(true);
+    expect((caught as any).code).toBe('TEMPLATE');
   });
 });
 

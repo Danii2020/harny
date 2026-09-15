@@ -32,6 +32,14 @@
  * `tests/fixtures/hooks/fake-runner.mjs` so this test isolates the wrapper's own
  * subprocess-orchestration/JSON-emission logic from the runner's already-tested
  * internals (`tests/hooks/run-feedback.test.ts`).
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "Verified per-tool root instruction files"
+ * (the `claude-code` row); Behavior Guarantee AR-9; intent.md SC6; audit.md Test
+ * Coverage T12. `guidancePath` does not exist on `Generator` yet at red time, so
+ * `claudeCodeGenerator.guidancePath` reads as `undefined` (a missing member, not
+ * a crash — plain property access never throws), which fails the
+ * `toBe('CLAUDE.md')` assertion below.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -496,5 +504,13 @@ describe('renderHook — Stop hook findings arrive via hookSpecificOutput.additi
     } finally {
       await cleanupTempDirs();
     }
+  });
+});
+
+describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T12)', () => {
+  it("declares 'CLAUDE.md', Claude Code's own root instruction file", async () => {
+    const { claudeCodeGenerator } = await import('../../src/generators/claude-code.js');
+
+    expect(claudeCodeGenerator.guidancePath).toBe('CLAUDE.md');
   });
 });

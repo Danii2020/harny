@@ -8,9 +8,12 @@ description: >-
   of rediscovering a half-scaffolded harness, an incoherent spec state, or an unproven
   test suite partway through a feature. The per-turn lint/type-check trigger and the
   before-marking-a-task-done trigger belong to harny-feedback and are never duplicated
-  here — this skill owns session-start and pre-spec-work readiness only. Also usable
-  directly by a human who wants to confirm a repository is ready for SDD work before
-  handing it to an agent.
+  here — this skill owns session-start and pre-spec-work readiness only. Also
+  assesses whether this repo carries the documentation an agent needs (purpose,
+  components, validation commands), states a ready/not-ready verdict, and, only
+  after the caller says yes, hands off drafting any gap to harny-document. Also
+  usable directly by a human who wants to confirm a repository is ready for SDD
+  work before handing it to an agent.
 license: MIT
 compatibility: >-
   Requires a scaffolded readiness runner and checks data to exist in the target
@@ -60,13 +63,34 @@ test suite, or a shipped-but-unarchived feature several turns into a session.
    naming the runner and running it live is the whole mechanism.
 2. Read the report in full: it evaluates every check regardless of an earlier
    failure, so one run shows everything wrong at once.
-3. Act on what it reports:
+3. **Assess coherence.** For each guidance document the runner reported present —
+   this project's conventions document, its README, its architecture/structure
+   document — read it and judge three elements:
+   - **Purpose** — does it state what this project is and what it is for?
+   - **Components** — does it name the top-level structure and what each main part
+     does?
+   - **Validation** — does it name the commands that prove a change is good (tests,
+     lint, type-check, build)?
+   Report each element as stated or missing, per document, by name. All three are
+   **must-have for the conventions document** — the file the agent actually reads as
+   its instructions — and **recommended** for the README and the architecture
+   document. This is presence-vs-coherence: the runner already asserted presence; this
+   step is the judgement a deterministic check cannot make.
+4. **Report a readiness verdict, then ask.** State "ready for SDD work" or "not ready
+   for SDD work": not ready when the runner failed any must-have entry, or when the
+   conventions document is missing any coherence element. Then name the specific files
+   and the specific missing elements and **ask the caller whether to delegate drafting
+   to `harny-document`**. Invoke `harny-document` only after an explicit yes.
+5. Act on what it reports:
    - A **failed** check is addressed before spec work begins.
+   - A **warned** check is named with its remediation but never blocks — recommended,
+     not must-have.
    - A **skipped** check is reported as coverage that could not be evaluated here
      (e.g. an absent tool), never treated as a pass.
-   - A clean report (every check `ok` or `skip`) means the harness is ready; proceed.
-4. Report back which checks failed or were skipped, so the caller's own checklist or
-   audit trail can cite it.
+   - A clean report (every check `ok`, `skip`, or `warn`) means the harness is ready;
+     proceed.
+6. Report back which checks failed, warned, or were skipped, so the caller's own
+   checklist or audit trail can cite it.
 
 ## Guardrails
 
@@ -79,6 +103,10 @@ test suite, or a shipped-but-unarchived feature several turns into a session.
 - **Never invoke `harny-sync` archive mode on the human's behalf**, even when the
   readiness check reports a feature that looks shipped-but-unarchived. Name the
   finding; let the human (or `harny-sync` itself) decide.
+- **The hand-off is offered, never taken unilaterally.** This skill does not write
+  files and does not decide on the human's behalf that a gap should be filled — it
+  states the verdict, names the gaps, and asks. `harny-document` runs only after an
+  explicit yes.
 - **Portability.** Always name the target as "this project's readiness runner and
   checks data (`.sdd/doctor/run-doctor.mjs` / `.sdd/doctor/checks.json`, or the
   project's equivalents)" so a user pointing this skill at their own repo needs no

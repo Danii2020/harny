@@ -22,6 +22,15 @@
  * `codexGenerator.renderHook` is a documented Phase 2 stub returning `undefined` at
  * red time (Task 2.11) — every test in the new blocks below is expected to fail
  * because the returned value has no `.path`/`.contents` to read.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "Verified per-tool root instruction files"
+ * (the `codex` row); Behavior Guarantee AR-9; intent.md SC6; audit.md Test
+ * Coverage T16. `guidancePath` does not exist on `Generator` yet at red time, so
+ * this test asserts the member is explicitly declared (`'in'`), not only that it
+ * reads as `undefined` — a bare value check could not distinguish "declared
+ * undefined" (Codex's own root file *is* `AGENTS.md`, per AR-9) from "not
+ * declared at all" (the red-phase gap).
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -771,5 +780,14 @@ describe('renderHook — Stop findings arrive via {"systemMessage":…}, never a
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T16)', () => {
+  it("declares the member, explicitly, as undefined — Codex loads AGENTS.md natively, already covered universally", async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+
+    expect('guidancePath' in codexGenerator).toBe(true);
+    expect(codexGenerator.guidancePath).toBeUndefined();
   });
 });

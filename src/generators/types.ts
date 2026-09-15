@@ -50,6 +50,16 @@ export interface Generator {
    *  POSIX, relative to the target repo root. A fixed per-generator constant (V1).
    *  Unlike `skillsDir`, no two generators share a value. */
   readonly hooksPath: string;
+  /** **(NEW — ai-sdlc-readiness.)** This tool's own root instruction file, POSIX,
+   *  relative to the target repo root — the file it reads for project-wide guidance
+   *  before any task. `undefined` means this tool's root guidance file *is* the
+   *  cross-tool `AGENTS.md`, so it needs no entry of its own.
+   *
+   *  A declarative member, not a method: a fixed per-tool path fact, exactly like
+   *  `skillsDir` (ADR 0011) and `hooksPath` — nothing is rendered, so the `renderHook`
+   *  departure (ADR 0014) does not apply. Generators may share a value or share
+   *  `undefined`, which is what `dedupePreserveOrder` keys on. */
+  readonly guidancePath: string | undefined;
 
   /** File name only. Accommodates `<role>.md`, `<role>.agent.md`, and `<role>.toml`. */
   roleFileName(roleId: RoleId): string;

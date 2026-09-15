@@ -32,6 +32,26 @@
  * "unknown command" usage error (exit 1, not the contracted 0/2/6), and every
  * `--skills harny-doctor` assertion fails because `harny-doctor` is not yet a
  * known skill id — not a wrong assumption about either surface's shape.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "The fifth family's entries"; Behavior
+ * Guarantees AR-3, AR-4, AR-15; intent.md SC2, SC3, SC15. Drives the `doctor`
+ * verb end to end (via `npx harny init`-scaffolded fixtures), the same style
+ * as the pre-existing SC17/SC19 tests above, so the must-have/recommended
+ * split and the no-write guarantee are proven at the CLI surface, not only at
+ * the runner/`buildDoctorChecks` layers `tests/doctor.test.ts`/
+ * `tests/doctor-runner.test.ts` already cover. `README.md` does not exist as a
+ * check yet at red time, so every test below currently observes exit `0`
+ * (the readiness family is silently absent) rather than the contracted `6`/
+ * `WARN`, which is the expected red-phase failure here.
+ *
+ * The pre-existing SC17 "exits 0 in a properly onboarded... repo" test above
+ * is also amended (a `README.md` write added to its fixture) — a
+ * forward-compatibility fix, not new coverage: intent.md's own Constraints
+ * section states this is a deliberate, declared behavior change ("a
+ * repository that is green today and has no README.md will be red after this
+ * feature"), so the fixture is kept describing a genuinely fully-onboarded
+ * repo rather than becoming a stale false-negative once repo-readiness ships.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -188,6 +208,12 @@ describe('the doctor verb (readiness-doctor, G8, SC16-SC19, T19)', () => {
     // that step so the test exercises "ready" on a fully onboarded repo,
     // not an incompletely-set-up fixture.
     await fs.writeFile(path.join(targetDir, 'AGENTS.md'), '# AGENTS\n\nProject conventions.\n', 'utf8');
+    // ai-sdlc-readiness adds `repo-readiness:readme` as a must-have entry
+    // (intent.md § Constraints: "a repository that is green today and has no
+    // README.md will be red after this feature" — a declared behavior
+    // change). A "fully onboarded repo" fixture keeps meaning that once this
+    // family ships, so a README.md is added here too.
+    await fs.writeFile(path.join(targetDir, 'README.md'), '# Project\n', 'utf8');
 
     const { result } = await captureOutput(() => main(['doctor', targetDir]));
     expect(result).toBe(0);
@@ -250,6 +276,75 @@ describe('the doctor verb (readiness-doctor, G8, SC16-SC19, T19)', () => {
     // command today (which would exit 1 and trivially write nothing).
     expect([0, 6]).toContain(first.result);
     expect([0, 6]).toContain(second.result);
+    expect(after).toEqual(before);
+  });
+});
+
+describe('the doctor verb enforces the new must-have repo-readiness:readme gap (ai-sdlc-readiness, SC2)', () => {
+  it('exits 6 (NOT_READY) and names repo-readiness:readme and its remediation when README.md is absent', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    await captureOutput(() => main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']));
+    await fs.writeFile(path.join(targetDir, 'AGENTS.md'), '# AGENTS\n\nProject conventions.\n', 'utf8');
+    // Deliberately no README.md.
+
+    const { result, text } = await captureOutput(() => main(['doctor', targetDir]));
+
+    expect(result).toBe(6);
+    expect(text).toContain('repo-readiness:readme');
+    expect(text).toContain('add a README.md describing what this project is and how to run it');
+  });
+});
+
+describe('the doctor verb warns, but stays ready, on a missing recommended repo-readiness item (ai-sdlc-readiness, SC3)', () => {
+  it('exits 0 and reports a WARN naming the architecture remediation, when only README.md and CLAUDE.md exist', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    await captureOutput(() => main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']));
+    // CLAUDE.md (not AGENTS.md) satisfies both conventions-doc and claude-code's
+    // own agent-guidance entry, without also satisfying repo-readiness:architecture
+    // (whose anyOf is ARCHITECTURE.md / AGENTS.md / docs/architecture.md) —
+    // isolating the warn to architecture alone.
+    await fs.writeFile(path.join(targetDir, 'CLAUDE.md'), '# CLAUDE\n\nProject conventions.\n', 'utf8');
+    await fs.writeFile(path.join(targetDir, 'README.md'), '# Project\n', 'utf8');
+
+    const { result, text } = await captureOutput(() => main(['doctor', targetDir]));
+
+    expect(result).toBe(0);
+    expect(text.toUpperCase()).toContain('WARN');
+    expect(text).toContain("describing this repo's components and how they fit together");
+  });
+});
+
+describe('a repo-readiness-caused red run still writes nothing under the target directory (ai-sdlc-readiness, SC15, AR-15)', () => {
+  it('leaves the freshly scaffolded target unchanged when doctor reports NOT_READY solely because README.md is absent', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    await captureOutput(() => main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']));
+    await fs.writeFile(path.join(targetDir, 'AGENTS.md'), '# AGENTS\n\nProject conventions.\n', 'utf8');
+
+    async function snapshot(): Promise<string[]> {
+      async function walk(dir: string): Promise<string[]> {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const out: string[] = [];
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) out.push(...(await walk(full)));
+          else out.push(path.relative(targetDir, full));
+        }
+        return out;
+      }
+      return (await walk(targetDir)).sort();
+    }
+
+    const before = await snapshot();
+    const { result } = await captureOutput(() => main(['doctor', targetDir]));
+    const after = await snapshot();
+
+    expect(result).toBe(6);
     expect(after).toEqual(before);
   });
 });

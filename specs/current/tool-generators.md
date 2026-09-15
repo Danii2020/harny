@@ -1,6 +1,6 @@
 # Tool Generators Specification
 
-> Last synced: 2026-09-08. Owned artifacts: `src/generators/types.ts`,
+> Last synced: 2026-09-15. Owned artifacts: `src/generators/types.ts`,
 > `src/generators/markdown-yaml.ts`, `src/generators/toml.ts`,
 > `src/generators/{claude-code,cursor,kiro,github-copilot,codex}.ts`,
 > `src/generators/index.ts`.
@@ -19,10 +19,11 @@ vendor's first-party documentation.
 The system SHALL have every generator implement one `Generator` interface
 (`id`, `displayName`, `agentsDir`, `wrapperFormat`, `conductorPath`,
 `roleFileName`, `mapModel`, `mapCapabilities`, `renderRole`,
-`renderConductor`, `hooksPath`, `renderHook`), sufficient for all five targets
-with two narrowing amendments (ADR 0011, agent-feedback-controls): the core
-interface handles role and conductor artifacts; `hooksPath` (declarative) and
-`renderHook` (method) extend it for turn-boundary feedback mechanism, covering
+`renderConductor`, `hooksPath`, `renderHook`, `skillsDir`, `guidancePath`),
+sufficient for all five targets with narrowing amendments (ADR 0011,
+agent-feedback-controls; ai-sdlc-readiness): the core interface handles role
+and conductor artifacts; `hooksPath` (declarative) and `renderHook` (method)
+extend it for turn-boundary feedback mechanism, covering
 `.claude/agents/<role>.md`, `.cursor/agents/<role>.md`,
 `.kiro/agents/<role>.md`, `.github/agents/<role>.agent.md` (all
 `markdown-yaml`), and `.codex/agents/<role>.toml` (`toml`), plus hook configs
@@ -199,6 +200,16 @@ note.
 - **THEN** it maps to `gpt-5.4-mini` in Cursor's own model catalogue,
   independent of that id's status in any other vendor's catalogue
 
+### Requirement: TG-12 — Verified per-tool root guidance-file paths (`guidancePath`)
+
+The system SHALL declare, on every `Generator`, a `guidancePath: string | undefined` member naming that tool's own native root instruction file — a declarative path fact (following `skillsDir`'s pattern, ADR 0011, not `renderHook`'s, since nothing is rendered) — with these verified values, dated 2026-09-14: `claude-code` → `'CLAUDE.md'`; `kiro` → `'.kiro/steering'` (Kiro also reads `AGENTS.md`, covered by the universal fallback); `github-copilot` → `'.github/copilot-instructions.md'`; `cursor` → `undefined` (Cursor reads `AGENTS.md` at the project root natively); `codex` → `undefined` (Codex CLI loads `AGENTS.md` from global, project-root, and current-directory layers natively). A generator omitting this member is a TypeScript compile error, so a sixth generator cannot skip the question. These facts carry the same re-verification caveat already on record as `AL-30` and `CG-1`/`O4`: verified against vendor documentation, never against a live tool install.
+
+**Source:** ai-sdlc-readiness · intent.md § G6, contract.md § AR-9, "Verified per-tool root instruction files"
+
+#### Scenario: a sixth generator is added without declaring guidancePath
+- **WHEN** a new `Generator` implementation omits the `guidancePath` member
+- **THEN** `tsc` fails to compile, since the member is required (not optional) on the interface
+
 ## Invariants
 
 1. `src/generators/types.ts`, `markdown-yaml.ts` and `toml.ts` stay the single source of shared rendering logic; a sixth generator must not hand-roll its own frontmatter or TOML serialization.
@@ -220,6 +231,7 @@ note.
 | cursor-kiro-copilot-generators | 2026-08-30 | `cursor.ts`, `kiro.ts`, `github-copilot.ts`, and the shared `markdown-yaml.ts` |
 | codex-generator | 2026-09-02 | `codex.ts` and the shared `toml.ts`, closing out all five targets |
 | templates-skill-library-parity | 2026-09-13 | Extended the `Generator` interface with `skillsDir` (per-tool skill-discovery root); narrowed TG-1's "no amendment" claim to role/conductor artifacts; extended TG-6 with Kiro's skill-discovery paths (workspace-priority, folder-name-equals-name rule) |
+| ai-sdlc-readiness | 2026-09-15 | TG-12: extended the `Generator` interface with `guidancePath` (per-tool root instruction-file path, required-but-possibly-`undefined`), consumed by the readiness-checks capability's new `repo readiness` family |
 
 ## Related ADRs
 
@@ -227,3 +239,4 @@ note.
 |---|---|---|
 | 0010 | GitHub Copilot skills route to `.agents/skills/` unconditionally | Accepted |
 | 0011 | Generator interface gains `skillsDir` member; no `renderSkill` method | Accepted |
+| 0025 | `guidancePath` as a declarative `Generator` member, continuing ADR 0011 not ADR 0014 | Accepted |

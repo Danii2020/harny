@@ -1,19 +1,19 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-14 by readiness-doctor (archive mode: feature archived, capability docs updated, ADRs registered)
+> Last synced: 2026-09-15 by ai-sdlc-readiness (archive mode: feature archived, capability docs updated, ADRs registered)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
 
 ## Keyword lookup
 
@@ -68,6 +68,11 @@
 | readiness | readiness-checks |
 | session start | readiness-checks |
 | pre-flight | readiness-checks |
+| repo readiness / must-have / recommended | readiness-checks |
+| warn outcome | readiness-checks |
+| coherence (presence vs. content) | readiness-checks |
+| bootstrap mode | pipeline-roles, readiness-checks |
+| guidancePath | tool-generators |
 
 ## Synchronized Changes
 
@@ -81,6 +86,7 @@
 | templates-skill-library-parity | [specs/archived/templates-skill-library-parity/](../archived/templates-skill-library-parity/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md) |
 | agent-feedback-controls | [specs/archived/agent-feedback-controls/](../archived/agent-feedback-controls/) | [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 | readiness-doctor | [specs/archived/readiness-doctor/](../archived/readiness-doctor/) | [skill-library.md](./skill-library.md), [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
+| ai-sdlc-readiness | [specs/archived/ai-sdlc-readiness/](../archived/ai-sdlc-readiness/) | [readiness-checks.md](./readiness-checks.md), [tool-generators.md](./tool-generators.md), [pipeline-roles.md](./pipeline-roles.md) |
 
 ## Decisions (ADR registry)
 
@@ -107,6 +113,10 @@
 | 0019 | Shared probes.mjs extraction | Accepted | feedback-controls | `specs/archived/readiness-doctor/decisions/0019-shared-probes-extraction.md` |
 | 0020 | .sdd/harness.json-gated scaffold-artifact checks | Accepted | readiness-checks | `specs/archived/readiness-doctor/decisions/0020-harness-json-gated-scaffold-checks.md` |
 | 0021 | NOT_READY exit code taxonomy extension | Accepted | cli-init | `specs/archived/readiness-doctor/decisions/0021-not-ready-exit-code-taxonomy-extension.md` |
+| 0022 | A fifth check family, `repo readiness`, rather than more entries in family 2 | Accepted | readiness-checks | `specs/archived/ai-sdlc-readiness/decisions/0022-fifth-check-family-for-repo-readiness.md` |
+| 0023 | Must-have/recommended tier split, a new `warn` outcome, and `conventions-doc` stays in family 2 | Accepted | readiness-checks | `specs/archived/ai-sdlc-readiness/decisions/0023-must-have-recommended-tiers-and-warn-outcome.md` |
+| 0024 | Presence checked in the deterministic runner; coherence judged one layer up, in the skill | Accepted | readiness-checks | `specs/archived/ai-sdlc-readiness/decisions/0024-presence-in-runner-coherence-in-skill.md` |
+| 0025 | `guidancePath` as a declarative `Generator` member, continuing ADR 0011 not ADR 0014 | Accepted | tool-generators | `specs/archived/ai-sdlc-readiness/decisions/0025-guidancepath-as-declarative-generator-member.md` |
 
 ## Open reservations
 
@@ -135,10 +145,14 @@
 | AL-P9 | A ninth skill directory in `templates/skills/` would be silently never shipped; no test detects it at authorship time | LOW (design) | `specs/archived/templates-skill-library-parity/audit.md` AL-P9 | skill-library |
 | AL-P10 | Three new/updated tests are weaker than their guarantee; three edge cases have downgraded assertions or leftover type casts | LOW (test quality) | `specs/archived/templates-skill-library-parity/audit.md` AL-P10 | cli-init |
 | RD-R1 | `run-doctor.mjs` hard-codes schema file names `intent.md` and `audit.md` rather than receiving them from `--checks`, violating BG-3's "no schema file name literal" guarantee | MEDIUM | `specs/archived/readiness-doctor/audit.md` F3 | readiness-checks |
-| RD-R2 | `DoctorResult.skipped` and `.failed` are structurally never non-empty because `stdio: 'inherit'` leaves the parent with no channel to observe per-check outcomes | MEDIUM | `specs/archived/readiness-doctor/audit.md` F5 | readiness-checks |
+| RD-R2 | `DoctorResult.skipped`/`.failed` are structurally never populated — not because no channel exists (captured pipes now do), but because parsing that output into per-check structured outcomes was deliberately declined by design | MEDIUM | `specs/archived/readiness-doctor/audit.md` F5; wording corrected `specs/archived/ai-sdlc-readiness/audit.md` F2 | readiness-checks |
 | RD-R3 | No test covers `CLI-5` (conflict rule) on the three new generated paths, verified manually only | MEDIUM | `specs/archived/readiness-doctor/audit.md` F6 | readiness-checks |
 | RD-R4 | `SC19` CLI test no longer exercises the path its own rationale names: both test runs are guaranteed never to spawn a test command | MEDIUM | `specs/archived/readiness-doctor/audit.md` F7 | readiness-checks |
-| RD-R5 | Two manually verified coverage gaps (SC20/BG-7 and SC15) have no automated test, held by structure and disclosure rather than by test | MEDIUM | `specs/archived/readiness-doctor/audit.md` F2, T26, T28 | readiness-checks |
+| RD-R5 | No automated test drives verb + direct invocation against one shared fixture (RD-7); more consequential since ai-sdlc-readiness's F1 (resolved) showed this is exactly the gap class that let a real disagreement ship undetected | MEDIUM | `specs/archived/readiness-doctor/audit.md` F2, T26, T28; escalated `specs/archived/ai-sdlc-readiness/audit.md` F1, C16 | readiness-checks |
+| RD-R6 | Captured-pipe `stdio` mode loses live streaming and routes runner stderr through `io.log` instead of `io.warn` | MEDIUM | `specs/archived/ai-sdlc-readiness/audit.md` F3 | readiness-checks |
+| RD-R7 | `harny-document` bootstrap mode's test assertion is weak — 4 of 5 required substrings pre-existed the feature | MEDIUM | `specs/archived/ai-sdlc-readiness/audit.md` F4 | readiness-checks |
+| RD-R8 | AR-16/RD-7 agreement now bounded at 64 MiB (`DOCTOR_RUNNER_MAX_BUFFER`); undocumented in `contract.md` | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F12 | readiness-checks |
+| RD-R9 | `'CLAUDE.md'` remains a literal in `src/doctor.ts` (`conventions-doc`) and `src/generators/claude-code.ts`, an accepted exception since moving `conventions-doc` was out of scope | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F5 | readiness-checks |
 
 ## Notes
 

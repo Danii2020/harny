@@ -158,8 +158,10 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 
 `npx harny doctor` runs the scaffolded readiness check against a target repository —
 a feedforward, computational pre-check (see `AGENTS.md` § "Feedforward vs. feedback")
-that confirms the harness is actually installed and coherent before an agent starts
-work, rather than discovering a half-scaffolded harness partway through a session:
+that confirms both that the harness is installed and coherent, and that the target
+repository carries the baseline documentation an AI coding agent needs to work safely.
+This runs before an agent starts work, rather than discovering gaps partway through a
+session:
 
 ```sh
 # Check the current directory:
@@ -172,12 +174,40 @@ npx harny doctor /path/to/target-repo --stack python
 node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
 ```
 
-It evaluates four check families, in this fixed order — environment, the base
-harness-file manifest, spec-state sanity across `specs/`, and the resolved stack's
-full test suite — and exits `0` when ready, `6` when at least one check failed (never
-confused with a CLI usage/internal error), or `2` when the target directory itself is
-missing or unreadable. It writes nothing under any flag combination: this is the one
-command that executes project tooling, and it never mutates the repo it inspects.
+It evaluates five check families in this fixed order:
+
+1. **Environment** — Node.js version and runtime readiness
+2. **Harness manifest** — base `.sdd/` scaffold files (the generator's own artifacts)
+3. **Repo readiness** — repository documentation the agent needs: a `README.md` (must-have);
+   an architecture/structure document (recommended); and per-tool guidance files
+   (recommended, gated by tool selection in `.sdd/harness.json`)
+4. **Spec state** — coherence of the `specs/` directory if harny specs are in use
+5. **Test suite** — running the resolved stack's full test suite (stack-specific runner)
+
+Two tiers govern each check:
+- **Must-have** — an absent item fails the run and exits `6` (not ready)
+- **Recommended** — an absent item warns (named in the report with remediation) but never
+  changes the exit code
+
+The summary line reports four counts: `ok`, `skipped`, `warned`, and `failed`. Exits `0`
+when ready (no failures, possibly some warnings); exits `6` when at least one must-have
+check failed (never confused with a CLI usage/internal error); exits `2` when the target
+directory is missing, unreadable, or the runner could not complete. Writes nothing under
+any flag combination: this is the one command that executes project tooling, and it never
+mutates the repo it inspects.
+
+For repositories with gaps, `harny-doctor` does more than report: it reads the present
+guidance documents (README, conventions document, architecture document) and judges three
+coherence elements:
+- **Purpose** — does it state what this project is and what it is for?
+- **Components** — does it name the top-level structure and what each main part does?
+- **Validation** — does it name the commands that prove a change is good (tests, lint,
+  type-check, build)?
+
+All three are must-have for the conventions document and recommended for the README and
+architecture document. When gaps are found, `harny-doctor` reports them to the human and
+asks whether to delegate drafting to `harny-document`, which can bootstrap repo-level
+guidance documents from observed evidence.
 
 **Key flags:**
 - `[target]` — directory to check (default: `.`)

@@ -24,6 +24,13 @@
  * `githubCopilotGenerator.renderHook` is a documented Phase 2 stub returning
  * `undefined` at red time (Task 2.11) — every test in the new blocks below is
  * expected to fail because the returned value has no `.path`/`.contents` to read.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "Verified per-tool root instruction files"
+ * (the `github-copilot` row); Behavior Guarantee AR-9; intent.md SC6; audit.md
+ * Test Coverage T15. `guidancePath` does not exist on `Generator` yet at red
+ * time, so `githubCopilotGenerator.guidancePath` reads as `undefined` rather
+ * than `'.github/copilot-instructions.md'`, failing the assertion below.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -559,5 +566,13 @@ describe('renderHook — agentStop findings arrive via {"decision":"block","reas
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T15)', () => {
+  it("declares '.github/copilot-instructions.md', Copilot's repository custom-instructions file", async () => {
+    const { githubCopilotGenerator } = await import('../../src/generators/github-copilot.js');
+
+    expect(githubCopilotGenerator.guidancePath).toBe('.github/copilot-instructions.md');
   });
 });

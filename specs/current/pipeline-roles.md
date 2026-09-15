@@ -1,6 +1,6 @@
 # Pipeline Roles Specification
 
-> Last synced: 2026-09-08. Owned artifacts: `templates/roles/*.md`,
+> Last synced: 2026-09-15. Owned artifacts: `templates/roles/*.md`,
 > `templates/conductor/sdd-conductor.md`, `.claude/agents/sdd-*.md`,
 > `.claude/skills/sdd-conductor/SKILL.md`, the cost-tier and capability
 > vocabularies, the three human gates.
@@ -144,6 +144,20 @@ converted into a `harny-*` skill.
 - **THEN** it still addresses them by their unchanged `name:` values, keeps
   the same three gates, and remains a template, not a `harny-*` skill
 
+### Requirement: PR-10 — harny-document bootstrap mode, bounded and mutually unreachable from the post-audit path
+
+The system SHALL give `harny-document` a second, explicitly-scoped invocation path — bootstrap mode — reachable only when there is no approved `audit.md` for a named feature (a target repository with no harny spec history), mutually exclusive with the normal post-audit hand-off (`PR-5`). Bootstrap mode drafts only the named repo-level document(s) from observed repository evidence, marks every output as a draft for human review, and refuses to touch `specs/`, source files, `CHANGELOG.md`, or trigger the `harny-sync`/`harny-adr` hand-off. It is invoked by `harny-doctor` only after the human says yes to delegating a documentation gap (see the `readiness-checks` capability's ask-before-delegating requirement), or directly by a human.
+
+**Source:** ai-sdlc-readiness · intent.md § G5, contract.md § AR-19
+
+#### Scenario: harny-doctor asks to delegate a missing README
+- **WHEN** a human agrees to delegate drafting a missing repo-level document, and no approved `audit.md` exists for any named feature
+- **THEN** `harny-document` runs in bootstrap mode: it drafts only the named document(s), marks them as drafts, and does not touch `specs/`, source, `CHANGELOG.md`, or trigger `harny-sync`/`harny-adr`
+
+#### Scenario: an approved audit.md exists
+- **WHEN** an approved `audit.md` exists for a named feature
+- **THEN** bootstrap mode is not reached — the normal post-audit hand-off (`PR-5`) applies instead
+
 ## Invariants
 
 1. `cost_tier` and `capabilities` stay abstract vocabulary — a per-tool generator maps them to that tool's real model ids and permission names; no canonical role file may hardcode a tool-specific value as its only source of truth (breaking this reopens `canonical-role-templates` AL-9's regression class).
@@ -164,6 +178,7 @@ converted into a `harny-*` skill.
 | canonical-role-templates | 2026-07-26 | The five roles' portable content contract, the cost-tier/capability vocabularies, the conductor's content contract |
 | sdd-skill-library | 2026-09-09 | Extraction of each role's instructions into a `harny-*` skill; the thinned agent-file shape |
 | templates-skill-library-parity | 2026-09-13 | Decision to keep `templates/roles/sdd-*.md` as full-body role files (not thinned) in the portable layer; reconciliation of the live pipeline and `templates/` on archive lifecycle for scaffolded repos |
+| ai-sdlc-readiness | 2026-09-15 | PR-10: `harny-document`'s bounded bootstrap mode — a second invocation path for a repo with no harny spec history, mutually unreachable from the post-audit path, output always marked draft |
 
 ## Related ADRs
 

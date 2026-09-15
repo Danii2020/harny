@@ -8,25 +8,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
-- **Readiness doctor** — feedforward, computational pre-check run at session start and before new
-  spec work. `harny-doctor` is the eighth core skill (ninth and tenth skills across the all-skills
-  set, always scaffolded). A new `npx harny doctor [target] [--stack name]` CLI verb runs the
-  scaffolded readiness check in `.sdd/doctor/run-doctor.mjs`, evaluating four families in fixed order:
-  environment (Node version), harness-file manifest (`.sdd/` scaffold completeness), spec-state
-  sanity (five-file features, shipped-but-unarchived detection), and the full test suite (stack-specific
-  runner). One line per check; exit 0 when ready, exit 6 when not ready (distinct from CLI errors),
-  exit 2 when invalid target. Writes nothing under any condition. Four-check schema extracted to
-  `.sdd/doctor/checks.json`, probe evaluator extracted to `.sdd/shared/probes.mjs` (shared by both
-  the feedback and readiness runners), both generated during `npx harny init` and subject to `CLI-5`
-  conflict rules. Five current-truth amendments to `specs/current/`: SL-1 (nine→ten skills),
-  FC-9 (7→8 core, 9→10 total), CLI-10 (26→30 template files), CLI-2 (new `NOT_READY`→6 exit code row),
-  and feedback-controls.md I5/FC-13 (generated runtime now two files: `.sdd/feedback/run-feedback.mjs` +
-  `.sdd/shared/probes.mjs`, plus `.sdd/doctor/run-doctor.mjs` + `.sdd/shared/probes.mjs` for readiness).
-  A new capability namespace `readiness-checks` (prefix `RD-`) created from `harny-sync`'s
-  `capability-template.md`. Open reservations: F3 (hard-coded schema file names), F4 (README.md
-  lines 152–155 pre-existing staleness), F5 (`DoctorResult.skipped`/`.failed` never non-empty),
-  F6 (no `CLI-5` test on three new paths), F7 (`SC19` test no longer spawns test command),
-  and T26/T28 (two manually-verified but untested coverage gaps).
+- **AI/SDLC readiness check** — extends `harny-doctor` with a fifth check family, `repo readiness`,
+  that assesses whether a target repository carries the baseline documentation an AI coding agent
+  needs to work safely. Introduces two priority tiers: **must-have** items (absent means the repo
+  reports not ready, exit `6`) and **recommended** items (absent means warn, but never change exit
+  code). The new family checks three universal entries — `README.md` (must-have), an architecture
+  document (recommended), and per-tool guidance files (recommended, gated by `.sdd/harness.json`)
+  — and introduces a fourth outcome, `warn`, to the readiness report. Simultaneously, `harny-doctor`
+  gains a coherence-assessment step that reads guidance documents present and judges three
+  elements: **purpose** (what is this project?), **components** (what are the main parts?), and
+  **validation** (what commands prove a change is good?) — all must-have for the conventions
+  document, recommended for README and architecture. When gaps are found, `harny-doctor` reports
+  them by name and asks the human whether to delegate drafting to `harny-document`, which now
+  offers a **bootstrap mode**: draft repo-level documents from observed repository evidence,
+  without an approved audit in play. Five families now run in fixed order: environment → harness
+  manifest → **repo readiness (new)** → spec state → tests. Amends two shipped current-truth
+  statements in `specs/current/readiness-checks.md`: RD-1/invariant I3 (four families → five),
+  and invariant I2 (ready now includes `warn` outcomes). No new CLI verb or flag; `npx harny doctor`
+  gains behavior. Writes nothing on any outcome. Open reservations: F2 (RD-R2's recorded rationale
+  now obsolete — `stdio: 'inherit'` was replaced during post-audit fix, so the stated cause is
+  false even though the effect is unchanged and intentional), F3 (live streaming lost, stderr
+  re-routed to stdout), F4 (bootstrap mode's refusals weakly tested), F5 (SC7/AR-7 tension),
+  F6 (README behavior 4 replaced rather than extended), F7 (only family 3 visually labelled),
+  F8 (`DoctorResult.ran` overstates its contents).
 
 - **Agent feedback controls** — per-turn and CI-gate feedback for code quality checks. `harny-feedback`
   is a new core skill (seventh core, always scaffolded) that maps project stack (`--stack` flag)

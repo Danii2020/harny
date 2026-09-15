@@ -24,12 +24,40 @@
  * yet gained them (contract.md § State Changes).
  *
  * Mirrors `src/doctor.ts` per AGENTS.md S6 (tests mirror src/).
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md "Public API — src/doctor.ts" (`CheckTier`, `AGENTS_GUIDANCE_PATH`,
+ * `README_PATHS`, `ARCHITECTURE_PATHS`, `REPO_READINESS_FAMILY_LABEL`,
+ * `buildRepoReadinessChecks`) and § Data Models ("The fifth family's entries",
+ * "Verified per-tool root instruction files"); Behavior Guarantees AR-6, AR-7, AR-8,
+ * AR-9, AR-10, AR-13; intent.md SC2, SC3, SC6, SC7, SC9; audit.md Test Coverage
+ * T1-T5.
+ *
+ * `buildRepoReadinessChecks` does not exist yet at red time, so every test below is
+ * expected to fail with "does not provide an export named 'buildRepoReadinessChecks'"
+ * (or the sibling constants), not a wrong assumption about the family's shape. The
+ * real-generator integration block additionally expects a `TypeError` once
+ * `guidancePath` is read off a real generator that does not declare it yet
+ * (`src/generators/types.ts`/`*.ts` — a separate, later red-phase failure once the
+ * constant-resolution failure above is fixed first).
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: post-audit fix for audit.md finding F1 (HIGH) — `runDoctor`'s `spawnSync`
+ * call gained `stdio: ['ignore', 'pipe', 'pipe']` + `encoding: 'utf8'` so its new
+ * CLI-level tests could observe the runner's report (contract.md AR-3/AR-16), but
+ * shipped with no `maxBuffer` and no `result.error` handling, so a runner report
+ * exceeding Node's 1 MiB `spawnSync` default surfaced as a plain, non-`HarnessError`
+ * "unexpected code null" (`EXIT.UNEXPECTED`) instead of a diagnosable failure —
+ * silently inverting a correctly-run red result into an apparently broken runner.
+ * Covers the fix: a generous `maxBuffer` plus explicit `result.error` handling that
+ * throws `HarnessError('USAGE')`, never the generic fallthrough `Error`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Generator } from '../src/generators/types.js';
+import { REPO_ROOT } from './helpers/paths.js';
 
 const tempDirs: string[] = [];
 
@@ -44,9 +72,17 @@ afterEach(async () => {
 });
 
 /** Minimal fake `Generator` — mirrors `tests/generators/registry.test.ts`'s
- *  `fakeGenerator` convention, scoped to the two fields `buildDoctorChecks`
- *  actually needs (`skillsDir`, `conductorPath`). */
-function fakeGenerator(id: string, skillsDir: string, conductorPath: string): Generator {
+ *  `fakeGenerator` convention, scoped to the fields `buildDoctorChecks`/
+ *  `buildRepoReadinessChecks` actually need (`skillsDir`, `conductorPath`,
+ *  `guidancePath`). `guidancePath` defaults to `undefined` so every pre-existing
+ *  call site in this file (written before ai-sdlc-readiness) keeps working
+ *  unchanged. */
+function fakeGenerator(
+  id: string,
+  skillsDir: string,
+  conductorPath: string,
+  guidancePath?: string,
+): Generator {
   return {
     id,
     displayName: `fake ${id} (test evidence only)`,
@@ -55,6 +91,7 @@ function fakeGenerator(id: string, skillsDir: string, conductorPath: string): Ge
     conductorPath,
     skillsDir,
     hooksPath: `.${id}/hooks.json`,
+    guidancePath,
     roleFileName: (roleId) => `${roleId}.md`,
     mapModel: (tier, override) => override ?? tier,
     mapCapabilities: () => ({ tokens: [], notes: [] }),
@@ -348,5 +385,250 @@ describe('runDoctor — pre-flight, exit-code translation, and no-write proof (T
 
     const after = await snapshot(targetDir);
     expect(after).toEqual(before);
+  });
+
+  it('reports a diagnosable HarnessError("USAGE") instead of crashing when the runner\'s output exceeds the capture buffer', async () => {
+    const { runDoctor } = await import('../src/doctor.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    // 70 MiB of stdout comfortably exceeds runDoctor's internal maxBuffer,
+    // forcing spawnSync to report ENOBUFS (result.error) with result.status
+    // null — the exact shape a large red-suite report can produce in practice
+    // (family 5 embeds a failing test command's entire combined stdout+stderr
+    // into a single FAIL line).
+    // The write's callback (fired once the data is fully handed to the kernel)
+    // gates process.exit — calling exit() synchronously right after write()
+    // would truncate the pipe before the 70 MiB is flushed, a Node stdout/pipe
+    // gotcha unrelated to the behavior under test here.
+    const targetDir = await makeScaffoldedTarget(
+      "process.stdout.write('x'.repeat(70 * 1024 * 1024), () => process.exit(2));\n",
+    );
+
+    try {
+      await runDoctor({ targetDir, io: collectingIO().io });
+      expect.unreachable('expected runDoctor to throw a HarnessError');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+      const message = (err as Error).message + ((err as any).details ?? []).join(' ');
+      expect(message.toLowerCase()).toContain('could not be run to completion');
+      expect(message).toContain('.sdd/doctor/run-doctor.mjs');
+    }
+  }, 20000);
+});
+
+describe('buildRepoReadinessChecks — the three entry kinds, exactly as tabulated (AR-6, T1)', () => {
+  it('the readme entry is must-have, ungated, anyOf README.md, with the contracted remediation', async () => {
+    const { buildRepoReadinessChecks, README_PATHS } = await import('../src/doctor.js');
+
+    const entries = buildRepoReadinessChecks([]);
+    const readme = entries.find((e) => e.id === 'repo-readiness:readme');
+
+    expect(readme).toBeDefined();
+    expect(readme!.tier).toBe('must-have');
+    expect(readme!.anyOf).toEqual([...README_PATHS]);
+    expect(readme!.requires).toBeUndefined();
+    expect(readme!.remediation).toBe('add a README.md describing what this project is and how to run it');
+  });
+
+  it('the architecture entry is recommended, ungated, anyOf all three accepted paths', async () => {
+    const { buildRepoReadinessChecks, ARCHITECTURE_PATHS, AGENTS_GUIDANCE_PATH } = await import('../src/doctor.js');
+
+    const entries = buildRepoReadinessChecks([]);
+    const architecture = entries.find((e) => e.id === 'repo-readiness:architecture');
+
+    expect(architecture).toBeDefined();
+    expect(architecture!.tier).toBe('recommended');
+    expect(architecture!.anyOf).toEqual([...ARCHITECTURE_PATHS]);
+    expect(architecture!.anyOf).toContain(AGENTS_GUIDANCE_PATH);
+    expect(architecture!.requires).toBeUndefined();
+  });
+
+  it('readme is first and architecture is second, regardless of which generators are resolved', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+
+    const entries = buildRepoReadinessChecks([
+      fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md', 'CLAUDE.md'),
+    ]);
+
+    expect(entries[0]?.id).toBe('repo-readiness:readme');
+    expect(entries[1]?.id).toBe('repo-readiness:architecture');
+  });
+
+  it('with no generators resolved, only the two universal entries exist — no agent-guidance entry', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+
+    const entries = buildRepoReadinessChecks([]);
+
+    expect(entries.map((e) => e.id)).toEqual(['repo-readiness:readme', 'repo-readiness:architecture']);
+  });
+});
+
+describe('buildRepoReadinessChecks — per-tool agent-guidance entries are derived, never enumerated (AR-8, AR-9, AR-10, T2)', () => {
+  it('emits one recommended, harness-gated entry per distinct declared guidancePath, in resolved order, first-seen deduped, undefined filtered', async () => {
+    const { buildRepoReadinessChecks, AGENTS_GUIDANCE_PATH } = await import('../src/doctor.js');
+    const { HARNESS_CONFIG_PATH } = await import('../src/engine.js');
+
+    // Deliberately fake, non-real-tool paths: if `buildRepoReadinessChecks`
+    // hard-coded a real tool's path instead of reading `guidancePath` off each
+    // generator, these fake values would never appear in the output.
+    const gA = fakeGenerator('tool-a', '.a/skills', '.a/conductor.md', 'fake/a-guidance.md');
+    const gB = fakeGenerator('tool-b', '.b/skills', '.b/conductor.md', undefined);
+    const gC = fakeGenerator('tool-c', '.c/skills', '.c/conductor.md', 'fake/c-guidance.md');
+    const gD = fakeGenerator('tool-d', '.d/skills', '.d/conductor.md', 'fake/a-guidance.md'); // dup of gA's path
+
+    const entries = buildRepoReadinessChecks([gA, gB, gC, gD]);
+    const guidanceEntries = entries.filter((e) => e.id.startsWith('repo-readiness:agent-guidance:'));
+
+    expect(guidanceEntries.map((e) => e.id)).toEqual([
+      'repo-readiness:agent-guidance:fake/a-guidance.md',
+      'repo-readiness:agent-guidance:fake/c-guidance.md',
+    ]);
+    for (const entry of guidanceEntries) {
+      expect(entry.tier).toBe('recommended');
+      expect(entry.requires).toEqual({ anyFile: [HARNESS_CONFIG_PATH] });
+    }
+    expect(guidanceEntries[0]!.anyOf).toEqual(['fake/a-guidance.md', AGENTS_GUIDANCE_PATH]);
+    expect(guidanceEntries[0]!.remediation).toContain('fake/a-guidance.md');
+  });
+
+  it('a single-tool config yields exactly one agent-guidance entry for that tool', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+
+    const entries = buildRepoReadinessChecks([
+      fakeGenerator('tool-a', '.a/skills', '.a/conductor.md', 'fake/only-guidance.md'),
+    ]);
+
+    expect(entries.map((e) => e.id)).toEqual([
+      'repo-readiness:readme',
+      'repo-readiness:architecture',
+      'repo-readiness:agent-guidance:fake/only-guidance.md',
+    ]);
+  });
+});
+
+describe('buildRepoReadinessChecks — integration against the real, resolved Generator instances (AR-8, AR-9, SC6, T2)', () => {
+  it('claude-code alone contributes an agent-guidance entry for CLAUDE.md', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
+
+    const entries = buildRepoReadinessChecks([claudeCodeGenerator]);
+
+    expect(entries.map((e) => e.id)).toContain('repo-readiness:agent-guidance:CLAUDE.md');
+  });
+
+  it('github-copilot alone contributes an agent-guidance entry for .github/copilot-instructions.md', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { githubCopilotGenerator } = await import('../src/generators/github-copilot.js');
+
+    const entries = buildRepoReadinessChecks([githubCopilotGenerator]);
+
+    expect(entries.map((e) => e.id)).toContain('repo-readiness:agent-guidance:.github/copilot-instructions.md');
+  });
+
+  it('kiro alone contributes an agent-guidance entry for .kiro/steering', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { kiroGenerator } = await import('../src/generators/kiro.js');
+
+    const entries = buildRepoReadinessChecks([kiroGenerator]);
+
+    expect(entries.map((e) => e.id)).toContain('repo-readiness:agent-guidance:.kiro/steering');
+  });
+
+  it('cursor alone contributes no agent-guidance entry — its guidance is AGENTS.md, already covered universally', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { cursorGenerator } = await import('../src/generators/cursor.js');
+
+    const entries = buildRepoReadinessChecks([cursorGenerator]);
+
+    expect(entries.map((e) => e.id)).toEqual(['repo-readiness:readme', 'repo-readiness:architecture']);
+  });
+
+  it('codex alone contributes no agent-guidance entry either, for the same reason', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { codexGenerator } = await import('../src/generators/codex.js');
+
+    const entries = buildRepoReadinessChecks([codexGenerator]);
+
+    expect(entries.map((e) => e.id)).toEqual(['repo-readiness:readme', 'repo-readiness:architecture']);
+  });
+
+  it('a multi-tool selection contributes one agent-guidance entry per distinct tool with a declared path, in resolved order, never one for cursor', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
+    const { cursorGenerator } = await import('../src/generators/cursor.js');
+    const { kiroGenerator } = await import('../src/generators/kiro.js');
+
+    const entries = buildRepoReadinessChecks([claudeCodeGenerator, cursorGenerator, kiroGenerator]);
+    const guidanceEntries = entries.filter((e) => e.id.startsWith('repo-readiness:agent-guidance:'));
+
+    expect(guidanceEntries.map((e) => e.id)).toEqual([
+      'repo-readiness:agent-guidance:CLAUDE.md',
+      'repo-readiness:agent-guidance:.kiro/steering',
+    ]);
+  });
+});
+
+// Red-phase note: `.kiro/steering` and `.github/copilot-instructions.md` are new
+// per-tool facts this feature introduces at all; `src/doctor.ts` legitimately
+// contains neither today, so this structural guard already passes before any
+// implementation lands — exactly the "nothing to violate yet, becomes a live
+// regression guard" situation `tests/generators/registry.test.ts`'s own
+// `--whole-project` guard documents for itself. It stays live and reported here
+// so it starts protecting the instant `buildRepoReadinessChecks` is authored,
+// rather than being added only after the fact. The companion behavioral tests
+// above (arbitrary fake `guidancePath` values surviving unchanged) are the
+// primary, stronger proof that the values are derived, not hard-coded; this is
+// the one narrow structural literal-check the contract also calls for (SC7).
+describe('src/doctor.ts hard-codes no per-tool guidance-path literal (AR-8, SC7, T5)', () => {
+  it('contains neither .kiro/steering nor .github/copilot-instructions.md as a source literal — both must be read off a resolved Generator', async () => {
+    const source = await fs.readFile(path.join(REPO_ROOT, 'src', 'doctor.ts'), 'utf8');
+
+    expect(source).not.toContain('.kiro/steering');
+    expect(source).not.toContain('.github/copilot-instructions.md');
+  });
+});
+
+describe('buildDoctorChecks — the new family travels alongside the untouched require array (AR-7, AR-13, T3, T4)', () => {
+  it('carries repoReadiness and repoReadinessLabel, equal to buildRepoReadinessChecks(generators) and REPO_READINESS_FAMILY_LABEL', async () => {
+    const { buildDoctorChecks, buildRepoReadinessChecks, REPO_READINESS_FAMILY_LABEL } = await import(
+      '../src/doctor.js'
+    );
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md', 'CLAUDE.md')];
+    const config = fakeConfig({ stack: 'typescript' });
+
+    const checks = buildDoctorChecks(config as any, generators);
+
+    expect(checks.repoReadinessLabel).toBe(REPO_READINESS_FAMILY_LABEL);
+    expect(checks.repoReadiness).toEqual(buildRepoReadinessChecks(generators));
+  });
+
+  it('conventions-doc keeps its id, its first position in require, its anyOf, and carries no tier field (must-have unchanged)', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md', 'CLAUDE.md')];
+
+    const checks = buildDoctorChecks(fakeConfig({ stack: 'typescript' }) as any, generators);
+
+    expect(checks.require[0]?.id).toBe('conventions-doc');
+    expect(checks.require[0]?.anyOf).toEqual(['AGENTS.md', 'CLAUDE.md']);
+    expect('tier' in (checks.require[0] as object)).toBe(false);
+  });
+
+  it('the new family never duplicates conventions-doc — no repoReadiness entry shares its id', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md', 'CLAUDE.md')];
+
+    const checks = buildDoctorChecks(fakeConfig({ stack: 'typescript' }) as any, generators);
+
+    expect(checks.repoReadiness.some((entry) => entry.id === 'conventions-doc')).toBe(false);
+  });
+
+  it('buildRepoReadinessChecks is pure: identical generators produce byte-identical output across two calls', async () => {
+    const { buildRepoReadinessChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md', 'CLAUDE.md')];
+
+    const first = buildRepoReadinessChecks(generators);
+    const second = buildRepoReadinessChecks(generators);
+
+    expect(JSON.stringify(first)).toBe(JSON.stringify(second));
   });
 });

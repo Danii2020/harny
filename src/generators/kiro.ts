@@ -232,6 +232,11 @@ export const kiroGenerator: Generator = {
   conductorPath: '.kiro/skills/sdd-conductor/SKILL.md',
   skillsDir: '.kiro/skills',
   hooksPath: '.kiro/hooks/harny-feedback.json',
+  // Kiro's workspace steering directory (contract.md § "Verified per-tool root
+  // instruction files"); Kiro also supports AGENTS.md, which the `anyOf` fallback
+  // covers. Verified against vendor documentation 2026-09-14; carries the AL-30
+  // re-verification caveat.
+  guidancePath: '.kiro/steering',
   roleFileName,
   mapModel,
   mapCapabilities,

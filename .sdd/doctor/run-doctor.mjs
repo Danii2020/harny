@@ -19,33 +19,46 @@
  * inline JSON text detected by a leading `{` — the identical dual-form convention
  * `run-feedback.mjs`'s `--commands` flag already implements.
  *
- * Four check families run in this fixed order, every time, so two runs of the same
- * repo state produce identical output (BG-1):
+ * Five check families run in this fixed order, every time, so two runs of the same
+ * repo state produce identical output (BG-1, amended by ai-sdlc-readiness from four
+ * families to five — see `templates/doctor/README.md`):
  *
  * 1. **environment** — the running Node version is reported (always `ok`); when the
  *    supplied `commands` list is empty (an unresolved/blank stack, BG-8), a single
  *    notice is reported (`skip`, never a failure).
- * 2. **harness manifest** — one line per `require` entry: its own `requires` gate is
- *    evaluated first (a false gate is `skip`, never a failure — BG-9); when the gate
- *    passes (or is absent), the entry's `anyOf` paths are checked for existence
- *    (`ok` if any exists, `fail` naming the entry's own `remediation` otherwise).
- * 3. **spec state** — every `specs/<feature>/` directory (excluding the configured
+ * 2. **harness manifest** — one line per `require` entry, evaluated by the shared
+ *    `evaluateEntry` (see below).
+ * 3. **repo readiness** — one line per `repoReadiness` entry, evaluated by the same
+ *    `evaluateEntry` as family 2 — a different question (is the target repo itself
+ *    legible to an agent) from family 2 (is harny's own harness installed), so it
+ *    gets its own labelled section rather than more entries in family 2.
+ * 4. **spec state** — every `specs/<feature>/` directory (excluding the configured
  *    `reservedDirs`) is checked for the configured `schemaFiles`, and for the
  *    shipped-but-unarchived condition (BOTH a `shippedMarker` header line in
  *    `intent.md` AND an `approvedVerdicts` match in `audit.md`) — reported by feature
  *    name, one line per finding; a feature with no finding contributes no line.
- * 4. **tests** — one line per `commands` entry: its `requires` probe is evaluated
+ * 5. **tests** — one line per `commands` entry: its `requires` probe is evaluated
  *    first (a false probe is `skip`, never a failure); when it passes, the command is
  *    spawned once and its exit status becomes `ok`/`fail`.
  *
+ * `evaluateEntry` is the one presence-entry evaluator shared by families 2 and 3
+ * (AR-12): its own `requires` gate is evaluated first (a false gate is `skip`, never
+ * a failure — BG-9); when the gate passes (or is absent), the entry's `anyOf` paths
+ * are checked for existence (`ok` if any exists); when none exists, the miss splits
+ * on the entry's own declared `tier` — `'recommended'` emits `warn` naming the
+ * entry's `remediation`, anything else (absent or unrecognised) emits `fail` naming
+ * it (AR-5, the conservative default a repo's pre-feature `checks.json` and every
+ * family-2 entry rely on).
+ *
  * A failing check never aborts the run (BG-2): every check in every family is always
  * evaluated, so one report shows everything wrong at once. A trailing summary line
- * names the ok/skipped/failed counts.
+ * names the ok/skipped/warned/failed counts.
  *
- * Exit codes: `0` when every check is `ok` or `skip` (ready); `2` when at least one
- * check is `fail` (not ready); `1` when `--checks` is missing, unreadable, or not
- * valid JSON, or an unknown flag is given (the runner itself could not run) — never
- * confused with a red-but-correctly-run result.
+ * Exit codes: `0` when every check is `ok`, `skip`, or `warn` (ready — a warned run
+ * is still a ready run); `2` when at least one check is `fail` (not ready); `1` when
+ * `--checks` is missing, unreadable, or not valid JSON, or an unknown flag is given
+ * (the runner itself could not run) — never confused with a red-but-correctly-run
+ * result.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -126,13 +139,34 @@ function main() {
   const lines = [];
   let okCount = 0;
   let skipCount = 0;
+  let warnCount = 0;
   let failCount = 0;
 
   function emit(id, outcome, detail) {
     lines.push(`${outcome.toUpperCase()} ${id}${detail ? ` - ${detail}` : ''}`);
     if (outcome === 'ok') okCount += 1;
     else if (outcome === 'skip') skipCount += 1;
+    else if (outcome === 'warn') warnCount += 1;
     else failCount += 1;
+  }
+
+  /** One presence-entry evaluator, shared by family 2 (harness manifest) and family 3
+   *  (repo readiness) — the same single-implementation discipline `requirementMet`
+   *  follows (RD-3). The miss branch splits on the entry's own declared `tier`: an
+   *  absent or unrecognised `tier` is must-have (`fail`), preserving family 2's
+   *  pre-feature behavior exactly (AR-5). */
+  function evaluateEntry(entry, cwdForEntry) {
+    if (!requirementMet(entry.requires, cwdForEntry)) {
+      emit(entry.id, 'skip', 'requirement not met, skipping');
+      return;
+    }
+    if (anyPathExists(entry.anyOf, cwdForEntry)) {
+      emit(entry.id, 'ok');
+    } else if (entry.tier === 'recommended') {
+      emit(entry.id, 'warn', entry.remediation);
+    } else {
+      emit(entry.id, 'fail', entry.remediation);
+    }
   }
 
   // 1. environment.
@@ -148,18 +182,20 @@ function main() {
 
   // 2. harness manifest.
   for (const entry of checks.require ?? []) {
-    if (!requirementMet(entry.requires, cwd)) {
-      emit(entry.id, 'skip', 'requirement not met, skipping');
-      continue;
-    }
-    if (anyPathExists(entry.anyOf, cwd)) {
-      emit(entry.id, 'ok');
-    } else {
-      emit(entry.id, 'fail', entry.remediation);
-    }
+    evaluateEntry(entry, cwd);
   }
 
-  // 3. spec state.
+  // 3. repo readiness. `checks.repoReadiness`/`checks.repoReadinessLabel` are the
+  // only new reads (AR-11); both tolerate absence so a pre-feature checks.json
+  // contributes no family-3 lines rather than erroring (AR-5, SC9).
+  if (checks.repoReadinessLabel) {
+    lines.push(`-- ${checks.repoReadinessLabel} --`);
+  }
+  for (const entry of checks.repoReadiness ?? []) {
+    evaluateEntry(entry, cwd);
+  }
+
+  // 4. spec state.
   const specs = checks.specs ?? {};
   const specsDir = specs.dir;
   const reservedDirs = new Set(specs.reservedDirs ?? []);
@@ -214,7 +250,7 @@ function main() {
     }
   }
 
-  // 4. tests.
+  // 5. tests.
   for (const command of commands) {
     if (!requirementMet(command.requires, cwd)) {
       emit(command.id, 'skip', 'requirement not met, skipping');
@@ -233,7 +269,7 @@ function main() {
   for (const line of lines) {
     console.log(line);
   }
-  console.log(`summary: ${okCount} ok, ${skipCount} skipped, ${failCount} failed`);
+  console.log(`summary: ${okCount} ok, ${skipCount} skipped, ${warnCount} warned, ${failCount} failed`);
 
   process.exit(failCount > 0 ? 2 : 0);
 }

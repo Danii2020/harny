@@ -84,6 +84,24 @@
  * stays vacuously green for it and cannot serve as red-phase coverage — a
  * targeted assertion is added instead. `DIVERGENCE_TABLE`'s own entry for
  * `harny-doctor` is `harny-implement`'s concern (Task 5.5), not this test's.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § "Skill interface — .claude/skills/harny-doctor/SKILL.md"
+ * and "Skill interface — .claude/skills/harny-document/SKILL.md"; Behavior
+ * Guarantees AR-17, AR-18, AR-19, AR-20; intent.md SC11, SC12, SC13; audit.md
+ * Test Coverage T17.
+ *
+ * Both `.claude/skills/harny-doctor/SKILL.md` and
+ * `.claude/skills/harny-document/SKILL.md` already exist and are already
+ * byte-identical to their `templates/skills/` counterparts (the generic
+ * bijection sweep above already proves this and stays green throughout this
+ * feature). Neither file has been amended for this feature's new prose yet, so
+ * every substring assertion below is expected to fail at red time — not the
+ * byte-identity assertion, which is a regression guard that starts, and stays,
+ * green. Per the harny-test procedure, this is analogous to a documentation
+ * contract: the only way to verify a `SKILL.md`'s prose commitments is to read
+ * the file, so a targeted substring check plays the role a behavioral test
+ * plays for executable code.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -400,5 +418,93 @@ describe('harny-doctor exists at both skill roots and is byte-identical between 
     expect(templateSource, `${templateFile} does not exist yet`).toBeDefined();
 
     expect(templateSource).toBe(agentsSource);
+  });
+});
+
+describe('harny-doctor documents the coherence assessment and the human-asked hand-off (AR-17, AR-18, SC11) (Task 4.17 / T17)', () => {
+  const REQUIRED_SUBSTRINGS = [
+    // The three coherence elements (contract.md § Data Models "Coherence
+    // elements"), named so the reading procedure judges exactly these three.
+    'Purpose',
+    'Components',
+    'Validation',
+    // The readiness verdict vocabulary (contract.md § "Skill interface —
+    // .claude/skills/harny-doctor/SKILL.md").
+    'ready for SDD work',
+    // The mention of the skill this hand-off is offered to.
+    'harny-document',
+  ];
+
+  it.each([
+    ['.claude/skills/harny-doctor/SKILL.md', path.join(REPO_ROOT, '.claude', 'skills', 'harny-doctor', 'SKILL.md')],
+    ['templates/skills/harny-doctor/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-doctor', 'SKILL.md')],
+  ])('%s names the coherence elements, the readiness verdict, and harny-document by name', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+    const normalized = normalizeWhitespace(source!);
+
+    for (const needle of REQUIRED_SUBSTRINGS) {
+      expect(normalized, `missing "${needle}"`).toContain(needle);
+    }
+  });
+
+  // Red-phase note: this guardrail already exists verbatim in both files today
+  // (it predates this feature), so this pair already passes before any
+  // implementation lands. It stays here as a continuity guard, exactly as
+  // AR-18 requires ("survives verbatim") — a future edit that accidentally
+  // reworded or dropped it while adding the new hand-off step is exactly what
+  // this catches.
+  it.each([
+    ['.claude/skills/harny-doctor/SKILL.md', path.join(REPO_ROOT, '.claude', 'skills', 'harny-doctor', 'SKILL.md')],
+    ['templates/skills/harny-doctor/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-doctor', 'SKILL.md')],
+  ])('%s keeps the "Never fix what it finds" guardrail verbatim', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+
+    expect(source).toContain('Never fix what it finds');
+  });
+});
+
+describe('harny-document documents its bounded bootstrap entry point (AR-19, SC12) (Task 4.17 / T17)', () => {
+  const REQUIRED_SUBSTRINGS = [
+    'Bootstrap mode',
+    // The draft marking every bootstrap-mode output carries (contract.md
+    // § "Skill interface — .claude/skills/harny-document/SKILL.md").
+    'draft',
+    // The bounded refusal set: source, specs/, CHANGELOG.md, and the archive
+    // hand-off, none of which bootstrap mode may touch or trigger.
+    'CHANGELOG.md',
+    'harny-sync',
+    'harny-adr',
+  ];
+
+  it.each([
+    ['.claude/skills/harny-document/SKILL.md', path.join(REPO_ROOT, '.claude', 'skills', 'harny-document', 'SKILL.md')],
+    ['templates/skills/harny-document/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+  ])('%s names bootstrap mode, its draft marking, and its bounded refusal set', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+    const normalized = normalizeWhitespace(source!);
+
+    for (const needle of REQUIRED_SUBSTRINGS) {
+      expect(normalized, `missing "${needle}"`).toContain(needle);
+    }
+  });
+
+  // Red-phase note: like the "Never fix what it finds" guardrail above, the
+  // REJECTED refusal already exists in both files today and this pair already
+  // passes before any implementation lands — a continuity guard for AR-19's
+  // "the post-audit path ... is unchanged", not a red-phase gate on its own.
+  it.each([
+    ['.claude/skills/harny-document/SKILL.md', path.join(REPO_ROOT, '.claude', 'skills', 'harny-document', 'SKILL.md')],
+    ['templates/skills/harny-document/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+  ])('%s keeps the post-audit REJECTED refusal unchanged, distinct from bootstrap mode', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+
+    // The existing post-audit precondition (verdict REJECTED => stop) must
+    // still be present and untouched — bootstrap mode is an addition, never a
+    // replacement of this refusal.
+    expect(source).toContain('REJECTED');
   });
 });

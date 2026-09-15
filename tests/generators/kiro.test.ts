@@ -23,6 +23,13 @@
  * `kiroGenerator.renderHook` is a documented Phase 2 stub returning `undefined` at
  * red time (Task 2.11) — every test in the new blocks below is expected to fail
  * because the returned value has no `.path`/`.contents` to read.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "Verified per-tool root instruction files"
+ * (the `kiro` row); Behavior Guarantee AR-9; intent.md SC6; audit.md Test
+ * Coverage T14. `guidancePath` does not exist on `Generator` yet at red time, so
+ * `kiroGenerator.guidancePath` reads as `undefined` rather than
+ * `'.kiro/steering'`, failing the assertion below.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -473,5 +480,13 @@ describe('renderHook — agentStop findings arrive via exit 0 + STDOUT added to 
       delete process.env.FAKE_EXIT_CODE;
       await cleanupTempDirs();
     }
+  });
+});
+
+describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T14)', () => {
+  it("declares '.kiro/steering', Kiro's workspace steering directory", async () => {
+    const { kiroGenerator } = await import('../../src/generators/kiro.js');
+
+    expect(kiroGenerator.guidancePath).toBe('.kiro/steering');
   });
 });

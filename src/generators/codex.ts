@@ -263,6 +263,11 @@ export const codexGenerator: Generator = {
   conductorPath: '.agents/skills/sdd-conductor/SKILL.md',
   skillsDir: '.agents/skills',
   hooksPath: 'hooks.json',
+  // Codex CLI loads AGENTS.md from global, project-root and current-directory
+  // layers natively (contract.md § "Verified per-tool root instruction files"), so
+  // it needs no entry of its own. Verified against vendor documentation
+  // 2026-09-14; carries the CG-1/O4 re-verification caveat.
+  guidancePath: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

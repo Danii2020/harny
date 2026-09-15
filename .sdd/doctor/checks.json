@@ -219,6 +219,44 @@
       }
     }
   ],
+  "repoReadiness": [
+    {
+      "id": "repo-readiness:readme",
+      "description": "a README exists",
+      "anyOf": [
+        "README.md"
+      ],
+      "remediation": "add a README.md describing what this project is and how to run it",
+      "tier": "must-have"
+    },
+    {
+      "id": "repo-readiness:architecture",
+      "description": "an architecture or structure document exists",
+      "anyOf": [
+        "ARCHITECTURE.md",
+        "AGENTS.md",
+        "docs/architecture.md"
+      ],
+      "remediation": "add an ARCHITECTURE.md (or an AGENTS.md section) describing this repo's components and how they fit together",
+      "tier": "recommended"
+    },
+    {
+      "id": "repo-readiness:agent-guidance:CLAUDE.md",
+      "description": "CLAUDE.md or AGENTS.md exists",
+      "anyOf": [
+        "CLAUDE.md",
+        "AGENTS.md"
+      ],
+      "remediation": "add CLAUDE.md (or a root AGENTS.md) so this tool reads project guidance",
+      "tier": "recommended",
+      "requires": {
+        "anyFile": [
+          ".sdd/harness.json"
+        ]
+      }
+    }
+  ],
+  "repoReadinessLabel": "repo readiness",
   "commands": [
     {
       "id": "npm-test",

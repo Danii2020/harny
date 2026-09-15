@@ -24,6 +24,17 @@
  * at red time (Task 2.11) — every test in the new blocks below is expected to fail
  * because the returned value has no `.path`/`.contents` to read, not because of a
  * wrong assumption about the wrapper shape.
+ *
+ * Spec: specs/ai-sdlc-readiness
+ * Covers: contract.md § Data Models "Verified per-tool root instruction files"
+ * (the `cursor` row); Behavior Guarantee AR-9; intent.md SC6; audit.md Test
+ * Coverage T13. `guidancePath` does not exist on `Generator` yet at red time, so
+ * `cursorGenerator.guidancePath` reads as `undefined` today for the wrong reason
+ * (the member is absent) rather than the contracted reason (Cursor's own root
+ * file *is* `AGENTS.md`) — the test below cannot distinguish the two by value
+ * alone, which is exactly why `tests/generators/registry.test.ts`'s sibling
+ * assertions and this repo's `tsc` build are what actually prove the member
+ * exists; this test only pins the declared value once it does.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -552,5 +563,18 @@ describe('renderHook — stop hook findings arrive via {"followup_message":…},
       delete process.env.FAKE_STDOUT;
       await cleanupTempDirs();
     }
+  });
+});
+
+describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T13)', () => {
+  it("declares the member, explicitly, as undefined — Cursor's own root instruction file is AGENTS.md, already covered universally", async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+
+    // Asserted as `'in'`, not only by value: `undefined` is also what a
+    // genuinely *missing* member reads as, so a bare `toBeUndefined()` could
+    // never distinguish "declared undefined" (AR-9's requirement) from "not
+    // declared at all" (the red-phase gap this test exists to catch).
+    expect('guidancePath' in cursorGenerator).toBe(true);
+    expect(cursorGenerator.guidancePath).toBeUndefined();
   });
 });

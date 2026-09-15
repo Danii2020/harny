@@ -211,6 +211,10 @@ export const githubCopilotGenerator: Generator = {
   conductorPath: '.github/skills/sdd-conductor/SKILL.md',
   skillsDir: '.agents/skills',
   hooksPath: '.github/hooks/harny-feedback.json',
+  // Copilot's repository custom-instructions file (contract.md § "Verified per-tool
+  // root instruction files"). Verified against vendor documentation 2026-09-14;
+  // carries the AL-30 re-verification caveat.
+  guidancePath: '.github/copilot-instructions.md',
   roleFileName,
   mapModel,
   mapCapabilities,

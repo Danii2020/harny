@@ -236,6 +236,12 @@ export const cursorGenerator: Generator = {
   conductorPath: '.cursor/skills/sdd-conductor/SKILL.md',
   skillsDir: '.agents/skills',
   hooksPath: '.cursor/hooks.json',
+  // Cursor reads AGENTS.md (and CLAUDE.md) at the project root alongside
+  // .cursor/rules natively (contract.md § "Verified per-tool root instruction
+  // files"), so it needs no entry of its own — AGENTS.md is already in every
+  // repo-readiness entry's `anyOf`. Verified against vendor documentation
+  // 2026-09-14; carries the AL-30 re-verification caveat.
+  guidancePath: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

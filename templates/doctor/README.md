@@ -13,12 +13,18 @@ all, unlike the feedback hook (`AGENTS.md` S7).
 
 ## The behavior
 
-1. **Four check families run, in this fixed order, every time.** *Environment* (is
+1. **Five check families run, in this fixed order, every time.** *Environment* (is
    the running Node new enough, and is a test-suite command even configured for this
    stack), *harness manifest* (are the base harness files this repo's `harny init`
-   scaffolded still present), *spec state* (is `specs/` internally coherent), and
-   *tests* (does the full test suite pass). Fixed order means two runs of the same
-   repo state produce identical output.
+   scaffolded still present), *repo readiness* (is the target repository itself
+   legible to an AI agent — a README, an architecture/structure document, and each
+   selected tool's own guidance file), *spec state* (is `specs/` internally
+   coherent), and *tests* (does the full test suite pass). Repo readiness is a
+   separate family from harness manifest, not more entries in it, because the two
+   ask different questions: harness manifest asks whether harny's own artifacts are
+   installed; repo readiness asks whether the repository itself carries the baseline
+   documentation an agent needs to work here safely. Fixed order means two runs of
+   the same repo state produce identical output.
 2. **The run is all-or-nothing in reporting, never in execution.** A failing check
    never aborts the run: every check in every family is always evaluated, so one
    report shows everything wrong at once, not one thing at a time.
@@ -27,20 +33,43 @@ all, unlike the feedback hook (`AGENTS.md` S7).
    govern here too, reusing the identical evaluator (see "What lives here" below) —
    a repo that legitimately has no test runner for its stack is not "broken," and a
    readiness check that fails outright on absence trains people to ignore it.
-4. **A skip is reported as coverage, never as a pass.** The report distinguishes
-   "this was checked and is fine" from "this was not checked" — collapsing the two
-   would hide exactly the blind spot this control exists to close.
+4. **Every presence assertion carries one of two priority tiers, and each tier
+   reports differently when its target is absent.** A **must-have** item that is
+   absent **fails** the run: the repo is reported not ready for SDD work. A
+   **recommended** item that is absent **warns**: named in the report with its
+   remediation, but never turning a ready run into a not-ready one. This is why the
+   report distinguishes three non-`ok` cases, not two: **not checked** (`skip` — the
+   entry's own requirement was not met, e.g. an absent tool or an un-scaffolded
+   repo), **checked and lacking but not blocking** (`warn` — a recommended item was
+   absent), and **checked and blocking** (`fail` — a must-have item was absent).
+   Collapsing any two of these three would hide exactly the blind spot this control
+   exists to close.
 5. **Exit code distinguishes "ready" from "not ready" from "the check itself broke."**
-   Three outcomes, three distinct codes: every check `ok` or `skip` (ready); at least
-   one check `fail` (not ready — a correctly completed, red result); the check
-   itself could not run at all, e.g. an unreadable or invalid `--checks` value (a
-   runner bug or misuse, never confused with a red readiness result).
-6. **No command string, stack name, spec-directory name, schema-file name, or
-   `Shipped:`/verdict literal is hard-coded in the runner.** Every such value is
-   handed to the runner as data (`--checks`), generated once per `harny init` run
-   from the single sources that already own each value (the stack-to-command
-   mapping, the spec-schema file list, the shipped/approved markers) — never
+   Three outcomes, three distinct codes: every check `ok`, `skip`, or `warn` (ready —
+   a warned run is still a ready run); at least one check `fail` (not ready — a
+   correctly completed, red result); the check itself could not run at all, e.g. an
+   unreadable or invalid `--checks` value (a runner bug or misuse, never confused
+   with a red readiness result).
+6. **No command string, stack name, spec-directory name, schema-file name, document
+   name, accepted path, tier value, family label, or `Shipped:`/verdict literal is
+   hard-coded in the runner.** Every such value is handed to the runner as data
+   (`--checks`), generated once per `harny init` run from the single sources that
+   already own each value (the stack-to-command mapping, the spec-schema file list,
+   the shipped/approved markers, the repo-readiness entries and their tiers) — never
    duplicated or re-typed here.
+7. **The runner asserts presence only; it never inspects a document's contents.**
+   Whether `README.md`, an architecture document, or a tool's own guidance file
+   exists is computational and belongs here. Whether that document actually says
+   anything useful — states the project's purpose, names its components, names the
+   commands that validate a change — is judgement, and belongs one layer up, in the
+   reading procedure that consumes this report (`harny-doctor`'s coherence-assessment
+   step). A keyword grep in this runner would be easy to satisfy and hard to trust,
+   so this runner does not perform one.
+8. **A stale committed runner is not a silent failure.** A repo whose committed
+   `.sdd/doctor/run-doctor.mjs` predates the repo-readiness family simply produces no
+   family-3 lines — it still runs the four families it knows, including the
+   conventions-document check, unchanged. Re-run `npx harny init` after upgrading
+   harny to pick up the new family.
 
 ## What this checks, concretely
 
@@ -52,6 +81,14 @@ all, unlike the feedback hook (`AGENTS.md` S7).
   itself depends on the repo being harny-scaffolded is gated on `.sdd/harness.json`
   being present, so a repo this tool was never run against (this repo included, if
   it predates `harny init`) is not penalized for artifacts it never claimed to have.
+- **Repo readiness** — is the *target repository itself* legible to an AI agent,
+  distinct from whether harny's own artifacts are installed: a README (must-have); an
+  architecture/structure document (recommended); and, for each tool this repo actually
+  selected, that tool's own root guidance file or a shared `AGENTS.md` fallback
+  (recommended, and only evaluated for a repo that opted into a tool at all). Claude
+  Code reading `CLAUDE.md` is one attributed example of a tool-specific guidance file;
+  it is never the only possibility — each selected tool contributes its own entry,
+  derived from that tool's own adapter, never a fixed list.
 - **Spec state** — every `specs/<feature>/` directory (excluding `current` and
   `archived`) is checked for the five spec-schema files, and for the
   shipped-but-unarchived condition: a feature whose `intent.md` is stamped

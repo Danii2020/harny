@@ -208,6 +208,10 @@ export const claudeCodeGenerator: Generator = {
   conductorPath: '.claude/skills/sdd-conductor/SKILL.md',
   skillsDir: '.claude/skills',
   hooksPath: '.claude/settings.json',
+  // Claude Code's own root instruction file (contract.md § "Verified per-tool root
+  // instruction files"). Verified against vendor documentation 2026-09-14; this
+  // repo's own CLAUDE.md is the worked example.
+  guidancePath: 'CLAUDE.md',
   roleFileName,
   mapModel,
   mapCapabilities,

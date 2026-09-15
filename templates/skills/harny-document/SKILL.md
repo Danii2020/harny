@@ -8,7 +8,12 @@ description: >-
   "Shipped: <date>" header in place, then hands off to harny-sync (archive mode) and
   harny-adr. Documents only auditor-verified behavior and never touches source code or
   code comments. Use this after a feature's audit is approved and the human has signed
-  off — invoked by the `sdd-documentation` role, or directly by a human.
+  off — invoked by the `sdd-documentation` role, or directly by a human. Also reachable
+  in a bounded bootstrap mode — invoked by harny-doctor after a human go-ahead, or
+  directly by a human — for a named repo-level document with no feature and no
+  audit.md in play; drafts only the named document(s) from repository evidence, marks
+  each as a draft for human review, and never touches source, specs/, CHANGELOG.md, or
+  the harny-sync/harny-adr hand-off.
 license: MIT
 compatibility: >-
   Requires the feature's full `specs/<feature-name>/` directory with a Final Verdict in
@@ -33,6 +38,10 @@ implementation actually did — not to design, verify, or embellish it.
 - Runs automatically right after a human approves `harny-audit`'s final report — an
   automatic hand-off, like `harny-implement` → `harny-audit`, not a new blocking gate.
 - Invocable directly by a human who wants to document an already-approved feature.
+- **Bootstrap mode**: invoked by `harny-doctor` after a human go-ahead, or directly by
+  a human, when a repository has no approved `audit.md` for a named feature at all —
+  see § Bootstrap mode below. This is a separate, explicitly-bounded entry point from
+  the post-audit path above; the two never reach each other.
 
 ## Inputs
 
@@ -83,6 +92,34 @@ Read exactly these three inputs — nothing else counts as ground truth for this
    ADRs) for optional human review. This review is optional and does not block
    anything — the pipeline is complete once this skill finishes.
 
+## Bootstrap mode
+
+A second, explicitly-bounded entry point beside the post-audit path above, for a
+repository with no harny spec history at all — no `specs/<feature-name>/`, no
+`audit.md`, nothing for the post-audit precondition to check.
+
+- **Trigger.** Invoked by `harny-doctor` after a human go-ahead — it names the
+  specific document(s) missing or incoherent and asks before delegating — or directly
+  by a human who wants a repo-level document drafted from scratch.
+- **Inputs.** The named document(s) to draft (`README.md`, `AGENTS.md`, and/or
+  `ARCHITECTURE.md`), the missing coherence element(s) (purpose / components /
+  validation) if the caller is `harny-doctor`, and the repository itself as evidence —
+  read the actual code, config, and existing docs; never invent what was not
+  observed.
+- **Output.** Drafts only the named document(s), and marks every draft it produces in
+  this mode for human review — this is bootstrap output, not an audit-verified
+  record, and must never be mistaken for one.
+- **Refusals.** Bootstrap mode never touches source code, never writes or reads a
+  `specs/` path, never touches `CHANGELOG.md` (there is no shipped change to log),
+  and never invokes or is invoked by the `harny-sync`/`harny-adr` archive hand-off. A
+  bootstrap-mode invocation naming a `specs/<feature>/` target refuses and reports why
+  — bootstrap mode can never be used to bypass the post-audit gate.
+- **Unreachable from, and unreached by, the post-audit path.** The post-audit path's
+  `APPROVED`/`APPROVED WITH RESERVATIONS` precondition, its `REJECTED` refusal, its
+  `Shipped:` stamp, and its `harny-sync` → `harny-adr` → `harny-sync` chain are
+  entirely unchanged by bootstrap mode's existence, and bootstrap mode cannot reach
+  any step of that chain.
+
 ## Guardrails
 
 - **Document only what the auditor actually verified.** Never invent, embellish, or
@@ -97,3 +134,7 @@ Read exactly these three inputs — nothing else counts as ground truth for this
 - **The `Shipped:` stamp always precedes the move.** Never invoke `harny-sync` archive
   mode before the stamp is written — the archive step operates on the stamped
   directory.
+- **Bootstrap mode is bounded and never a shortcut.** It drafts only the named
+  repo-level document(s), marks them as drafts, and refuses source, any `specs/`
+  path, `CHANGELOG.md`, and the `harny-sync`/`harny-adr` hand-off — it is not a way to
+  ship or archive a feature without an audit.

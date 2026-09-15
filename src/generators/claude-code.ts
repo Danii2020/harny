@@ -110,10 +110,11 @@ function runnerInvocation(): string {
  * The `Stop` hook's inline wrapper (V4/BG-6): spawns the shared runner in `run`
  * mode, forwarding this process's own stdin (the tool's raw hook event JSON) so
  * the runner still resolves its turn key and `stop_hook_active` exactly as it
- * does today. `templates/hooks/run-feedback.mjs` itself is never modified — it
- * stays byte-for-byte tool-neutral (BG-11); all Claude-Code-specific adaptation
- * lives here, in the generated `command` string, per `renderHook`'s own
- * contract (one `GeneratedFile`, never a second file for this).
+ * does today. This generator never modifies `templates/hooks/run-feedback.mjs`
+ * (or its sibling `templates/shared/probes.mjs`) — both stay byte-for-byte
+ * tool-neutral (BG-11); all Claude-Code-specific adaptation lives here, in the
+ * generated `command` string, per `renderHook`'s own contract (one
+ * `GeneratedFile`, never a second file for this).
  *
  * - Runner exit `2` (a blocking-worthy finding): the wrapper captures the
  *   runner's combined stdout/stderr and prints exactly one line of JSON —

@@ -73,6 +73,17 @@
  * not-yet-created ninth skill and cannot serve as red-phase coverage here.
  * `harny-feedback`'s own `DIVERGENCE_TABLE` entry (if any) is `harny-implement`'s
  * concern once the file exists, per its declared-divergence classification.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § "Public API — the `harny-doctor` skill" (G1, G6);
+ * Behavior Guarantee 13; intent.md SC2; audit.md Test Coverage T24;
+ * tasks.md Task 5.5 ("Add the `DIVERGENCE_TABLE` entry for the tenth skill").
+ *
+ * Same reasoning as the `harny-feedback` block above, one feature later:
+ * `harny-doctor` is not yet authored, so the generic bijection machinery
+ * stays vacuously green for it and cannot serve as red-phase coverage — a
+ * targeted assertion is added instead. `DIVERGENCE_TABLE`'s own entry for
+ * `harny-doctor` is `harny-implement`'s concern (Task 5.5), not this test's.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -233,6 +244,12 @@ const DIVERGENCE_TABLE: Readonly<Record<string, DivergenceExpectation>> = {
   // harny-propose/harny-test — no dogfood-only residue was authored into the
   // shared-skill body, so no DC-1/DC-2/DC-3 divergence applies.
   'harny-feedback': { kind: 'byte-identical' },
+
+  // readiness-doctor Task 5.5 (the tenth skill): byte-identical today, same
+  // as harny-propose/harny-test/harny-feedback — no dogfood-only residue was
+  // authored into the shared-skill body, so no DC-1/DC-2/DC-3 divergence
+  // applies.
+  'harny-doctor': { kind: 'byte-identical' },
 };
 
 function expectationFor(name: string): DivergenceExpectation | undefined {
@@ -362,6 +379,20 @@ describe('harny-feedback is byte-identical between the two skill roots (Gu 16, S
   it('.agents/skills/harny-feedback/SKILL.md and templates/skills/harny-feedback/SKILL.md exist and are byte-identical', () => {
     const agentsFile = path.join(AGENTS_SKILLS_ROOT, 'harny-feedback', 'SKILL.md');
     const templateFile = path.join(TEMPLATES_SKILLS_ROOT, 'harny-feedback', 'SKILL.md');
+
+    const agentsSource = readIfExists(agentsFile);
+    expect(agentsSource, `${agentsFile} does not exist yet`).toBeDefined();
+    const templateSource = readIfExists(templateFile);
+    expect(templateSource, `${templateFile} does not exist yet`).toBeDefined();
+
+    expect(templateSource).toBe(agentsSource);
+  });
+});
+
+describe('harny-doctor exists at both skill roots and is byte-identical between them (readiness-doctor, SC2, BG-13)', () => {
+  it('.agents/skills/harny-doctor/SKILL.md and templates/skills/harny-doctor/SKILL.md exist and are byte-identical', () => {
+    const agentsFile = path.join(AGENTS_SKILLS_ROOT, 'harny-doctor', 'SKILL.md');
+    const templateFile = path.join(TEMPLATES_SKILLS_ROOT, 'harny-doctor', 'SKILL.md');
 
     const agentsSource = readIfExists(agentsFile);
     expect(agentsSource, `${agentsFile} does not exist yet`).toBeDefined();

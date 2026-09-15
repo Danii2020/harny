@@ -38,11 +38,33 @@
  * `src/feedback.ts` yet at red time, so every test in the `ciInstall` describe
  * block below is expected to fail on `undefined` where an array/object was
  * expected, not on a wrong assumption about the install candidates' shape.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § "Public API — src/feedback.ts (amended, not forked)"
+ * (`FeedbackKind`, `ReadinessKind`, `CommandSpec<K>`, `ReadinessCommand`,
+ * `StackProfile.readiness`); Behavior Guarantees 4, 5; audit.md Test Coverage
+ * T14, T15, T16.
+ *
+ * `StackProfile.readiness` does not exist on `src/feedback.ts` yet at red
+ * time, so every test in the new `readiness` describe block below is expected
+ * to fail on `undefined` where an array was expected. The BG-4 leak-gate test
+ * and the BG-5 literal-gate extension below are grep-based structural guards,
+ * following the exact pattern the BG-7 "single source of command strings"
+ * test above already established for `profile.commands`/`ciInstall` (per this
+ * feature's own design note: these are the explicit grep-gate exceptions
+ * `high-value-tests` calls out, not a new convention). Because
+ * `profile.readiness` is `undefined` today, both new grep-based tests below
+ * are expected to PASS already at red time (`(profile.readiness ?? [])`
+ * yields an empty id/string list — there is nothing yet that could leak or be
+ * duplicated) — exactly the same documented "passes now, becomes a live
+ * regression guard once Phase 1/2 land" posture the BG-7 test's own red-phase
+ * note above describes. The `readiness` describe block itself remains the
+ * real red-phase signal for this addition.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { REPO_ROOT } from './helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, REPO_ROOT } from './helpers/paths.js';
 
 describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
   it('fixes the typescript and python profiles exactly as contract.md pins them, in stable order', async () => {
@@ -210,7 +232,7 @@ async function collectFiles(dir: string): Promise<string[]> {
   return files;
 }
 
-describe('single source of command strings — no STACK_PROFILES command leaks outside src/feedback.ts (BG-7, SC1) (Task 2.6; extended by A1 for ciInstall)', () => {
+describe('single source of command strings — no STACK_PROFILES command leaks outside src/feedback.ts (BG-7, SC1) (Task 2.6; extended by A1 for ciInstall; extended by readiness-doctor for readiness, BG-5, SC9)', () => {
   it('finds each profile command\'s full argv string only inside src/feedback.ts, scanning src/, templates/ and .agents/skills/', async () => {
     const { STACK_PROFILES } = await import('../src/feedback.js');
 
@@ -246,7 +268,16 @@ describe('single source of command strings — no STACK_PROFILES command leaks o
       (profile.ciInstall ?? []).map((candidate) => candidate.argv.join(' ')),
     );
 
-    for (const commandString of [...commandStrings, ...ciInstallCommandStrings]) {
+    // (readiness-doctor) BG-5/SC9's extension: a readiness command's full argv
+    // ("npm test", "pytest -q") is a `STACK_PROFILES` string like any other —
+    // it may not be literalled into `templates/doctor/run-doctor.mjs` or
+    // anywhere else outside `src/feedback.ts`. Optional-chained because
+    // `readiness` does not exist yet at red time.
+    const readinessCommandStrings = STACK_PROFILES.flatMap((profile) =>
+      (profile.readiness ?? []).map((command) => command.argv.join(' ')),
+    );
+
+    for (const commandString of [...commandStrings, ...ciInstallCommandStrings, ...readinessCommandStrings]) {
       const offendingFiles: string[] = [];
       for (const file of files) {
         if (path.resolve(file) === feedbackTsPath) continue;
@@ -312,5 +343,104 @@ describe('FeedbackInstall / StackProfile.ciInstall (A1; contract.md § Interface
     const python = STACK_PROFILES.find((profile) => profile.id === 'python');
 
     expect(python?.ciInstall).toBeUndefined();
+  });
+});
+
+describe('StackProfile.readiness (readiness-doctor; contract.md § "Public API — src/feedback.ts", SC1, T16)', () => {
+  it('the typescript profile declares exactly the pinned npm-test readiness command', async () => {
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const typescript = STACK_PROFILES.find((profile) => profile.id === 'typescript');
+
+    expect(typescript?.readiness).toEqual([
+      {
+        id: 'npm-test',
+        kind: 'test',
+        argv: ['npm', 'test'],
+        pathMode: 'whole-project',
+        requires: { script: 'test' },
+      },
+    ]);
+  });
+
+  it('the python profile declares exactly the pinned pytest readiness command', async () => {
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const python = STACK_PROFILES.find((profile) => profile.id === 'python');
+
+    expect(python?.readiness).toEqual([
+      {
+        id: 'pytest',
+        kind: 'test',
+        argv: ['pytest', '-q'],
+        pathMode: 'whole-project',
+        requires: { binary: 'pytest' },
+      },
+    ]);
+  });
+
+  it('every readiness command on every profile is kind "test" — never "lint" or "typecheck"', async () => {
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+
+    for (const profile of STACK_PROFILES) {
+      for (const command of profile.readiness ?? []) {
+        expect(command.kind).toBe('test');
+      }
+    }
+  });
+
+  it('never appears among profile.commands — the per-turn/CI surface never carries a "test"-kind entry (BG-4, C6)', async () => {
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+
+    for (const profile of STACK_PROFILES) {
+      const readinessIds = new Set((profile.readiness ?? []).map((c) => c.id));
+      for (const command of profile.commands) {
+        expect(readinessIds.has(command.id), `${profile.id}.commands unexpectedly carries readiness id "${command.id}"`).toBe(false);
+        // The behavioral companion to BG-4's compile-time guarantee (a
+        // `kind: 'test'` member is a type error on `commands`, verified
+        // manually per tasks.md Task 1.6, a stop-gate — not itself
+        // persisted as an automated test since this repo's `tsconfig.json`
+        // does not type-check `tests/`, see AGENTS.md S6): at runtime,
+        // no member of `commands` ever carries `kind: 'test'` either.
+        expect((command.kind as string)).not.toBe('test');
+      }
+    }
+  });
+});
+
+describe('leak gate — no readiness command id reaches a generated hook config or the CI workflow (BG-4, C6, T14)', () => {
+  it('finds no readiness command id in any real generator\'s renderHook output or in the generated CI workflow, for a resolved profile', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const { generators } = await import('../src/generators/index.js');
+
+    const templates = await loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+    const config = {
+      version: 1 as const,
+      tools: [...generators.keys()],
+      roles: [{ id: 'sdd-architect' as const, tier: 'most-capable' as const }],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'] as const,
+      stack: 'typescript',
+    };
+    const payload = buildPayload(config as any, templates);
+
+    const readinessIds = STACK_PROFILES.flatMap((profile) => (profile.readiness ?? []).map((c) => c.id));
+
+    const hookOutputs: string[] = [];
+    for (const generator of generators.values()) {
+      const hookPayload = {
+        project: payload.conductor.project,
+        profile: payload.conductor.project.stackProfile,
+        runner: payload.hookRunner ?? { name: 'run-feedback.mjs', contents: '', sourcePath: 'hooks/run-feedback.mjs' },
+      } as any;
+      const generated = generator.renderHook(hookPayload);
+      if (generated) hookOutputs.push(generated.contents);
+    }
+
+    const workflowFile = buildFeedbackFiles(payload).find((f) => f.path.endsWith('harny-feedback.yml'));
+    const combined = [...hookOutputs, workflowFile?.contents ?? ''].join('\n');
+
+    for (const id of readinessIds) {
+      expect(combined, `readiness command id "${id}" leaked into generated hook/CI output`).not.toContain(id);
+    }
   });
 });

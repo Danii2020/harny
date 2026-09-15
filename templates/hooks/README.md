@@ -109,4 +109,8 @@ agent turn to protect from a hard failure.
   copied **verbatim** into every scaffolded project at
   `.sdd/feedback/run-feedback.mjs`; its bytes never vary by tool. The per-tool
   wiring — which event maps to which mode, and how findings are returned — lives
-  entirely in each tool's own generated hook config, never in this script.
+  entirely in each tool's own generated hook config, never in this script. Its
+  presence-probe logic (behavior 4 above) is imported from the sibling
+  `../shared/probes.mjs`, the same module `templates/doctor/run-doctor.mjs` (the
+  readiness runner — see `templates/doctor/README.md`) imports; see that document
+  for the `feedback/`/`doctor/`/`shared/` layout convention.

@@ -219,6 +219,10 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
         // (agent-feedback-controls, Phase 3.) `harny-feedback`'s own tracked
         // relative symlink, the ninth bridge (contract.md § Interfaces, SL-2).
         'harny-feedback',
+        // (readiness-doctor, Phase 5.) `harny-doctor`'s own tracked relative
+        // symlink, the tenth bridge (contract.md § "Public API — the
+        // harny-doctor skill", SC3).
+        'harny-doctor',
       ].map((name) => `.claude/skills/${name}`),
     );
 
@@ -246,11 +250,21 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     // (contract.md "`.gitignore` amendment (G5, SC13, SL-10)", Task 4.3) — a
     // one-time re-inclusion contracted by this feature, not a mutation. Note this
     // is a `.claude/` entry, not a `templates/` one, unlike the other four classes.
+    //
+    // (readiness-doctor amendment round.) A sixth and seventh class join the
+    // same way `templates/hooks/**` and `templates/ci/**` did above:
+    // `templates/doctor/**` (the canonical readiness runner + its behavior
+    // doc) and `templates/shared/**` (the probe module both generated
+    // runners import) are new canonical content this feature introduces
+    // (contract.md "Public API — the canonical runner", "Public API —
+    // templates/shared/probes.mjs").
     const isContractedEntry = (relativePath: string): boolean =>
       CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
       relativePath.startsWith('templates/skills/') ||
       relativePath.startsWith('templates/hooks/') ||
       relativePath.startsWith('templates/ci/') ||
+      relativePath.startsWith('templates/doctor/') ||
+      relativePath.startsWith('templates/shared/') ||
       relativePath === 'templates/roles/sdd-documentation.md' ||
       relativePath === '.claude/settings.json';
 

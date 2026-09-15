@@ -1,7 +1,7 @@
 # The `harny-*` skill shape contract
 
 This directory holds the `harny-*` skill library scaffolded by `npx harny init` — the
-same eight-skill SDD pipeline library harny's own repository runs, shaped to the
+same ten-skill SDD pipeline library harny's own repository runs, shaped to the
 portable Agent Skills specification (https://agentskills.io/specification) so any
 compliant tool can discover it directly. Every skill is a real, standalone directory
 containing a `SKILL.md` (and, for two of them, one bundled resource file) — never a

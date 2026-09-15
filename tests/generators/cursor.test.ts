@@ -411,11 +411,21 @@ describe('renderHook — no mapped command is bound to the per-edit event (BG-3)
 });
 
 describe("renderHook — afterFileEdit accumulates Cursor's flat file_path payload into the shared runner's turn file (V3)", () => {
+  /** (readiness-doctor.) `run-feedback.mjs` now imports its probe evaluator from
+   *  the sibling `../shared/probes.mjs` (contract.md § "Modified:
+   *  templates/hooks/run-feedback.mjs"). A copy that carries the runner alone,
+   *  without that sibling, fails at module-load time before any of its own code
+   *  runs — this fixture mirrors the real generated `.sdd/feedback/` +
+   *  `.sdd/shared/` layout so the copy resolves exactly like a real scaffold. */
   async function makeProjectDir(runnerContents: string): Promise<string> {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-cursor-accumulate-'));
     const runnerDir = path.join(dir, '.sdd', 'feedback');
+    const sharedDir = path.join(dir, '.sdd', 'shared');
     await fs.mkdir(runnerDir, { recursive: true });
+    await fs.mkdir(sharedDir, { recursive: true });
     await fs.writeFile(path.join(runnerDir, 'run-feedback.mjs'), runnerContents, { mode: 0o755 });
+    const probesContents = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'shared', 'probes.mjs'), 'utf8');
+    await fs.writeFile(path.join(sharedDir, 'probes.mjs'), probesContents);
     return dir;
   }
 

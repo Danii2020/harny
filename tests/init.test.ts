@@ -37,6 +37,21 @@
  * is never part of the planned/written set — every test below is expected to fail
  * because the expected artifact or behavior is simply absent, not because of a
  * wrong assumption about file contents.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § Integration Points ("`src/init.ts` step 11 —
+ * `buildDoctorFiles(payload, resolvedGenerators)` is pushed into the same
+ * render step... No fourteenth step; `CLI-1` holds verbatim"); § State
+ * Changes; Behavior Guarantees 11, 12, 17; intent.md SC4; audit.md Test
+ * Coverage T21.
+ *
+ * `FEEDBACK_PATHS_UNDER_TEST` below gains `.sdd/shared/probes.mjs` — it does
+ * not exist on disk yet, so the two tests that iterate it are expected to
+ * fail on a missing file, not a wrong assumption about newline/determinism
+ * behavior. `runInit` does not yet call `buildDoctorFiles`/
+ * `buildRuntimeSharedFiles` at all, so the new "doctor artifacts" describe
+ * block below is expected to fail because those paths are absent from the
+ * planned/written set entirely.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -123,6 +138,15 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         // so it is always scaffolded too — including against this fixture,
         // which now carries a matching `skills/harny-feedback/` stub.
         '.claude/skills/harny-feedback/SKILL.md',
+        // (readiness-doctor.) `harny-doctor` joined `CORE_SKILL_IDS` (appended
+        // last, after `harny-feedback`), so it is always scaffolded too —
+        // including against this fixture, which now carries a matching
+        // `skills/harny-doctor/` stub. `buildDoctorFiles`/
+        // `buildRuntimeSharedFiles` themselves contribute nothing here: this
+        // lean fixture models no `doctor/`/`shared/` templates, and both
+        // functions tolerate that absence (no `.sdd/doctor/*` or
+        // `.sdd/shared/*` entries below).
+        '.claude/skills/harny-doctor/SKILL.md',
         '.claude/skills/harny-implement/SKILL.md',
         '.claude/skills/harny-propose/SKILL.md',
         '.claude/skills/harny-standards/SKILL.md',
@@ -137,7 +161,7 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(result.planned).toHaveLength(21);
+    expect(result.planned).toHaveLength(22);
   });
 });
 
@@ -584,6 +608,9 @@ describe('runInit — hook and CI artifacts are deterministic, contained, and en
     '.sdd/feedback/run-feedback.mjs',
     '.sdd/feedback/.turns/.gitignore',
     '.github/workflows/harny-feedback.yml',
+    // (readiness-doctor) the shared probe module both the feedback runner and
+    // the doctor runner import; tool-neutral, written exactly once (C27).
+    '.sdd/shared/probes.mjs',
   ];
 
   it('produces byte-identical hook and CI artifacts across two independent runs of the same config', async () => {
@@ -689,5 +716,72 @@ describe('runInit — escape hatch: an unresolved stack still writes both feedba
     expect(workflowContents.length).toBeGreaterThan(0);
     expect(workflowContents).not.toContain('eslint');
     expect(workflowContents).not.toContain('ruff');
+  });
+});
+
+describe('runInit — the doctor runner and checks.json join the existing render step, no fourteenth step (readiness-doctor, CLI-1, BG-11, BG-17, T21)', () => {
+  it('writes .sdd/doctor/run-doctor.mjs byte-identical to the template, and a deterministic, newline-terminated checks.json, exactly once regardless of tool count', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { DOCTOR_RUNNER_PATH, DOCTOR_CHECKS_PATH } = await import('../src/doctor.js');
+
+    const targetDirA = await makeTempDir();
+    const targetDirB = await makeTempDir();
+
+    const resultA = await runInit({
+      targetDir: targetDirA,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code', 'cursor', 'kiro'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+    const resultB = await runInit({
+      targetDir: targetDirB,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    for (const relativePath of [DOCTOR_RUNNER_PATH, DOCTOR_CHECKS_PATH]) {
+      expect(resultA.written.filter((p) => p === relativePath)).toHaveLength(1);
+      expect(resultB.written.filter((p) => p === relativePath)).toHaveLength(1);
+    }
+
+    const runnerContents = await fs.readFile(path.join(targetDirA, DOCTOR_RUNNER_PATH), 'utf8');
+    const sourceRunner = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'doctor', 'run-doctor.mjs'), 'utf8');
+    expect(runnerContents).toBe(sourceRunner);
+    expect(runnerContents.endsWith('\n')).toBe(true);
+    expect(runnerContents.endsWith('\n\n')).toBe(false);
+
+    const checksContentsA = await fs.readFile(path.join(targetDirA, DOCTOR_CHECKS_PATH), 'utf8');
+    expect(checksContentsA.endsWith('\n')).toBe(true);
+    expect(checksContentsA.endsWith('\n\n')).toBe(false);
+    expect(() => JSON.parse(checksContentsA)).not.toThrow();
+  });
+
+  it('never enters a fourteenth pipeline step: init.ts still resolves generators before writing any doctor artifact', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { DOCTOR_RUNNER_PATH } = await import('../src/doctor.js');
+    const targetDir = await makeTempDir();
+
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    // The doctor artifact is a peer of the other tool-neutral files written in
+    // the existing render step, not a new terminal step: it appears in the
+    // same planned/written set init.ts already produces.
+    expect(result.written).toContain(DOCTOR_RUNNER_PATH);
+    expect(result.written).toContain('.sdd/harness.json');
   });
 });

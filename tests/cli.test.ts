@@ -20,6 +20,18 @@
  * Re-points the exit-4 test again, now onto a synthetic registry
  * (`vi.doMock('../src/generators/index.js', …)`), since codex itself now
  * ships a real generator too.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md "Public API — src/cli.ts" (the new `doctor` sibling
+ * command); Behavior Guarantees 6, 7; Error Handling Contract rows for a
+ * missing scaffolded runner and a completed red run; intent.md SC16, SC17,
+ * SC18, SC19; audit.md Test Coverage T19.
+ *
+ * `buildProgram` does not register a `doctor` command yet at red time, so
+ * every `main(['doctor', ...])` call below fails with commander's own
+ * "unknown command" usage error (exit 1, not the contracted 0/2/6), and every
+ * `--skills harny-doctor` assertion fails because `harny-doctor` is not yet a
+ * known skill id — not a wrong assumption about either surface's shape.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -91,6 +103,154 @@ describe('--help (R1, C18b) (T35)', () => {
     expect(text).toContain('Usage: harny');
     expect(text).not.toContain('harness.js');
     expect(text).toContain('init');
+  });
+});
+
+describe('--help lists exactly two commands, init and doctor (readiness-doctor, SC16, T19)', () => {
+  it('still reads "Usage: harny [options] [command]" and lists both "init" and "doctor"', async () => {
+    const { main } = await import('../src/cli.js');
+
+    const { text } = await captureOutput(() => main(['--help']));
+
+    expect(text).toContain('Usage: harny [options] [command]');
+    expect(text).toContain('init');
+    expect(text).toContain('doctor');
+  });
+
+  it('registers exactly two commands on the program', async () => {
+    const { buildProgram } = await import('../src/cli.js');
+
+    const program = buildProgram();
+    const commandNames = program.commands.map((c) => c.name());
+
+    expect(commandNames).toEqual(['init', 'doctor']);
+  });
+
+  it('the doctor command\'s own --help lists its [target] argument and --stack flag', async () => {
+    const { main } = await import('../src/cli.js');
+
+    const { text } = await captureOutput(() => main(['doctor', '--help']));
+
+    expect(text).toContain('target');
+    expect(text).toContain('--stack');
+  });
+});
+
+describe('harny-doctor is unnameable via --skills, exactly like every other core skill (readiness-doctor, SC1)', () => {
+  it('exits 2 naming harny-doctor as always-scaffolded when passed to --skills', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const { result, text } = await captureOutput(() =>
+      main(['init', targetDir, '--yes', '--tools', 'claude-code', '--skills', 'harny-doctor']),
+    );
+
+    expect(result).toBe(2);
+    expect(text).toContain('harny-doctor');
+    // Distinct from an "unknown skill id" error: harny-doctor must be
+    // recognized and rejected specifically as an always-on core skill (the
+    // same wording config.test.ts's "harny-propose" case already asserts),
+    // not merely an unrecognized name.
+    expect(text.toLowerCase()).toContain('always');
+
+    const entries = await fs.readdir(targetDir);
+    expect(entries).toEqual([]);
+  });
+});
+
+describe('the doctor verb (readiness-doctor, G8, SC16-SC19, T19)', () => {
+  it('exits USAGE (2) naming the missing scaffolded runner and the npx harny init remediation, never a stack trace, when the target has no doctor runner', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const { result, text } = await captureOutput(() => main(['doctor', targetDir]));
+
+    expect(result).toBe(2);
+    expect(text).toContain('.sdd/doctor/run-doctor.mjs');
+    expect(text).toContain('npx harny init');
+    expect(text).not.toContain('at ');
+    expect(text.toLowerCase()).not.toContain('stack trace');
+  });
+
+  it('exits 0 in a properly onboarded, freshly scaffolded repo (SC17)', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const initResult = await captureOutput(() =>
+      main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']),
+    );
+    expect(initResult.result).toBe(0);
+
+    // `runInit` scaffolds the harness, not a conventions document — no
+    // feature writes one (intent.md's own problem statement wants a missing
+    // conventions doc flagged, per the universal `conventions-doc` check).
+    // A human actually onboarding a fresh scaffold adds one; this mirrors
+    // that step so the test exercises "ready" on a fully onboarded repo,
+    // not an incompletely-set-up fixture.
+    await fs.writeFile(path.join(targetDir, 'AGENTS.md'), '# AGENTS\n\nProject conventions.\n', 'utf8');
+
+    const { result } = await captureOutput(() => main(['doctor', targetDir]));
+    expect(result).toBe(0);
+  });
+
+  it('exits with a code distinct from EXIT.UNEXPECTED (1) and from every other HarnessErrorCode mapping when the readiness check reports red (SC17)', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    await captureOutput(() => main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']));
+    // Force a red readiness result by removing a required harness artifact
+    // after scaffolding.
+    await fs.rm(path.join(targetDir, '.sdd', 'harness.json'), { force: true });
+
+    const { result } = await captureOutput(() => main(['doctor', targetDir]));
+
+    expect(result).toBe(6);
+    expect([0, 1, 2, 3, 4, 5, 130]).not.toContain(result);
+  });
+
+  it('writes absolutely nothing under the target directory across a green run, a red run, and a --stack override (SC19)', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    await captureOutput(() => main(['init', targetDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']));
+
+    async function snapshot(): Promise<string[]> {
+      async function walk(dir: string): Promise<string[]> {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const out: string[] = [];
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) out.push(...(await walk(full)));
+          else out.push(path.relative(targetDir, full));
+        }
+        return out;
+      }
+      return (await walk(targetDir)).sort();
+    }
+
+    const before = await snapshot();
+    const first = await captureOutput(() => main(['doctor', targetDir]));
+    // The `--stack` override deliberately names an unrecognized stack rather
+    // than a real built-in profile (e.g. "python"): a real profile's
+    // readiness command probe (e.g. pytest's `{ binary: 'pytest' }`) depends
+    // on what happens to be installed on the machine running this suite —
+    // if a global `pytest` is present, it actually runs and leaves its own
+    // `.pytest_cache/` side effect in `targetDir`, breaking this test
+    // non-deterministically for reasons unrelated to the guarantee under
+    // test. An unrecognized stack resolves to zero readiness commands
+    // (BG-8), so no command is ever spawned here regardless of the host
+    // environment — SC19's actual guarantee (the doctor verb itself writes
+    // nothing) is exercised deterministically instead.
+    const second = await captureOutput(() => main(['doctor', targetDir, '--stack', 'some-unrecognized-stack-xyz']));
+    const after = await snapshot();
+
+    // The doctor verb's only legitimate outcomes are "ready" (0) or "not
+    // ready" (6, distinct from every CLI-failure code) — asserted here so
+    // this test cannot pass merely because "doctor" is still an unrecognized
+    // command today (which would exit 1 and trivially write nothing).
+    expect([0, 6]).toContain(first.result);
+    expect([0, 6]).toContain(second.result);
+    expect(after).toEqual(before);
   });
 });
 

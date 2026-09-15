@@ -7,6 +7,13 @@
  * and how findings are returned to the agent) lives entirely in each tool's own
  * generated hook config, never here.
  *
+ * This is one of two generated entry-point scripts (the other is
+ * `.sdd/doctor/run-doctor.mjs`, readiness-doctor's readiness runner); both import
+ * their probe evaluator from a third generated file, `.sdd/shared/probes.mjs`
+ * (`templates/shared/probes.mjs`, copied byte-for-byte alongside this one) rather
+ * than each carrying its own copy — the generated feedback runtime is therefore two
+ * files, not one, though this script's own behavior is unchanged.
+ *
  * Invocation: `node run-feedback.mjs <accumulate|run>`, run with `cwd` set to the
  * target repo root. The tool's raw hook event is piped in as JSON on STDIN.
  *
@@ -47,6 +54,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { probeSatisfied as requirementMet } from '../shared/probes.mjs';
 
 /** Where the runner accumulates one turn's touched paths, repo-relative
  *  (contract.md's `TOUCHED_FILES_DIR`). Literal here, not imported: this script is
@@ -153,54 +161,6 @@ function dedupedTouchedPaths(contents) {
   return Array.from(new Set(lines));
 }
 
-function scriptExists(scriptName, cwd) {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
-    return Boolean(pkg.scripts && Object.prototype.hasOwnProperty.call(pkg.scripts, scriptName));
-  } catch {
-    return false;
-  }
-}
-
-function binaryExists(binary) {
-  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
-  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
-
-  for (const dir of dirs) {
-    for (const ext of exts) {
-      try {
-        fs.accessSync(path.join(dir, `${binary}${ext}`), fs.constants.X_OK);
-        return true;
-      } catch {
-        // Keep looking in the next PATH entry.
-      }
-    }
-  }
-  return false;
-}
-
-function anyFileExists(files, cwd) {
-  return files.some((file) => fs.existsSync(path.join(cwd, file)));
-}
-
-/** A command whose `requires` probe is false is SKIPPED, never a failure (BG-9). An
- *  empty/absent `requires` always resolves true. */
-function probeSatisfied(requires, cwd) {
-  if (!requires) {
-    return true;
-  }
-  if (requires.script && !scriptExists(requires.script, cwd)) {
-    return false;
-  }
-  if (requires.binary && !binaryExists(requires.binary)) {
-    return false;
-  }
-  if (requires.anyFile && !anyFileExists(requires.anyFile, cwd)) {
-    return false;
-  }
-  return true;
-}
-
 function runCommand(command, touchedPaths, cwd) {
   const [binary, ...rest] = command.argv;
   const args = command.pathMode === 'per-file' ? [...rest, ...touchedPaths] : [...rest];
@@ -218,7 +178,7 @@ function runWholeProject(commands, cwd) {
   let skippedCount = 0;
 
   for (const command of commands) {
-    if (!probeSatisfied(command.requires, cwd)) {
+    if (!requirementMet(command.requires, cwd)) {
       skippedCount += 1;
       console.error(`skipped \`${command.id}\`: requirement not met (tool not installed in this repo)`);
       continue;
@@ -277,7 +237,7 @@ function runRunMode(cwd) {
   let anyBlockingFinding = false;
 
   for (const command of commands) {
-    if (!probeSatisfied(command.requires, cwd)) {
+    if (!requirementMet(command.requires, cwd)) {
       console.error(`skipped \`${command.id}\`: requirement not met (tool not installed in this repo)`);
       continue;
     }

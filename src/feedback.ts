@@ -23,13 +23,21 @@ export interface ToolProbe {
   readonly anyFile?: readonly string[];
 }
 
-export interface FeedbackCommand {
+/** The two computational-FEEDBACK kinds: fast enough for a per-turn hook.
+ *  (readiness-doctor.) */
+export type FeedbackKind = 'lint' | 'typecheck';
+/** The computational-FEEDFORWARD kind: run once before work starts, never per
+ *  turn. (readiness-doctor.) */
+export type ReadinessKind = 'test';
+
+/** The shape both `FeedbackCommand` and `ReadinessCommand` share. Extracted
+ *  verbatim from the original `FeedbackCommand` — no field added, removed, or
+ *  renamed, so every existing consumer keeps compiling unchanged (readiness-doctor,
+ *  contract.md § "Public API — src/feedback.ts"). */
+export interface CommandSpec<K extends string> {
   /** Stable id, unique within its profile. Used in generated output and findings. */
   readonly id: string;
-  /** `lint` and `typecheck` are the two computational-feedback kinds this feature
-   *  ships. Deliberately NOT `test`: the test suite is already run by
-   *  `harny-implement`/`harny-audit` and is far too slow for a per-turn hook. */
-  readonly kind: 'lint' | 'typecheck';
+  readonly kind: K;
   /** Argv, never a shell string — no quoting/injection surface. Executed from the
    *  target repo root. */
   readonly argv: readonly string[];
@@ -40,6 +48,16 @@ export interface FeedbackCommand {
    *  resolves false the command is SKIPPED with a notice, never a failure (BG-9). */
   readonly requires: ToolProbe;
 }
+
+/** Unchanged name, unchanged shape — now expressed as a narrowing over
+ *  `CommandSpec`. Deliberately NOT `test`: the test suite is already run by
+ *  `harny-implement`/`harny-audit` and is far too slow for a per-turn hook. */
+export type FeedbackCommand = CommandSpec<FeedbackKind>;
+/** **(NEW — readiness-doctor.)** Carried by `StackProfile.readiness`, never by
+ *  `StackProfile.commands`: `commands: readonly FeedbackCommand[]` makes a
+ *  `kind: 'test'` entry a compile error, which is what keeps the test suite out
+ *  of every per-turn hook and out of the CI workflow's inline JSON (BG-4). */
+export type ReadinessCommand = CommandSpec<ReadinessKind>;
 
 /** **(A1 — NEW.)** One candidate dependency-bootstrap command for the CI surface
  *  only. Never executed by the per-turn hook: a developer's working tree already
@@ -78,6 +96,14 @@ export interface StackProfile {
    *  is a notice and never a failure: every command then falls through to BG-9's
    *  ordinary probe-skip path. */
   readonly ciInstall?: readonly FeedbackInstall[];
+  /** **(NEW — readiness-doctor.)** Feedforward-computational commands: the full
+   *  test-suite run `harny-doctor` performs before work starts, never per turn —
+   *  kept off `commands` (rather than added there with a `test` kind) precisely
+   *  because a per-turn hook is far too slow for a full test-suite run
+   *  (see `FeedbackCommand`'s doc comment). Optional and possibly empty for the
+   *  same reason `ciInstall` is (BG-8's escape hatch); absent ⇒ the readiness
+   *  run's test family reports a notice, never a failure. */
+  readonly readiness?: readonly ReadinessCommand[];
 }
 
 /** The mapping. The ONLY place a feedback command string is written (SC1). */
@@ -124,6 +150,17 @@ export const STACK_PROFILES: readonly StackProfile[] = [
         requires: { anyFile: ['package.json'] },
       },
     ],
+    // (readiness-doctor — NEW.) Feedforward-only; never reaches a per-turn hook
+    // or the CI workflow's inline JSON (BG-4).
+    readiness: [
+      {
+        id: 'npm-test',
+        kind: 'test',
+        argv: ['npm', 'test'],
+        pathMode: 'whole-project',
+        requires: { script: 'test' },
+      },
+    ],
   },
   {
     id: 'python',
@@ -146,6 +183,17 @@ export const STACK_PROFILES: readonly StackProfile[] = [
       },
     ],
     // (A1.) No `ciInstall`: deliberate, see BG-21 and reservation R6.
+    // (readiness-doctor — NEW.) Feedforward-only; never reaches a per-turn hook
+    // or the CI workflow's inline JSON (BG-4).
+    readiness: [
+      {
+        id: 'pytest',
+        kind: 'test',
+        argv: ['pytest', '-q'],
+        pathMode: 'whole-project',
+        requires: { binary: 'pytest' },
+      },
+    ],
   },
 ];
 

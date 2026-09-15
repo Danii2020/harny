@@ -54,6 +54,19 @@
  * expected to fail on a genuine shape mismatch (wrong step count for the python
  * case, zero `run --whole-project --commands` matches for every case that expects
  * one), not a wrong assumption about the workflow's rendered text.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes ("Vocabulary", `harny-doctor` appended
+ * last to `CORE_SKILL_IDS`; `buildRuntimeSharedFiles` emitted from exactly one
+ * call site, C27); Behavior Guarantees 11, 12; audit.md Test Coverage T22.
+ *
+ * Red-phase note: the "appending harny-feedback preserves emission order" test
+ * below is amended in place for the tenth skill (SKILL_IDS 9 -> 10,
+ * harny-doctor last in core) — the exact "modified existing test, fails until
+ * the amendment lands" case AGENTS.md S6 describes. `buildRuntimeSharedFiles`
+ * does not exist on `src/engine.ts` yet, so its new describe block below is
+ * expected to fail with "does not provide an export named
+ * 'buildRuntimeSharedFiles'".
  */
 import { describe, expect, it } from 'vitest';
 import { fixtureTemplatesRoot, REAL_TEMPLATES_ROOT } from './helpers/paths.js';
@@ -338,7 +351,7 @@ describe('buildSkillFiles — emission order and content fidelity (Gu 9, Gu 18, 
   });
 });
 
-describe('appending harny-feedback preserves emission order (CLI-4) (agent-feedback-controls Task 3.3)', () => {
+describe('appending harny-feedback, then harny-doctor, preserves emission order (CLI-4) (agent-feedback-controls Task 3.3; amended by specs/readiness-doctor)', () => {
   function fakeSkill(id: string) {
     return {
       id,
@@ -347,29 +360,32 @@ describe('appending harny-feedback preserves emission order (CLI-4) (agent-feedb
     };
   }
 
-  it('emits all nine skills in SKILL_IDS order: the eight pre-existing skills keep their exact prior relative order, and harny-feedback is last among the core skills, immediately before the optional skills', async () => {
+  it('emits all ten skills in SKILL_IDS order: the nine pre-existing skills keep their exact prior relative order, and harny-doctor is last among the core skills, immediately before the optional skills', async () => {
     const { buildSkillFiles } = await import('../src/engine.js');
     const { SKILL_IDS } = await import('../src/vocabulary.js');
 
-    // The eight skills' order as fixed before this feature — asserted
+    // The nine skills' order as fixed before this feature — asserted
     // independently of SKILL_IDS itself, so this test cannot pass merely
     // because SKILL_IDS and this hardcoded list were both changed together.
-    const PRE_EXISTING_EIGHT_IN_ORDER = [
+    const PRE_EXISTING_NINE_IN_ORDER = [
       'harny-propose',
       'harny-test',
       'harny-implement',
       'harny-audit',
       'harny-document',
       'harny-sync',
+      'harny-feedback',
       'harny-adr',
       'harny-standards',
     ];
-    expect(SKILL_IDS.length).toBe(9);
+    // (readiness-doctor) 9 -> 10: harny-doctor is appended last in
+    // CORE_SKILL_IDS, so SKILL_IDS gains a tenth member.
+    expect(SKILL_IDS.length).toBe(10);
 
     // Deliberately scrambled input order (reversed), independent of
     // SKILL_IDS ordering, mirroring the sibling "buildSkillFiles" test's
     // approach of proving emission order follows SKILL_IDS, not input order.
-    const scrambledIds = [...PRE_EXISTING_EIGHT_IN_ORDER, 'harny-feedback'].reverse();
+    const scrambledIds = [...PRE_EXISTING_NINE_IN_ORDER, 'harny-doctor'].reverse();
     const payload = {
       roles: [],
       conductor: {} as any,
@@ -382,15 +398,45 @@ describe('appending harny-feedback preserves emission order (CLI-4) (agent-feedb
     const files = buildSkillFiles(payload as any, ['.agents/skills']);
     const emittedIds = files.map((f) => f.path.split('/')[2]);
 
-    const emittedExistingEight = emittedIds.filter((id) => id !== 'harny-feedback');
-    expect(emittedExistingEight).toEqual(PRE_EXISTING_EIGHT_IN_ORDER);
-    // harny-feedback is last within the seven core skills (index 6 of 9),
-    // immediately before the first optional skill — NOT last among all nine,
+    const emittedExistingNine = emittedIds.filter((id) => id !== 'harny-doctor');
+    expect(emittedExistingNine).toEqual(PRE_EXISTING_NINE_IN_ORDER);
+    // harny-doctor is last within the eight core skills (index 7 of 10),
+    // immediately before the first optional skill — NOT last among all ten,
     // since SKILL_IDS is [...CORE_SKILL_IDS, ...OPTIONAL_SKILL_IDS] and
-    // harny-feedback is appended to the end of CORE_SKILL_IDS, not SKILL_IDS.
-    expect(emittedIds[6]).toBe('harny-feedback');
-    expect(emittedIds[7]).toBe('harny-adr');
+    // harny-doctor is appended to the end of CORE_SKILL_IDS, not SKILL_IDS.
+    expect(emittedIds[7]).toBe('harny-doctor');
+    expect(emittedIds[8]).toBe('harny-adr');
     expect(emittedIds).toEqual(SKILL_IDS);
+  });
+});
+
+describe('buildRuntimeSharedFiles — the shared probe module is written exactly once per run, from one call site (readiness-doctor, contract.md § State Changes, C27)', () => {
+  it.each([
+    ['a single tool', ['claude-code']],
+    ['three tools', ['claude-code', 'cursor', 'kiro']],
+    ['all five tools', ['claude-code', 'cursor', 'kiro', 'github-copilot', 'codex']],
+  ])('%s selected still yields exactly one .sdd/shared/probes.mjs file', async (_label, tools) => {
+    const { buildPayload, buildRuntimeSharedFiles, SHARED_PROBES_PATH } = await import('../src/engine.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(feedbackTestConfig({ tools, stack: 'typescript' }) as any, templates);
+    const files = buildRuntimeSharedFiles(payload);
+
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe(SHARED_PROBES_PATH);
+  });
+
+  it('is byte-for-byte identical to templates/shared/probes.mjs (BG-11)', async () => {
+    const { buildPayload, buildRuntimeSharedFiles, SHARED_PROBES_PATH } = await import('../src/engine.js');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any, templates);
+    const sharedFile = buildRuntimeSharedFiles(payload).find((f) => f.path === SHARED_PROBES_PATH);
+
+    const sourceContents = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'shared', 'probes.mjs'), 'utf8');
+    expect(sharedFile?.contents).toBe(sourceContents);
   });
 });
 
@@ -699,5 +745,24 @@ describe('buildFeedbackFiles — renderCiWorkflow (A1): at most one install step
     expect(RUNNER_INVOCATION.test(steps[0].run)).toBe(false);
     expect(block).not.toContain('package-lock.json');
     expect(block).not.toContain('package.json');
+  });
+});
+
+describe('the CI runner-invocation guard covers both the feedback runner and the shared probe module (readiness-doctor, contract.md § "Modified: run-feedback.mjs", T22)', () => {
+  it('the generated workflow\'s runner-invocation step checks both .sdd/feedback/run-feedback.mjs and .sdd/shared/probes.mjs before running', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+
+    // Amended guard: a checkout missing either file cannot run (Error
+    // Handling Contract row for a CI checkout missing the shared module).
+    expect(workflow?.contents).toContain('.sdd/feedback/run-feedback.mjs');
+    expect(workflow?.contents).toContain('.sdd/shared/probes.mjs');
   });
 });

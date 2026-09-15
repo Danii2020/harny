@@ -10,18 +10,29 @@ export const EXIT = {
   CONFLICT: 3,
   NO_GENERATOR: 4,
   TEMPLATE: 5,
+  /** **(NEW — readiness-doctor.)** The readiness check ran correctly and the
+   *  answer is red. NOT a CLI failure: no other code may be used for it, and it
+   *  may never be produced by any path other than `runDoctor`. */
+  NOT_READY: 6,
   CANCELLED: 130,
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 
-export type HarnessErrorCode = 'USAGE' | 'CONFLICT' | 'NO_GENERATOR' | 'TEMPLATE' | 'CANCELLED';
+export type HarnessErrorCode =
+  | 'USAGE'
+  | 'CONFLICT'
+  | 'NO_GENERATOR'
+  | 'TEMPLATE'
+  | 'NOT_READY'
+  | 'CANCELLED';
 
 const EXIT_BY_CODE: Record<HarnessErrorCode, ExitCode> = {
   USAGE: EXIT.USAGE,
   CONFLICT: EXIT.CONFLICT,
   NO_GENERATOR: EXIT.NO_GENERATOR,
   TEMPLATE: EXIT.TEMPLATE,
+  NOT_READY: EXIT.NOT_READY,
   CANCELLED: EXIT.CANCELLED,
 };
 

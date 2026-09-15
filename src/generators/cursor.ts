@@ -144,11 +144,12 @@ function runnerInvocation(): string {
 /**
  * The `afterFileEdit` accumulator's inline wrapper (V3). Cursor's own
  * `afterFileEdit` payload is flat — `{file_path, session_id, …}`, no
- * `tool_input` wrapper (unlike Claude Code's `PostToolUse`) — but the shared,
- * byte-frozen `run-feedback.mjs` only ever reads `payload.tool_input.file_path`
- * for `accumulate` mode. This wrapper reshapes the payload before piping it to
- * the runner, preserving every other field (the turn-key field included)
- * untouched, rather than modifying the runner itself (BG-11).
+ * `tool_input` wrapper (unlike Claude Code's `PostToolUse`) — but the shared
+ * `run-feedback.mjs`, which this generator never modifies (BG-11), only ever
+ * reads `payload.tool_input.file_path` for `accumulate` mode. This wrapper
+ * reshapes the payload before piping it to the runner, preserving every other
+ * field (the turn-key field included) untouched, rather than modifying the
+ * runner itself.
  */
 const CURSOR_ACCUMULATE_WRAPPER_SCRIPT = [
   'const cp=require("child_process");',

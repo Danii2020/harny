@@ -9,6 +9,16 @@
  * future per-tool generator relies on, and (2) the acyclic import graph the
  * contract calls out by name (the config.ts <-> templates.ts cycle that was
  * deliberately designed away by extracting this module).
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes "Vocabulary" (`harny-doctor` appended
+ * last to `CORE_SKILL_IDS`); Behavior Guarantee 12; intent.md SC1; audit.md
+ * Test Coverage T17.
+ *
+ * Red-phase note: `src/vocabulary.ts` has not yet gained `harny-doctor`, so
+ * `CORE_SKILL_IDS`/`OPTIONAL_SKILL_IDS`/`SKILL_IDS` are still 7/2/9 today —
+ * every assertion in the new describe block below is expected to fail against
+ * those counts, not on a wrong assumption about the vocabulary's shape.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -43,6 +53,42 @@ describe('vocabulary content (contract.md src/vocabulary.ts)', () => {
       'docs-lookup',
       'task-tracking',
     ]);
+  });
+});
+
+describe('harny-doctor is the tenth skill and the eighth core skill (readiness-doctor, BG-12, SC1, T17)', () => {
+  it('CORE_SKILL_IDS/OPTIONAL_SKILL_IDS/SKILL_IDS hold the contracted 8/2/10 counts', async () => {
+    const { CORE_SKILL_IDS, OPTIONAL_SKILL_IDS, SKILL_IDS } = await import('../src/vocabulary.js');
+
+    expect(CORE_SKILL_IDS).toHaveLength(8);
+    expect(OPTIONAL_SKILL_IDS).toHaveLength(2);
+    expect(SKILL_IDS).toHaveLength(10);
+  });
+
+  it('harny-doctor is appended last in CORE_SKILL_IDS, after harny-feedback, preserving every existing member\'s index', async () => {
+    const { CORE_SKILL_IDS } = await import('../src/vocabulary.js');
+
+    // Independent of CORE_SKILL_IDS itself, so this cannot pass merely because
+    // both this list and the source were edited together.
+    const PRE_EXISTING_SEVEN_IN_ORDER = [
+      'harny-propose',
+      'harny-test',
+      'harny-implement',
+      'harny-audit',
+      'harny-document',
+      'harny-sync',
+      'harny-feedback',
+    ];
+
+    expect(CORE_SKILL_IDS.slice(0, 7)).toEqual(PRE_EXISTING_SEVEN_IN_ORDER);
+    expect(CORE_SKILL_IDS[CORE_SKILL_IDS.length - 1]).toBe('harny-doctor');
+  });
+
+  it('harny-doctor is in CORE_SKILL_IDS, never in OPTIONAL_SKILL_IDS', async () => {
+    const { CORE_SKILL_IDS, OPTIONAL_SKILL_IDS } = await import('../src/vocabulary.js');
+
+    expect(CORE_SKILL_IDS).toContain('harny-doctor');
+    expect(OPTIONAL_SKILL_IDS).not.toContain('harny-doctor');
   });
 });
 

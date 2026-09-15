@@ -47,6 +47,21 @@
  * is the old, pre-feature set, missing every `harny-*`/`README.md` path. That
  * is the correct red-phase failure: a behavioral assertion failure naming
  * exactly what is missing, not a spawn or typo error.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes ("Packaging: `templates/**` goes from
+ * 26 files to 30"; the new `.sdd/doctor/run-doctor.mjs`,
+ * `.sdd/doctor/checks.json`, `.sdd/shared/probes.mjs` artifacts); Behavior
+ * Guarantees 11, 12, 17; intent.md SC4; audit.md Test Coverage T21.
+ *
+ * `defaultSkillLibraryPaths` gains `harny-doctor/SKILL.md` (10 -> 11 files per
+ * root) and every scenario below gains the three tool-neutral doctor/shared
+ * artifacts (`SHARED_DOCTOR_PATHS`) alongside the existing
+ * `SHARED_FEEDBACK_PATHS`. Every `toHaveLength(26)` below becomes 30 (one new
+ * skill-library file plus three new tool-neutral files, per scenario). At red
+ * time none of these four new files exist yet, so every expected-path/count
+ * assertion below fails by omission, not by a wrong assumption about the
+ * spawned CLI's behavior.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -116,6 +131,9 @@ function defaultSkillLibraryPaths(rootDir: string): string[] {
   return [
     `${rootDir}/README.md`,
     `${rootDir}/harny-audit/SKILL.md`,
+    // (readiness-doctor) the eleventh default-selection file: harny-doctor is
+    // core, always scaffolded, exactly like every other core skill.
+    `${rootDir}/harny-doctor/SKILL.md`,
     `${rootDir}/harny-document/SKILL.md`,
     `${rootDir}/harny-feedback/SKILL.md`,
     `${rootDir}/harny-implement/SKILL.md`,
@@ -136,6 +154,17 @@ const SHARED_FEEDBACK_PATHS = [
   '.sdd/feedback/run-feedback.mjs',
   '.sdd/feedback/.turns/.gitignore',
   '.github/workflows/harny-feedback.yml',
+];
+
+/** **(NEW — readiness-doctor.)** The tool-neutral readiness-check artifacts
+ *  every real `harny init` run now also writes exactly once, regardless of
+ *  tool selection: the canonical runner, its generated checks data, and the
+ *  shared probe module both the feedback runner and the doctor runner import
+ *  (contract.md § State Changes; C27). */
+const SHARED_DOCTOR_PATHS = [
+  '.sdd/doctor/run-doctor.mjs',
+  '.sdd/doctor/checks.json',
+  '.sdd/shared/probes.mjs',
 ];
 
 describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
@@ -162,6 +191,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         // (BG-10).
         '.claude/settings.json',
         ...SHARED_FEEDBACK_PATHS,
+        ...SHARED_DOCTOR_PATHS,
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -170,7 +200,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(30);
   });
 });
 
@@ -287,6 +317,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         // tool-neutral and still written once (BG-10).
         '.cursor/hooks.json',
         ...SHARED_FEEDBACK_PATHS,
+        ...SHARED_DOCTOR_PATHS,
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -295,7 +326,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(30);
   });
 });
 
@@ -321,6 +352,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         // workflow are tool-neutral and still written once (BG-10).
         '.kiro/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
+        ...SHARED_DOCTOR_PATHS,
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -329,7 +361,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(30);
   });
 });
 
@@ -355,6 +387,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         // CI workflow are tool-neutral and still written once (BG-10).
         '.github/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
+        ...SHARED_DOCTOR_PATHS,
         '.sdd/spec-schema/intent.md',
         '.sdd/spec-schema/contract.md',
         '.sdd/spec-schema/roadmap.md',
@@ -363,7 +396,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(30);
   });
 });
 
@@ -388,6 +421,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       // and still written once (BG-10).
       'hooks.json',
       ...SHARED_FEEDBACK_PATHS,
+      ...SHARED_DOCTOR_PATHS,
       '.sdd/spec-schema/intent.md',
       '.sdd/spec-schema/contract.md',
       '.sdd/spec-schema/roadmap.md',
@@ -396,7 +430,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(26);
+    expect(files).toHaveLength(30);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -460,9 +494,15 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
   // generators' real `renderHook` implementations, adding one hook artifact
   // each (`.cursor/hooks.json`, `.kiro/hooks/harny-feedback.json`,
   // `.github/hooks/harny-feedback.json`, `hooks.json`): 32 -> 36 tool
-  // artifacts. New total: 36 tool artifacts + 30 skill-library artifacts + 8
-  // shared = 74.
-  it('emits 36 tool artifacts, 30 skill-library artifacts (3 roots x 10 files), and 8 shared files — 74 total', async () => {
+  // artifacts. New total (pre-readiness-doctor): 36 tool artifacts + 30
+  // skill-library artifacts + 8 shared = 74.
+  //
+  // (specs/readiness-doctor extends this again.) `harny-doctor` joining
+  // CORE_SKILL_IDS adds one skill-library file per root (30 -> 33). Three new
+  // tool-neutral shared artifacts join `.sdd/`: `.sdd/doctor/run-doctor.mjs`,
+  // `.sdd/doctor/checks.json`, `.sdd/shared/probes.mjs` (8 -> 11). Tool
+  // artifacts are unaffected (still 36). New total: 36 + 33 + 11 = 80.
+  it('emits 36 tool artifacts, 33 skill-library artifacts (3 roots x 11 files), and 11 shared files — 80 total', async () => {
     const targetDir = await makeTempDir();
 
     const { code } = await runCli([
@@ -475,13 +515,13 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
-    expect(files).toHaveLength(74);
+    expect(files).toHaveLength(80);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
-    expect(sharedFiles).toHaveLength(8);
+    expect(sharedFiles).toHaveLength(11);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(30);
+    expect(skillLibraryFiles).toHaveLength(33);
     expect(new Set(skillLibraryFiles.map((f) => f.split('/').slice(0, 2).join('/')))).toEqual(
       new Set(['.agents/skills', '.claude/skills', '.kiro/skills']),
     );
@@ -502,6 +542,11 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
     expect(specSchemaFiles).toHaveLength(5);
     expect(files.filter((f) => f === '.sdd/harness.json')).toHaveLength(1);
     expect(files.filter((f) => f === '.sdd/feedback/run-feedback.mjs')).toHaveLength(1);
+    // (readiness-doctor) the three new tool-neutral doctor/shared artifacts,
+    // each written exactly once regardless of the five-tool selection.
+    expect(files.filter((f) => f === '.sdd/doctor/run-doctor.mjs')).toHaveLength(1);
+    expect(files.filter((f) => f === '.sdd/doctor/checks.json')).toHaveLength(1);
+    expect(files.filter((f) => f === '.sdd/shared/probes.mjs')).toHaveLength(1);
   });
 
   it('writes .sdd/spec-schema/*.md byte-identical to templates/spec-schema/*.md exactly once', async () => {
@@ -579,10 +624,15 @@ describe('--skills all and --skills none amend the default skill-library artifac
     // (Phase 2/4), plus Phase 6's four remaining hook artifacts
     // (`.cursor/hooks.json`, `.kiro/hooks/harny-feedback.json`,
     // `.github/hooks/harny-feedback.json`, `hooks.json`).
-    expect(files).toHaveLength(80);
+    //
+    // (readiness-doctor.) +3 skill-library files (harny-doctor x 3 roots,
+    // 36 -> 39) and +3 tool-neutral artifacts (`.sdd/doctor/run-doctor.mjs`,
+    // `.sdd/doctor/checks.json`, `.sdd/shared/probes.mjs`) over the
+    // pre-readiness-doctor 80.
+    expect(files).toHaveLength(86);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(36);
+    expect(skillLibraryFiles).toHaveLength(39);
   });
 
   it('--tools all --skills none writes 27 skill-library artifacts (3 roots x 9 files) for 66 total, core skills still present', async () => {
@@ -602,10 +652,15 @@ describe('--skills all and --skills none amend the default skill-library artifac
     const files = await listFilesRecursively(targetDir);
     // (agent-feedback-controls.) Same +3/+8 shift as the --skills all case
     // above, over the pre-feature 60.
-    expect(files).toHaveLength(71);
+    //
+    // (readiness-doctor.) harny-doctor is core, so it is present under
+    // --skills none too: +3 skill-library files (27 -> 30) and the same +3
+    // tool-neutral artifacts as every other scenario, over the
+    // pre-readiness-doctor 71.
+    expect(files).toHaveLength(77);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(27);
+    expect(skillLibraryFiles).toHaveLength(30);
     // Core skills are never deselectable (Gu 14): harny-sync must still be present.
     expect(skillLibraryFiles.some((f) => f.endsWith('harny-sync/SKILL.md'))).toBe(true);
     // The optional harny-standards must be absent under --skills none.

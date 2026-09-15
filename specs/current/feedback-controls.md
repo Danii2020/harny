@@ -118,17 +118,17 @@ The system SHALL ensure that absent tooling (e.g., eslint in a repo without an e
 
 ### Requirement: FC-9 — Harny-feedback skill is core and always scaffolded
 
-The system SHALL add `harny-feedback` as a core skill (always scaffolded, not optional) to `CORE_SKILL_IDS`, counting 7 core skills total (up from 6), and no CLI flag SHALL permit naming it with `--skills`.
+The system SHALL add `harny-feedback` as a core skill (always scaffolded, not optional) to `CORE_SKILL_IDS`, counting 8 core skills total (up from 7 with `harny-doctor` appended last), and no CLI flag SHALL permit naming it with `--skills`.
 
-**Source:** agent-feedback-controls · intent.md § G4, contract.md § SC9, SC9a, BG-15
+**Source:** agent-feedback-controls · intent.md § G4, contract.md § SC9, SC9a, BG-15; readiness-doctor · contract.md § State Changes
 
 #### Scenario: core skill always present in --skills none
 - **WHEN** invoking `npx harny init --tools claude-code --skills none`
-- **THEN** `harny-feedback` is still scaffolded; `--skills none` suppresses only optional skills
+- **THEN** `harny-feedback` and `harny-doctor` are still scaffolded; `--skills none` suppresses only optional skills
 
-#### Scenario: skill counts are 7 core, 2 optional, 9 total
+#### Scenario: skill counts are 8 core, 2 optional, 10 total
 - **WHEN** checking `src/vocabulary.ts` `CORE_SKILL_IDS`, `OPTIONAL_SKILL_IDS`, and `SKILL_IDS`
-- **THEN** lengths are 7, 2, and 9 respectively, with `harny-feedback` last in core
+- **THEN** lengths are 8, 2, and 10 respectively, with `harny-doctor` last in core
 
 ### Requirement: FC-10 — Severity definitions not duplicated
 
@@ -162,13 +162,13 @@ The system SHALL specify that `harny-audit` Step 6 verifies the per-turn hook fi
 
 ### Requirement: FC-13 — Dogfood artifacts derive from canonical templates
 
-The system SHALL ensure this repo's own `.claude/settings.json`, `.github/workflows/harny-feedback.yml`, and `.sdd/feedback/run-feedback.mjs` are byte-identical to what `npx harny init --tools claude-code --stack typescript` produces for a downstream repo.
+The system SHALL ensure this repo's own `.claude/settings.json`, `.github/workflows/harny-feedback.yml`, `.sdd/feedback/run-feedback.mjs`, `.sdd/shared/probes.mjs`, `.sdd/doctor/run-doctor.mjs`, `.sdd/doctor/checks.json`, `.sdd/harness.json`, and `.sdd/spec-schema/*.md` are byte-identical to what `npx harny init --tools claude-code --stack typescript` produces for a downstream repo.
 
-**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC14
+**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC14; readiness-doctor · contract.md § State Changes, Post-implementation dogfood extension
 
 #### Scenario: no dogfood divergence
 - **WHEN** running `npx harny init` against a scratch target with matching configuration
-- **THEN** the three feedback artifacts are byte-identical to this repo's committed versions
+- **THEN** all feedback and readiness artifacts, plus configuration and spec-schema, are byte-identical to this repo's committed versions
 
 ### Requirement: FC-14 — Feedback-controls capability created from template
 
@@ -268,7 +268,7 @@ The system SHALL define the `python` profile's CI gate with no install step, so 
 
 **I4 — Findings never fail the agent's own process.** All five hook wrappers exit 0 even when findings are reported, so a linter failure cannot crash the agent; CI's exit-2 signal is reserved for the PR gate, not the agent's turn.
 
-**I5 — Runner byte-for-byte fidelity.** `templates/hooks/run-feedback.mjs` is copied verbatim into `.sdd/feedback/run-feedback.mjs` during generation; no per-tool variant exists.
+**I5 — Runtime byte-for-byte fidelity.** `templates/hooks/run-feedback.mjs` and `templates/shared/probes.mjs` are copied verbatim into `.sdd/feedback/run-feedback.mjs` and `.sdd/shared/probes.mjs` during generation; no per-tool variant exists. The runtime is now two files, not one, because `probes.mjs` is shared by both feedback and readiness runners.
 
 **I6 — Loop safety via re-entry guard.** The runner checks `stop_hook_active` (where present) and suppresses blocking responses on re-entry, so it cannot drive runaway agent loops.
 

@@ -1,7 +1,7 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-13 by templates-skill-library-parity (archive mode: feature archived, capability docs updated, ADRs registered)
+> Last synced: 2026-09-14 by readiness-doctor (archive mode: feature archived, capability docs updated, ADRs registered)
 
 ## Capabilities
 
@@ -13,6 +13,7 @@
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/) |
 
 ## Keyword lookup
 
@@ -63,6 +64,10 @@
 | CI / GitHub Actions | feedback-controls |
 | stack (project) | feedback-controls |
 | feedback | feedback-controls |
+| doctor | readiness-checks |
+| readiness | readiness-checks |
+| session start | readiness-checks |
+| pre-flight | readiness-checks |
 
 ## Synchronized Changes
 
@@ -75,6 +80,7 @@
 | sdd-skill-library | [specs/archived/sdd-skill-library/](../archived/sdd-skill-library/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md) |
 | templates-skill-library-parity | [specs/archived/templates-skill-library-parity/](../archived/templates-skill-library-parity/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md) |
 | agent-feedback-controls | [specs/archived/agent-feedback-controls/](../archived/agent-feedback-controls/) | [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
+| readiness-doctor | [specs/archived/readiness-doctor/](../archived/readiness-doctor/) | [skill-library.md](./skill-library.md), [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 
 ## Decisions (ADR registry)
 
@@ -97,6 +103,10 @@
 | 0015 | No YAML dependency in canonical CI workflow | Accepted | feedback-controls | `specs/archived/agent-feedback-controls/decisions/0015-no-yaml-dependency-in-canonical-ci-workflow.md` |
 | 0016 | harny-feedback as core-tier skill (always scaffolded) | Accepted | skill-library | `specs/archived/agent-feedback-controls/decisions/0016-harny-feedback-core-tier-skill.md` |
 | 0017 | Reuse shared runner in CI via --whole-project flag | Accepted | feedback-controls | `specs/archived/agent-feedback-controls/decisions/0017-reuse-shared-runner-in-ci-via-whole-project-flag.md` |
+| 0018 | CommandSpec<K> type-level leak prevention | Accepted | readiness-checks | `specs/archived/readiness-doctor/decisions/0018-commandspeck-type-level-leak-prevention.md` |
+| 0019 | Shared probes.mjs extraction | Accepted | feedback-controls | `specs/archived/readiness-doctor/decisions/0019-shared-probes-extraction.md` |
+| 0020 | .sdd/harness.json-gated scaffold-artifact checks | Accepted | readiness-checks | `specs/archived/readiness-doctor/decisions/0020-harness-json-gated-scaffold-checks.md` |
+| 0021 | NOT_READY exit code taxonomy extension | Accepted | cli-init | `specs/archived/readiness-doctor/decisions/0021-not-ready-exit-code-taxonomy-extension.md` |
 
 ## Open reservations
 
@@ -124,6 +134,11 @@
 | AL-P8 | Contract ids appear in four test names where `AGENTS.md` S6 forbids them; standard is already systemically unmet and needs clarification | LOW (documentation) | `specs/archived/templates-skill-library-parity/audit.md` AL-P8 | cli-init |
 | AL-P9 | A ninth skill directory in `templates/skills/` would be silently never shipped; no test detects it at authorship time | LOW (design) | `specs/archived/templates-skill-library-parity/audit.md` AL-P9 | skill-library |
 | AL-P10 | Three new/updated tests are weaker than their guarantee; three edge cases have downgraded assertions or leftover type casts | LOW (test quality) | `specs/archived/templates-skill-library-parity/audit.md` AL-P10 | cli-init |
+| RD-R1 | `run-doctor.mjs` hard-codes schema file names `intent.md` and `audit.md` rather than receiving them from `--checks`, violating BG-3's "no schema file name literal" guarantee | MEDIUM | `specs/archived/readiness-doctor/audit.md` F3 | readiness-checks |
+| RD-R2 | `DoctorResult.skipped` and `.failed` are structurally never non-empty because `stdio: 'inherit'` leaves the parent with no channel to observe per-check outcomes | MEDIUM | `specs/archived/readiness-doctor/audit.md` F5 | readiness-checks |
+| RD-R3 | No test covers `CLI-5` (conflict rule) on the three new generated paths, verified manually only | MEDIUM | `specs/archived/readiness-doctor/audit.md` F6 | readiness-checks |
+| RD-R4 | `SC19` CLI test no longer exercises the path its own rationale names: both test runs are guaranteed never to spawn a test command | MEDIUM | `specs/archived/readiness-doctor/audit.md` F7 | readiness-checks |
+| RD-R5 | Two manually verified coverage gaps (SC20/BG-7 and SC15) have no automated test, held by structure and disclosure rather than by test | MEDIUM | `specs/archived/readiness-doctor/audit.md` F2, T26, T28 | readiness-checks |
 
 ## Notes
 

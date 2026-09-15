@@ -19,6 +19,22 @@
  * default-selected skills and deliberately omits `harny-adr` and a
  * `README.md`, to exercise tolerated absence at both the single-skill and
  * whole-tree level.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes ("Templates root: `CanonicalTemplates`
+ * gains `doctorRunner?`, `doctorReadme?` and `sharedProbes?`, all loaded
+ * through the existing `loadOptionalResource`"); Behavior Guarantee 18;
+ * Error Handling Contract row for a lean templates root missing
+ * `templates/doctor/run-doctor.mjs` or `templates/shared/probes.mjs`;
+ * audit.md Test Coverage T23.
+ *
+ * Red-phase note: `CanonicalTemplates` does not carry `doctorRunner`,
+ * `doctorReadme`, or `sharedProbes` yet, so the new describe block below is
+ * expected to fail with `undefined` where a `SkillResource` was expected
+ * against the real templates root. `resolveTemplatesRoot`'s directory-listing
+ * assertion is amended in place (six entries -> eight, `doctor` and `shared`
+ * added) — the exact "modified existing test, fails until the amendment
+ * lands" case AGENTS.md S6 describes.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -322,8 +338,50 @@ describe('resolveTemplatesRoot (C7)', () => {
     // `skills/`, to the real package templates root. agent-feedback-controls
     // (Phase 1, contract.md "Canonical templates — templates/hooks/") adds a
     // fifth, `hooks/`, and Phase 2 (contract.md "templates/ci/harny-feedback.yml")
-    // adds a sixth, `ci/`.
-    expect(entries.sort()).toEqual(['ci', 'conductor', 'hooks', 'roles', 'skills', 'spec-schema']);
+    // adds a sixth, `ci/`. readiness-doctor adds a seventh, `doctor/`, and an
+    // eighth, `shared/`.
+    expect(entries.sort()).toEqual(['ci', 'conductor', 'doctor', 'hooks', 'roles', 'shared', 'skills', 'spec-schema']);
+  });
+});
+
+describe('loadCanonicalTemplates — doctor/shared optional resources (readiness-doctor, BG-18, T23)', () => {
+  it('loads doctorRunner, doctorReadme, and sharedProbes byte-for-byte from the real templates root', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
+    const withDoctor = templates as unknown as {
+      doctorRunner?: { name: string; contents: string; sourcePath: string };
+      doctorReadme?: { name: string; contents: string; sourcePath: string };
+      sharedProbes?: { name: string; contents: string; sourcePath: string };
+    };
+
+    expect(withDoctor.doctorRunner, 'CanonicalTemplates has no doctorRunner yet').toBeDefined();
+    expect(withDoctor.doctorReadme, 'CanonicalTemplates has no doctorReadme yet').toBeDefined();
+    expect(withDoctor.sharedProbes, 'CanonicalTemplates has no sharedProbes yet').toBeDefined();
+
+    const onDiskRunner = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'doctor', 'run-doctor.mjs'), 'utf8');
+    expect(withDoctor.doctorRunner?.contents).toBe(onDiskRunner);
+
+    const onDiskReadme = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'doctor', 'README.md'), 'utf8');
+    expect(withDoctor.doctorReadme?.contents).toBe(onDiskReadme);
+
+    const onDiskProbes = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'shared', 'probes.mjs'), 'utf8');
+    expect(withDoctor.sharedProbes?.contents).toBe(onDiskProbes);
+  });
+
+  it('tolerates a lean templates root that models neither templates/doctor/ nor templates/shared/', async () => {
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const templates = await loadCanonicalTemplates(fixtureTemplatesRoot('well-formed'));
+    const withDoctor = templates as unknown as {
+      doctorRunner?: unknown;
+      doctorReadme?: unknown;
+      sharedProbes?: unknown;
+    };
+
+    expect(withDoctor.doctorRunner).toBeUndefined();
+    expect(withDoctor.doctorReadme).toBeUndefined();
+    expect(withDoctor.sharedProbes).toBeUndefined();
   });
 });
 
@@ -338,7 +396,8 @@ describe('loadCanonicalTemplates — skill loading, sort order, and tolerated ab
     // agent-feedback-controls (Task 3.10) adds `harny-feedback` to CORE_SKILL_IDS,
     // always scaffolded — the well-formed fixture gained a matching stub skill
     // directory so a default runInit over this fixture can still resolve it.
-    expect(skills.size).toBe(8);
+    // readiness-doctor adds `harny-doctor` the same way (8 -> 9).
+    expect(skills.size).toBe(9);
 
     for (const id of [
       'harny-propose',
@@ -349,6 +408,7 @@ describe('loadCanonicalTemplates — skill loading, sort order, and tolerated ab
       'harny-sync',
       'harny-standards',
       'harny-feedback',
+      'harny-doctor',
     ]) {
       expect(skills.has(id), `missing loaded skill "${id}"`).toBe(true);
       const onDisk = await fs.readFile(

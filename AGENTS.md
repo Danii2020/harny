@@ -78,6 +78,11 @@ templates/
 │   └── run-feedback.mjs          # The turn-boundary feedback runner (batches to one call per turn)
 ├── ci/
 │   └── harny-feedback.yml        # GitHub Actions PR-gate workflow
+├── doctor/
+│   ├── README.md                 # Readiness-check mechanism, the four check families
+│   └── run-doctor.mjs            # The session-start/pre-spec-work readiness runner
+├── shared/
+│   └── probes.mjs                # Presence-probe evaluator, imported by both run-feedback.mjs and run-doctor.mjs
 └── skills/
     ├── README.md                    # Shape contract and extension guide
     ├── harny-propose/               # Architect's spec-drafting protocol
@@ -98,7 +103,9 @@ templates/
     │   └── adr-template.md          # Bundled resource for new ADRs
     ├── harny-standards/             # Coding standards checklist
     │   └── SKILL.md
-    └── harny-feedback/              # Per-turn hook + CI feedback mapping and rules
+    ├── harny-feedback/              # Per-turn hook + CI feedback mapping and rules
+    │   └── SKILL.md
+    └── harny-doctor/                # Session-start/pre-spec-work readiness check
         └── SKILL.md
 ```
 
@@ -135,15 +142,15 @@ format (it is plain content, not framed as a Claude Code Skill).
 each of the five spec files, extracted so they exist as a single reusable source
 rather than being duplicated inline in the architect's prompt.
 
-`templates/skills/` contains the canonical, tool-neutral source for nine `harny-*`
+`templates/skills/` contains the canonical, tool-neutral source for ten `harny-*`
 skills plus their bundled resources and a shape contract. Each skill declares only the
 six portable Agent Skills frontmatter keys (name, description, license, compatibility,
 metadata, allowed-tools) and carries five required body sections (title, "When to use
 this", Inputs, Steps, Guardrails). The skills conform to https://agentskills.io/specification
 and are portable across all agent tools. Every scaffolded repository receives these skills
 as real files (never symlinks) written to each tool's native skill-discovery root, with
-seven skills always included (core, including `harny-feedback`) and two optional
-(`harny-adr`, `harny-standards`; selectable via `--skills` flag).
+eight skills always included (core, including `harny-feedback` and `harny-doctor`) and
+two optional (`harny-adr`, `harny-standards`; selectable via `--skills` flag).
 
 ## The live pipeline (Claude Code)
 
@@ -159,7 +166,7 @@ backed by reusable skills:
 - `.claude/agents/sdd-documentation.md` — delegates to `harny-document`, `harny-sync`,
   and `harny-adr`
 
-**Nine reusable skills** at `.agents/skills/harny-*/SKILL.md`, bridged via git-tracked
+**Ten reusable skills** at `.agents/skills/harny-*/SKILL.md`, bridged via git-tracked
 symlinks at `.claude/skills/harny-*/`:
 
 - `harny-propose` — architect's exploration and spec-drafting protocol; reads
@@ -177,6 +184,8 @@ symlinks at `.claude/skills/harny-*/`:
   § Coding standards as its single source of truth
 - `harny-feedback` — the per-turn hook mapping and the CI workflow's lint/type-check
   rules; see "Feedforward vs. feedback" below
+- `harny-doctor` — the session-start/pre-spec-work readiness check (environment,
+  harness files, spec state, test suite); see "Feedforward vs. feedback" below
 
 **Orchestration**:
 
@@ -185,7 +194,7 @@ symlinks at `.claude/skills/harny-*/`:
   self-approves on the human's behalf. (This skill remains a regular directory;
   it does not have a `.agents/` canonical copy.)
 
-All nine `harny-*` skills are portable: they declare only the six generic frontmatter
+All ten `harny-*` skills are portable: they declare only the six generic frontmatter
 keys (name, description, license, compatibility, allowed-tools, metadata); they carry
 no Claude-Code-only mechanics; and their base shape contract is published at
 `.agents/skills/README.md`.
@@ -207,20 +216,24 @@ every control it ships into one quadrant:
 
 | | Feedforward (before the agent acts) | Feedback (after the agent acts) |
 |---|---|---|
-| **Computational** | *(none — feedforward controls here are prose/process, not computational checks)* | Native per-tool hooks (`templates/hooks/run-feedback.mjs`), firing every turn, pre-integration; the GitHub Actions workflow (`templates/ci/harny-feedback.yml`), firing per PR, post-integration |
+| **Computational** | The readiness check (`templates/doctor/run-doctor.mjs`, the `harny-doctor` skill), run at session start and before new spec work: evaluates four check families (environment, harness-file manifest, spec-state sanity, full test suite) once at session start and again before new spec work begins, exiting ready/not-ready without re-running the per-turn lint/type-check commands owned by `harny-feedback` | Native per-tool hooks (`templates/hooks/run-feedback.mjs`), firing every turn, pre-integration; the GitHub Actions workflow (`templates/ci/harny-feedback.yml`), firing per PR, post-integration |
 | **Inferential** | The five canonical role prompts (`templates/roles/sdd-*.md`); this file's conventions, especially § Coding standards; `harny-standards`; the three human gates (post-specs, post-red-tests, post-audit) | *(deliberately empty)* |
 
 Read across the rows:
 
-- **Feedforward** — controls that steer the agent before it writes a line, and never
-  themselves observe the result: the five role prompts, this file's conventions
-  (`AGENTS.md` § Coding standards above all), `harny-standards` (the pointer-plus-
-  checklist both `sdd-executor` and `sdd-auditor` consult so neither re-derives "match
-  the existing code style" independently), and the three human gates. These are
-  classified **inferential** in the row above because they are guides interpreted by
-  the agent's own judgment, not deterministic checks — there is no feedforward-
-  computational quadrant in this repo today (a deterministic pre-check, e.g. a schema
-  validator run before the agent starts, would belong there if one is ever added).
+- **Feedforward, computational** — a deterministic pre-check run *before* the agent
+  starts work, never per turn and never per PR: `harny-doctor`'s readiness runner
+  evaluates four check families (environment, base harness files, spec-state
+  coherence, the full test suite) once at session start and again before new spec
+  work begins, and reports ready/not-ready without ever re-running the per-turn
+  lint/type-check commands `harny-feedback` owns.
+- **Feedforward, inferential** — controls that steer the agent before it writes a
+  line, and never themselves observe the result: the five role prompts, this file's
+  conventions (`AGENTS.md` § Coding standards above all), `harny-standards` (the
+  pointer-plus-checklist both `sdd-executor` and `sdd-auditor` consult so neither
+  re-derives "match the existing code style" independently), and the three human
+  gates. These are guides interpreted by the agent's own judgment, not deterministic
+  checks — which is what keeps them out of the computational column above.
 - **Feedback** — sensors that observe the agent's own work *after* it acts, close
   enough for the agent to still self-correct: the native per-tool hooks fire every
   turn, before the agent yields, batched to one invocation per turn across every file

@@ -13,11 +13,16 @@ import type { PartialHarnessConfig, RoleOverride } from './config.js';
 import type { GateId, OptionalSkillId, RoleId, ToolId } from './vocabulary.js';
 import { runInit } from './init.js';
 import type { InitIO } from './init.js';
+import { runDoctor } from './doctor.js';
 
 const defaultIO: InitIO = {
   log: (message) => console.log(message),
   warn: (message) => console.warn(`Warning: ${message}`),
 };
+
+interface DoctorCommandOptions {
+  readonly stack?: string;
+}
 
 interface InitCommandOptions {
   readonly tools?: string;
@@ -141,6 +146,18 @@ async function runInitCommand(target: string, opts: InitCommandOptions, io: Init
   }
 }
 
+/** **(NEW — readiness-doctor, G8.)** Resolves `targetDir` and delegates to
+ *  `runDoctor`. Shares `assertWritableDirectory`'s `USAGE` posture with `init`;
+ *  writes nothing, prompts nothing, and never calls `process.exit` itself — every
+ *  error surfaces through `main`'s single `HarnessError` → exit mapping, the same
+ *  as every other command. */
+async function runDoctorCommand(target: string, opts: DoctorCommandOptions, io: InitIO): Promise<void> {
+  const targetDir = path.resolve(process.cwd(), target);
+  await assertWritableDirectory(targetDir);
+
+  await runDoctor({ targetDir, stack: opts.stack, io });
+}
+
 /**
  * Builds the commander program. Exposed for tests; `io` defaults to console.
  *
@@ -172,6 +189,18 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('--force', 'Overwrite existing files')
     .action(async (target: string, cmdOptions: InitCommandOptions) => {
       await runInitCommand(target, cmdOptions, io);
+    });
+
+  program
+    .command('doctor')
+    .description(
+      'Check whether this repository is ready for SDD work: environment, harness files, ' +
+        'spec state, and the test suite.',
+    )
+    .argument('[target]', 'Target directory to check', '.')
+    .option('--stack <name>', 'Override the stack recorded in .sdd/harness.json')
+    .action(async (target: string, cmdOptions: DoctorCommandOptions) => {
+      await runDoctorCommand(target, cmdOptions, io);
     });
 
   return program;

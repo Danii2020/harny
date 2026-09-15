@@ -111,6 +111,16 @@ export interface CanonicalTemplates {
    *  byte-for-byte before its generated block is filled in. Tolerated absent for
    *  the same reason as `hookRunner`. */
   readonly ciWorkflowTemplate?: SkillResource;
+  /** **(NEW — readiness-doctor.)** `templates/doctor/run-doctor.mjs`, read
+   *  byte-for-byte (BG-11). Tolerated absent for the same reason as `hookRunner`. */
+  readonly doctorRunner?: SkillResource;
+  /** **(NEW — readiness-doctor.)** `templates/doctor/README.md`, read
+   *  byte-for-byte. Tolerated absent for the same reason as `hookRunner`. */
+  readonly doctorReadme?: SkillResource;
+  /** **(NEW — readiness-doctor.)** `templates/shared/probes.mjs`, read
+   *  byte-for-byte (BG-11, BG-20). Tolerated absent for the same reason as
+   *  `hookRunner`. */
+  readonly sharedProbes?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -374,6 +384,9 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     'ci/harny-feedback.yml',
     'harny-feedback.yml',
   );
+  const doctorRunner = await loadOptionalResource(templatesRoot, 'doctor/run-doctor.mjs', 'run-doctor.mjs');
+  const doctorReadme = await loadOptionalResource(templatesRoot, 'doctor/README.md', 'README.md');
+  const sharedProbes = await loadOptionalResource(templatesRoot, 'shared/probes.mjs', 'probes.mjs');
 
   return {
     root: templatesRoot,
@@ -384,6 +397,9 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     skillsReadme,
     hookRunner,
     ciWorkflowTemplate,
+    doctorRunner,
+    doctorReadme,
+    sharedProbes,
   };
 }
 

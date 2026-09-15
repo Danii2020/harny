@@ -2,11 +2,20 @@
  * Spec: specs/cli-skeleton
  * Covers: contract.md "Public API — src/errors.ts" (G1), C2, T2, and the
  * Error Handling Contract's exit-code column as a whole.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md "Public API — src/errors.ts" (one row added, `NOT_READY`
+ * = 6); Behavior Guarantee 6; intent.md § Constraints ("the fourth declared
+ * current-truth amendment"); audit.md Test Coverage T20.
+ *
+ * Red-phase note: `EXIT.NOT_READY` does not exist yet, so the amended `EXIT`
+ * table assertion below is expected to fail against today's six-entry table,
+ * and `HarnessErrorCode`/`EXIT_BY_CODE` do not yet accept `'NOT_READY'`.
  */
 import { describe, expect, it } from 'vitest';
 
 describe('EXIT table', () => {
-  it('defines the seven contracted exit codes', async () => {
+  it('defines the eight contracted exit codes, including NOT_READY = 6 (readiness-doctor)', async () => {
     const { EXIT } = await import('../src/errors.js');
     expect(EXIT).toEqual({
       OK: 0,
@@ -15,8 +24,20 @@ describe('EXIT table', () => {
       CONFLICT: 3,
       NO_GENERATOR: 4,
       TEMPLATE: 5,
+      NOT_READY: 6,
       CANCELLED: 130,
     });
+  });
+});
+
+describe('NOT_READY (readiness-doctor, BG-6, T20)', () => {
+  it('maps HarnessError("NOT_READY", ...).exitCode to 6, distinct from every other code', async () => {
+    const { HarnessError, EXIT } = await import('../src/errors.js');
+
+    const err = new HarnessError('NOT_READY', 'the readiness check ran and reported red');
+    expect(err.code).toBe('NOT_READY');
+    expect(err.exitCode).toBe(6);
+    expect(err.exitCode).not.toBe(EXIT.UNEXPECTED);
   });
 });
 

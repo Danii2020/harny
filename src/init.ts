@@ -9,8 +9,16 @@ import { HarnessError, isHarnessError } from './errors.js';
 import { defaultConfig, loadConfigFile, mergeConfig, validateConfig } from './config.js';
 import type { HarnessConfig, PartialHarnessConfig } from './config.js';
 import { loadCanonicalTemplates } from './templates.js';
-import { buildFeedbackFiles, buildPayload, buildSharedFiles, buildSkillFiles, skillRootsFor } from './engine.js';
+import {
+  buildFeedbackFiles,
+  buildPayload,
+  buildRuntimeSharedFiles,
+  buildSharedFiles,
+  buildSkillFiles,
+  skillRootsFor,
+} from './engine.js';
 import type { HookPayload } from './engine.js';
+import { buildDoctorFiles } from './doctor.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { applyWrites, planWrites } from './writer.js';
@@ -236,6 +244,18 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     }
     files.push(...buildFeedbackFiles(payload));
   }
+
+  // (NEW — readiness-doctor.) The readiness runner + generated checks.json,
+  // tool-neutral, exactly once per run — joined into this same render step,
+  // never a fourteenth step (CLI-1). Gated on the loaded templates root
+  // actually carrying `templates/doctor/run-doctor.mjs`; the real, packaged
+  // templates root always does.
+  files.push(...buildDoctorFiles(payload, resolvedGenerators));
+  // (NEW — readiness-doctor.) The shared probe module both the feedback runner
+  // and the doctor runner import — tool-neutral, written exactly once per run
+  // from this single call site, never from `buildFeedbackFiles`/
+  // `buildDoctorFiles` separately (which would duplicate the write-plan entry).
+  files.push(...buildRuntimeSharedFiles(payload));
 
   // 12. Plan writes.
   const plan = await planWrites(files, targetDir);

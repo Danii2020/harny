@@ -153,8 +153,9 @@ function runnerInvocation(): string {
 }
 
 /** `postToolUse`'s action (V3): Kiro's own tool-context JSON on STDIN already
- *  matches the shape the shared, byte-frozen runner reads, so no reshaping
- *  wrapper is needed — unlike Cursor's flat `afterFileEdit` payload. */
+ *  matches the shape the shared runner reads, so no reshaping wrapper is
+ *  needed — unlike Cursor's flat `afterFileEdit` payload. This generator never
+ *  modifies the runner (BG-11). */
 function accumulateCommand(runner: string): string {
   return `node "${runner}" accumulate`;
 }

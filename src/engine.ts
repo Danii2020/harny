@@ -89,10 +89,25 @@ export interface HarnessPayload {
    *  verbatim, before its generated block is filled in. Same absence rule as
    *  `hookRunner`. */
   readonly ciWorkflowTemplate?: SkillResource;
+  /** **(NEW — readiness-doctor.)** `templates/doctor/run-doctor.mjs`, verbatim
+   *  (BG-11). Same absence rule as `hookRunner`: `undefined` only for a lean
+   *  test-fixture templates root, never for the real, packaged one. */
+  readonly doctorRunner?: SkillResource;
+  /** **(NEW — readiness-doctor.)** `templates/shared/probes.mjs`, verbatim
+   *  (BG-11, BG-20). Same absence rule as `hookRunner`. Emitted into the target
+   *  repo by `buildRuntimeSharedFiles`, not by `buildFeedbackFiles` or
+   *  `buildDoctorFiles` (§ State Changes). */
+  readonly sharedProbes?: SkillResource;
 }
 
 export const SPEC_SCHEMA_DIR = '.sdd/spec-schema';
 export const HARNESS_CONFIG_PATH = '.sdd/harness.json';
+/** **(NEW — readiness-doctor.)** POSIX path, relative to the target repo root, of
+ *  the shared runtime module both generated entry-point scripts import
+ *  (`../shared/probes.mjs`). Owned here — the module that already owns the
+ *  cross-subsystem tool-neutral paths — not by `src/feedback.ts` or `src/doctor.ts`
+ *  (S5). */
+export const SHARED_PROBES_PATH = '.sdd/shared/probes.mjs';
 
 export function buildPayload(config: HarnessConfig, templates: CanonicalTemplates): HarnessPayload {
   const selectionById = new Map(config.roles.map((selection) => [selection.id, selection]));
@@ -142,6 +157,8 @@ export function buildPayload(config: HarnessConfig, templates: CanonicalTemplate
     config,
     hookRunner: templates.hookRunner,
     ciWorkflowTemplate: templates.ciWorkflowTemplate,
+    doctorRunner: templates.doctorRunner,
+    sharedProbes: templates.sharedProbes,
   };
 }
 
@@ -154,6 +171,21 @@ export function buildSharedFiles(payload: HarnessPayload): readonly GeneratedFil
   }));
   files.push({ path: HARNESS_CONFIG_PATH, contents: serializeConfig(payload.config) });
   return files;
+}
+
+/** **(NEW — readiness-doctor.)** The shared runtime module both generated
+ *  entry-point scripts import (`.sdd/feedback/run-feedback.mjs` and
+ *  `.sdd/doctor/run-doctor.mjs`), tool-neutral and written exactly once per run
+ *  from this one call site — deliberately not from `buildFeedbackFiles` and
+ *  `buildDoctorFiles` separately, which would put a duplicate entry in the write
+ *  plan (§ State Changes). Returns `[]` when the loaded templates root does not
+ *  carry `templates/shared/probes.mjs` (lean test fixtures) — never for the real,
+ *  packaged templates root. */
+export function buildRuntimeSharedFiles(payload: HarnessPayload): readonly GeneratedFile[] {
+  if (!payload.sharedProbes) {
+    return [];
+  }
+  return [{ path: SHARED_PROBES_PATH, contents: payload.sharedProbes.contents }];
 }
 
 /** **(NEW — agent-feedback-controls.)** Human-readable escape-hatch notice for an
@@ -208,16 +240,23 @@ function renderInstallGateChain(ciInstall: readonly FeedbackInstall[]): string {
   return branches.join(' ');
 }
 
-/** (A1) Renders the one guarded runner-invocation command: a `test -f` guard
- *  naming the missing-runner remediation (Error Handling Contract's row for a
- *  checkout missing the runner), then `run --whole-project --commands
- *  <inline JSON>` — the resolved profile's commands, embedded the same way
- *  (`wrapPosixShellArg`) the five hook configs already embed them. */
+/** (A1; extended by readiness-doctor.) Renders the one guarded runner-invocation
+ *  command: a `test -f` guard naming the missing-runner remediation (Error
+ *  Handling Contract's row for a checkout missing the runner or its shared
+ *  module), then `run --whole-project --commands <inline JSON>` — the resolved
+ *  profile's commands, embedded the same way (`wrapPosixShellArg`) the five hook
+ *  configs already embed them. The guard now covers `SHARED_PROBES_PATH` as well
+ *  as `FEEDBACK_RUNNER_PATH`: a checkout missing either file cannot run
+ *  (`run-feedback.mjs`'s static import of `../shared/probes.mjs` would otherwise
+ *  fail with a raw `ERR_MODULE_NOT_FOUND` stack trace instead of this named,
+ *  actionable notice). */
 function renderRunnerInvocation(commands: unknown): string {
-  const missingRunnerNotice = `harny-feedback: ${FEEDBACK_RUNNER_PATH} is missing from this checkout; run npx harny init and commit it`;
+  const missingRunnerNotice =
+    `harny-feedback: ${FEEDBACK_RUNNER_PATH} or ${SHARED_PROBES_PATH} is missing from ` +
+    'this checkout; run npx harny init and commit both';
   const commandsJson = JSON.stringify(commands);
   return (
-    `test -f ${FEEDBACK_RUNNER_PATH} || { echo '${missingRunnerNotice}'; exit 1; }; ` +
+    `test -f ${FEEDBACK_RUNNER_PATH} -a -f ${SHARED_PROBES_PATH} || { echo '${missingRunnerNotice}'; exit 1; }; ` +
     `node ${FEEDBACK_RUNNER_PATH} run --whole-project --commands ${wrapPosixShellArg(commandsJson)}`
   );
 }

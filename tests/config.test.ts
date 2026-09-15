@@ -19,6 +19,17 @@
  * 3.10, deferred to `harny-implement`), so every assertion below is expected to
  * fail against today's 6/2/8 CORE/OPTIONAL/SKILL_IDS counts and today's
  * "unknown skill id" `parseSkillList` message.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes "Vocabulary" (`harny-doctor` appended
+ * last to `CORE_SKILL_IDS`, after `harny-feedback`); Behavior Guarantee 12.
+ *
+ * Red-phase note (amendment): the two hardcoded counts and the
+ * "last-in-core" assertion below are updated from 7/2/9 (`harny-feedback`
+ * last) to 8/2/10 (`harny-doctor` last) — this is the exact "modified
+ * existing test, fails until the amendment lands" case AGENTS.md S6
+ * describes, not a new gap. `harny-feedback` remains core; it simply is no
+ * longer the *last* core skill once `harny-doctor` is appended after it.
  */
 import { describe, expect, it } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -481,15 +492,18 @@ describe('harny-feedback is core (Gu 15, SC9a) (agent-feedback-controls Task 3.1
 
     expect(CORE_SKILL_IDS).toContain('harny-feedback');
     expect(OPTIONAL_SKILL_IDS).not.toContain('harny-feedback');
-    expect(CORE_SKILL_IDS).toHaveLength(7);
+    // (readiness-doctor amendment) 7/2/9 -> 8/2/10: harny-doctor is appended
+    // last in CORE_SKILL_IDS, after harny-feedback.
+    expect(CORE_SKILL_IDS).toHaveLength(8);
     expect(OPTIONAL_SKILL_IDS).toHaveLength(2);
-    expect(SKILL_IDS).toHaveLength(9);
+    expect(SKILL_IDS).toHaveLength(10);
   });
 
-  it('harny-feedback is the last entry of CORE_SKILL_IDS — the only index-preserving insertion position', async () => {
+  it('harny-feedback is the second-to-last entry of CORE_SKILL_IDS, immediately before harny-doctor (readiness-doctor amendment)', async () => {
     const { CORE_SKILL_IDS } = await import('../src/vocabulary.js');
 
-    expect(CORE_SKILL_IDS[CORE_SKILL_IDS.length - 1]).toBe('harny-feedback');
+    expect(CORE_SKILL_IDS[CORE_SKILL_IDS.length - 2]).toBe('harny-feedback');
+    expect(CORE_SKILL_IDS[CORE_SKILL_IDS.length - 1]).toBe('harny-doctor');
   });
 });
 

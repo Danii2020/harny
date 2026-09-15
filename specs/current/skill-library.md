@@ -14,19 +14,19 @@ and `specs/archived/` accurate.
 
 ## Requirements
 
-### Requirement: SL-1 — Nine harny-* skills satisfying the shape contract
+### Requirement: SL-1 — Ten harny-* skills satisfying the shape contract
 
-The system SHALL provide nine `harny-*` skills: `harny-propose`,
+The system SHALL provide ten `harny-*` skills: `harny-propose`,
 `harny-test`, `harny-implement`, `harny-audit`, `harny-document`,
-`harny-sync`, `harny-adr`, `harny-standards`, and `harny-feedback`, each satisfying a shape
+`harny-sync`, `harny-adr`, `harny-standards`, `harny-feedback`, and `harny-doctor`, each satisfying a shape
 contract of six portable Agent Skills frontmatter keys and five required
 body sections.
 
-**Source:** sdd-skill-library · contract.md § Interfaces "Public API — the file manifest"; § "The harny-* skill shape contract"; agent-feedback-controls · intent.md § G4, contract.md § SC9
+**Source:** sdd-skill-library · contract.md § Interfaces "Public API — the file manifest"; § "The harny-* skill shape contract"; agent-feedback-controls · intent.md § G4, contract.md § SC9; readiness-doctor · contract.md § "Public API — the `harny-doctor` skill"
 
 #### Scenario: A `harny-*` skill is authored
 - **WHEN** any `harny-*` skill is authored
-- **THEN** it is one of the nine named skills and its `SKILL.md` declares
+- **THEN** it is one of the ten named skills and its `SKILL.md` declares
   exactly the six portable frontmatter keys and the five required body
   sections
 

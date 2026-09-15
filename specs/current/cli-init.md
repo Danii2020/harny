@@ -36,15 +36,17 @@ dry-run-or-write.
 The system SHALL make `HarnessError(code, message, details?)` the only error
 type this CLI throws deliberately; its `HarnessErrorCode` maps to an exit
 code via a table in `src/errors.ts` (`USAGE`→2, `CONFLICT`→3,
-`NO_GENERATOR`→4, `TEMPLATE`→5, `CANCELLED`→130); anything else reaching
+`NO_GENERATOR`→4, `TEMPLATE`→5, `NOT_READY`→6, `CANCELLED`→130); anything else reaching
 `main` is a bug mapping to `EXIT.UNEXPECTED` (1).
 
-**Source:** cli-skeleton · contract.md § "Public API — src/errors.ts"; `src/errors.ts:1–3,28–31`
+**Source:** cli-skeleton · contract.md § "Public API — src/errors.ts"; `src/errors.ts:1–3,28–31`; readiness-doctor · contract.md § "Public API — `src/errors.ts`"
 
 #### Scenario: A deliberate error condition occurs
 - **WHEN** a deliberate error condition occurs during `runInit`
 - **THEN** a `HarnessError` with the matching code is thrown and mapped to
   its exit code via the `src/errors.ts` table
+- **WHEN** the readiness check (via `doctor` verb) completes with a "not ready" result
+- **THEN** a `HarnessError('NOT_READY', …)` is thrown and mapped to exit code 6
 - **WHEN** an unexpected error reaches `main`
 - **THEN** it is treated as a bug and mapped to `EXIT.UNEXPECTED` (1)
 
@@ -154,15 +156,15 @@ output.
 ### Requirement: CLI-10 — Packaged tarball contents
 
 The system SHALL ensure the packed npm tarball contains `bin/`, `dist/`, and
-all twenty-six `templates/**` files, and excludes everything under `src/`,
+all thirty `templates/**` files, and excludes everything under `src/`,
 `tests/`, and `specs/`.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`; agent-feedback-controls · contract.md Amendment CLI-10
+**Source:** cli-skeleton · contract.md Behavior Guarantee 20; `tests/packaging.test.ts`; agent-feedback-controls · contract.md Amendment CLI-10; readiness-doctor · contract.md State Changes
 
 #### Scenario: The npm package is packed
 - **WHEN** the npm package is packed
-- **THEN** the tarball contains `bin/`, `dist/`, and all twenty-six
-  `templates/**` files (including hook and CI templates, from agent-feedback-controls),
+- **THEN** the tarball contains `bin/`, `dist/`, and all thirty
+  `templates/**` files (including hook, CI, doctor, and shared-probes templates, from agent-feedback-controls and readiness-doctor),
   and contains nothing under `src/`, `tests/`, or `specs/`
 
 ### Requirement: CLI-11 — No import cycles, vocabulary has no imports

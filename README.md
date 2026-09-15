@@ -46,11 +46,11 @@ On this repo, the pipeline is wired up as Claude Code subagents and a Skill:
 - `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` — five thin
   specialized roles that run as Claude Code subagents. Each agent body is ≤ 25 lines;
   combined file size is 148 lines (down from 646) because shared instructions are now in
-  eight reusable skills.
+  ten reusable skills.
 - `.claude/skills/sdd-conductor/SKILL.md` — orchestrates the five roles, enforces
   the three human gates, and never self-approves on the human's behalf.
-- Eight `harny-*` skills bridged from `.agents/skills/` via git-tracked symlinks under
-  `.claude/skills/harny-{propose,test,implement,audit,document,sync,adr,standards}/` —
+- Ten `harny-*` skills bridged from `.agents/skills/` via git-tracked symlinks under
+  `.claude/skills/harny-{propose,test,implement,audit,document,sync,feedback,doctor,adr,standards}/` —
   canonical instruction sets that the five agents delegate to and that can be reused
   or inspected independently.
 
@@ -59,16 +59,16 @@ choosing which tool(s) to target. Each tool gets its own generator that reads th
 portable role templates and adapts them to that tool's native format and capability
 model.
 
-Since `templates-skill-library-parity`, the scaffolder also writes the same eight
+Since `templates-skill-library-parity`, the scaffolder also writes the same ten
 `harny-*` skills to the target repository as **real files** (never symlinks), one copy
 per tool's skill-discovery root:
 - `.claude/skills/harny-*/` for Claude Code
 - `.kiro/skills/harny-*/` for Kiro  
 - `.agents/skills/harny-*/` for Cursor, GitHub Copilot, and Codex (shared root)
 
-Seven skills are always scaffolded (`harny-propose`, `harny-test`, `harny-implement`,
-`harny-audit`, `harny-document`, `harny-sync`, `harny-feedback`); two are optional
-(`harny-adr` and `harny-standards`, selectable via the `--skills` flag).
+Eight skills are always scaffolded (`harny-propose`, `harny-test`, `harny-implement`,
+`harny-audit`, `harny-document`, `harny-sync`, `harny-feedback`, `harny-doctor`); two
+are optional (`harny-adr` and `harny-standards`, selectable via the `--skills` flag).
 
 ### Knowledge base and documentation
 
@@ -132,7 +132,7 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 **Key flags:**
 - `--tools <list>` — comma-separated tool ids or `all` (default: `claude-code`)
 - `--roles <list>` — comma-separated role ids or `all` (default: all five; conductor always included)
-- `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the seven core skills are always included)
+- `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the eight core skills are always included)
 - `--model <role>=<value>` — repeatable; `<value>` is a cost tier or a literal model id
 - `--gates <list>` — comma-separated gate ids, `all`, or `none` (default: all three)
 - `--stack <name>` — project stack (captured only, for future MCP provisioning)
@@ -149,10 +149,39 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
-- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 7 core skills (one per tool's root) + 2 optional skills (1 default-included `harny-standards`) + 6 shared files (5 spec schema templates + configuration) = 22 files total
-- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 9 skills per unique root (7 core + 1 default `harny-standards` + 1 non-default `harny-adr` = 9 for three roots = 27 total), plus 6 shared files = 63 files total
-- With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 9 skills per root instead of 8
-- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 45 skill artifacts (9 per root) + 6 shared = 81 files total
+- For a single tool with the default skill set: 6 tool-specific files (5 roles + conductor artifact) + 9 core/optional skills (8 core + 1 default `harny-standards`, one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 21 files total
+- For multiple tools with defaults: 6 files per selected tool (30 total for all five), plus 9 skills per unique root (8 core + 1 default `harny-standards` for three roots = 27 total), plus 6 shared files = 63 files total
+- With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 10 skills per root instead of 9
+- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 30 tool artifacts + 50 skill artifacts (10 per root) + 6 shared = 86 files total
+
+## Checking whether a repository is ready
+
+`npx harny doctor` runs the scaffolded readiness check against a target repository —
+a feedforward, computational pre-check (see `AGENTS.md` § "Feedforward vs. feedback")
+that confirms the harness is actually installed and coherent before an agent starts
+work, rather than discovering a half-scaffolded harness partway through a session:
+
+```sh
+# Check the current directory:
+npx harny doctor
+
+# Check another repository, overriding the recorded stack:
+npx harny doctor /path/to/target-repo --stack python
+
+# Equivalent direct invocation (what CI or a hook would run):
+node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
+```
+
+It evaluates four check families, in this fixed order — environment, the base
+harness-file manifest, spec-state sanity across `specs/`, and the resolved stack's
+full test suite — and exits `0` when ready, `6` when at least one check failed (never
+confused with a CLI usage/internal error), or `2` when the target directory itself is
+missing or unreadable. It writes nothing under any flag combination: this is the one
+command that executes project tooling, and it never mutates the repo it inspects.
+
+**Key flags:**
+- `[target]` — directory to check (default: `.`)
+- `--stack <name>` — override the stack recorded in `.sdd/harness.json`
 
 ## Portable templates
 
@@ -170,9 +199,10 @@ templates/
 │                  # described without assuming any single tool's Skill format.
 ├── spec-schema/   # intent/contract/roadmap/tasks/audit.md - the blank scaffolds
 │                  # the architect emits, extracted as standalone template files.
-└── skills/        # Eight harny-* skills plus bundled resources and a shape contract:
+└── skills/        # Ten harny-* skills plus bundled resources and a shape contract:
                    # harny-propose, harny-test, harny-implement, harny-audit,
-                   # harny-document, harny-sync, harny-adr, harny-standards.
+                   # harny-document, harny-sync, harny-feedback, harny-doctor,
+                   # harny-adr, harny-standards.
                    # Each skill carries six portable frontmatter keys and five body
                    # sections per the Agent Skills specification.
 ```
@@ -180,7 +210,7 @@ templates/
 These templates are the canonical source that `npx harny init` reads from when
 generating configuration for a target repository. The CLI treats `templates/` as
 read-only input — the per-tool generators adapt this content without modifying it.
-The eight skills are **copied as real files** to each tool's skill-discovery root,
+The ten skills are **copied as real files** to each tool's skill-discovery root,
 never as symlinks, and never edited by the generators.
 
 ## Repository layout

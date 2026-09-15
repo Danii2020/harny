@@ -8,6 +8,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Readiness doctor** — feedforward, computational pre-check run at session start and before new
+  spec work. `harny-doctor` is the eighth core skill (ninth and tenth skills across the all-skills
+  set, always scaffolded). A new `npx harny doctor [target] [--stack name]` CLI verb runs the
+  scaffolded readiness check in `.sdd/doctor/run-doctor.mjs`, evaluating four families in fixed order:
+  environment (Node version), harness-file manifest (`.sdd/` scaffold completeness), spec-state
+  sanity (five-file features, shipped-but-unarchived detection), and the full test suite (stack-specific
+  runner). One line per check; exit 0 when ready, exit 6 when not ready (distinct from CLI errors),
+  exit 2 when invalid target. Writes nothing under any condition. Four-check schema extracted to
+  `.sdd/doctor/checks.json`, probe evaluator extracted to `.sdd/shared/probes.mjs` (shared by both
+  the feedback and readiness runners), both generated during `npx harny init` and subject to `CLI-5`
+  conflict rules. Five current-truth amendments to `specs/current/`: SL-1 (nine→ten skills),
+  FC-9 (7→8 core, 9→10 total), CLI-10 (26→30 template files), CLI-2 (new `NOT_READY`→6 exit code row),
+  and feedback-controls.md I5/FC-13 (generated runtime now two files: `.sdd/feedback/run-feedback.mjs` +
+  `.sdd/shared/probes.mjs`, plus `.sdd/doctor/run-doctor.mjs` + `.sdd/shared/probes.mjs` for readiness).
+  A new capability namespace `readiness-checks` (prefix `RD-`) created from `harny-sync`'s
+  `capability-template.md`. Open reservations: F3 (hard-coded schema file names), F4 (README.md
+  lines 152–155 pre-existing staleness), F5 (`DoctorResult.skipped`/`.failed` never non-empty),
+  F6 (no `CLI-5` test on three new paths), F7 (`SC19` test no longer spawns test command),
+  and T26/T28 (two manually-verified but untested coverage gaps).
+
 - **Agent feedback controls** — per-turn and CI-gate feedback for code quality checks. `harny-feedback`
   is a new core skill (seventh core, always scaffolded) that maps project stack (`--stack` flag)
   to canonical lint/type-check commands via a shared `STACK_PROFILES` configuration. All five

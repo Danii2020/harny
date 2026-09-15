@@ -22,6 +22,18 @@
  * SC19; roadmap.md Phase 5.4; tasks.md Task 5.6. `EXPECTED_TEMPLATE_FILES`
  * gains `templates/skills/harny-feedback/SKILL.md`, `templates/hooks/README.md`,
  * `templates/hooks/run-feedback.mjs`, and `templates/ci/harny-feedback.yml`.
+ *
+ * Spec: specs/readiness-doctor
+ * Covers: contract.md § State Changes "Packaging" (CLI-10 amended again,
+ * twenty-six → thirty `templates/**` files); intent.md SC14; audit.md Test
+ * Coverage T18.
+ *
+ * Red-phase note: `EXPECTED_TEMPLATE_FILES` gains
+ * `templates/skills/harny-doctor/SKILL.md`, `templates/doctor/run-doctor.mjs`,
+ * `templates/doctor/README.md`, and `templates/shared/probes.mjs`. None of
+ * these four files exist yet, so the `npm pack` assertion below is expected
+ * to fail on the new count and the missing paths, not on a wrong assumption
+ * about `npm pack`'s own output shape.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -59,6 +71,11 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/hooks/README.md',
   'templates/hooks/run-feedback.mjs',
   'templates/ci/harny-feedback.yml',
+  // (readiness-doctor)
+  'templates/skills/harny-doctor/SKILL.md',
+  'templates/doctor/run-doctor.mjs',
+  'templates/doctor/README.md',
+  'templates/shared/probes.mjs',
 ];
 
 async function packedFilePaths(): Promise<string[]> {
@@ -70,12 +87,12 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all twenty-six templates/** files (Gu 26, S4)', async () => {
+  it('includes bin/, dist/, and all thirty templates/** files (Gu 26, S4) (readiness-doctor amendment: 26 -> 30)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
-    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(26);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(30);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }

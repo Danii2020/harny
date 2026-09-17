@@ -2,9 +2,20 @@
   "name": "harny",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "harny": "bin/harness.js" },
-  "files": ["bin", "dist", "templates", "README.md", "CHANGELOG.md", "AGENTS.md"],
-  "engines": { "node": ">=20.19.0" },
+  "bin": {
+    "harny": "bin/harness.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "templates",
+    "README.md",
+    "CHANGELOG.md",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,12 +24,12 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "commander": "15.0.0",
-    "@clack/prompts": "1.7.0"
+    "@clack/prompts": "1.7.0",
+    "commander": "15.0.0"
   },
   "devDependencies": {
+    "@types/node": "26.1.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.10",
-    "@types/node": "26.1.2"
+    "vitest": "^4.1.11"
   }
 }

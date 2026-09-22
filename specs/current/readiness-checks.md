@@ -20,13 +20,17 @@ The system SHALL evaluate readiness across five check families in this exact ord
 
 ### Requirement: RD-2 — Readiness command never reaches per-turn hooks
 
-The system SHALL prevent a test-suite command (the readiness kind) from ever reaching a per-turn hook config or the CI workflow; `commands` element type forbids `kind: 'test'` at compile time.
+The system SHALL prevent a test-suite command (the readiness kind) from ever reaching a per-turn hook config or the CI workflow; `commands` element type forbids `kind: 'test'` at compile time. `ReadinessCommand` also forbids `extensions` at compile time, since readiness commands run once whole-project and never consult path-specific settings.
 
-**Source:** readiness-doctor · intent.md § G4, contract.md § BG-4
+**Source:** readiness-doctor · intent.md § G4, contract.md § BG-4; feedback-path-hygiene · contract.md § PH-9
 
 #### Scenario: test command rejected at type level
 - **WHEN** attempting to assign `kind: 'test'` to a `StackProfile.commands` entry
 - **THEN** a TypeScript compile error results
+
+#### Scenario: readiness command cannot carry extensions
+- **WHEN** attempting to assign `extensions` to a `ReadinessCommand` literal
+- **THEN** a TypeScript compile error results (`extensions?: never`)
 
 ### Requirement: RD-3 — Shared probe implementation
 

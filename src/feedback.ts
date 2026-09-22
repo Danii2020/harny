@@ -30,10 +30,10 @@ export type FeedbackKind = 'lint' | 'typecheck';
  *  turn. (readiness-doctor.) */
 export type ReadinessKind = 'test';
 
-/** The shape both `FeedbackCommand` and `ReadinessCommand` share. Extracted
- *  verbatim from the original `FeedbackCommand` — no field added, removed, or
- *  renamed, so every existing consumer keeps compiling unchanged (readiness-doctor,
- *  contract.md § "Public API — src/feedback.ts"). */
+/** The shape both `FeedbackCommand` and `ReadinessCommand` share. Originally
+ *  extracted verbatim from `FeedbackCommand` (readiness-doctor); `extensions` added
+ *  by feedback-path-hygiene. Optional, so every existing consumer and every
+ *  hand-written commands JSON keeps working unchanged (ADR 0018). */
 export interface CommandSpec<K extends string> {
   /** Stable id, unique within its profile. Used in generated output and findings. */
   readonly id: string;
@@ -44,6 +44,14 @@ export interface CommandSpec<K extends string> {
   /** `per-file` appends the turn's touched paths to `argv`; `whole-project` ignores
    *  them (e.g. `tsc --noEmit`, which cannot type-check a file in isolation). */
   readonly pathMode: PathMode;
+  /** **(NEW — feedback-path-hygiene.)** File-name suffixes this command accepts,
+   *  each including its leading dot (e.g. `'.py'`). Consulted ONLY by the runner's
+   *  turn-based `run` mode, and only for `per-file` commands: a touched path is
+   *  passed to this command iff it ends with one of these suffixes (case-sensitive).
+   *  Absent, or an empty array, means no extension filtering. Ignored by
+   *  `whole-project` commands, by `run --whole-project` (whose `.` sentinel bypasses
+   *  every path filter), and by the readiness runner. */
+  readonly extensions?: readonly string[];
   /** Probe deciding whether this command is usable in the target repo. When it
    *  resolves false the command is SKIPPED with a notice, never a failure (BG-9). */
   readonly requires: ToolProbe;
@@ -53,11 +61,15 @@ export interface CommandSpec<K extends string> {
  *  `CommandSpec`. Deliberately NOT `test`: the test suite is already run by
  *  `harny-implement`/`harny-audit` and is far too slow for a per-turn hook. */
 export type FeedbackCommand = CommandSpec<FeedbackKind>;
-/** **(NEW — readiness-doctor.)** Carried by `StackProfile.readiness`, never by
- *  `StackProfile.commands`: `commands: readonly FeedbackCommand[]` makes a
- *  `kind: 'test'` entry a compile error, which is what keeps the test suite out
- *  of every per-turn hook and out of the CI workflow's inline JSON (BG-4). */
-export type ReadinessCommand = CommandSpec<ReadinessKind>;
+/** **(MODIFIED — feedback-path-hygiene.)** Readiness commands run whole-project,
+ *  once, via `run-doctor.mjs`, which never appends paths, so `extensions` has no
+ *  meaning here. `?: never` makes declaring it a compile error (ADR 0018's
+ *  type-level-prevention precedent) rather than a silently ignored field. Carried by
+ *  `StackProfile.readiness`, never by `StackProfile.commands`: `commands: readonly
+ *  FeedbackCommand[]` makes a `kind: 'test'` entry a compile error, which is what
+ *  keeps the test suite out of every per-turn hook and out of the CI workflow's
+ *  inline JSON (BG-4). */
+export type ReadinessCommand = CommandSpec<ReadinessKind> & { readonly extensions?: never };
 
 /** **(A1 — NEW.)** One candidate dependency-bootstrap command for the CI surface
  *  only. Never executed by the per-turn hook: a developer's working tree already
@@ -78,6 +90,11 @@ export interface FeedbackInstall {
    *  into shell but command probes may not". */
   readonly requires: Required<Pick<ToolProbe, 'anyFile'>>;
 }
+
+/** Suffixes the python profile's per-file commands accept (ruff, mypy). */
+const PYTHON_SOURCE_EXTENSIONS: readonly string[] = ['.py', '.pyi'];
+/** Suffixes the typescript profile's per-file command accepts (eslint). */
+const JS_TS_SOURCE_EXTENSIONS: readonly string[] = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'];
 
 export const STACK_PROFILE_IDS = ['typescript', 'python'] as const;
 export type StackProfileId = (typeof STACK_PROFILE_IDS)[number];
@@ -129,6 +146,7 @@ export const STACK_PROFILES: readonly StackProfile[] = [
         kind: 'lint',
         argv: ['npx', 'eslint'],
         pathMode: 'per-file',
+        extensions: JS_TS_SOURCE_EXTENSIONS,
         requires: {
           anyFile: ['eslint.config.js', 'eslint.config.mjs', '.eslintrc.json', '.eslintrc.cjs'],
         },
@@ -172,6 +190,7 @@ export const STACK_PROFILES: readonly StackProfile[] = [
         kind: 'lint',
         argv: ['ruff', 'check'],
         pathMode: 'per-file',
+        extensions: PYTHON_SOURCE_EXTENSIONS,
         requires: { binary: 'ruff' },
       },
       {
@@ -179,6 +198,7 @@ export const STACK_PROFILES: readonly StackProfile[] = [
         kind: 'typecheck',
         argv: ['mypy'],
         pathMode: 'per-file',
+        extensions: PYTHON_SOURCE_EXTENSIONS,
         requires: { binary: 'mypy' },
       },
     ],

@@ -67,9 +67,38 @@
  * does not exist on `src/engine.ts` yet, so its new describe block below is
  * expected to fail with "does not provide an export named
  * 'buildRuntimeSharedFiles'".
+ *
+ * ---
+ * Spec: specs/feedback-path-hygiene
+ * Covers: contract.md § "Unchanged by construction — no code change" (`renderCiWorkflow`,
+ * `renderRunnerInvocation` are not touched by this feature); Behavior Guarantee
+ * PH-7 (the `.` sentinel bypasses both filters unconditionally) and PH-12
+ * (`extensions` reaches the CI workflow's inline JSON via the existing
+ * `JSON.stringify` call, automatically); intent.md SC7; roadmap.md Phase 3
+ * step 2; tasks.md Task 3.3.
+ *
+ * The new describe block below drives the *decoded* runner-invocation `run:`
+ * scalar of a real, generated python-profile CI workflow as a subprocess
+ * against a temp project holding the real runner and `probes.mjs`, with stub
+ * `ruff`/`mypy` executables on a temp `PATH` (`tests/fixtures/hooks/stub-tool.mjs`,
+ * copied in as both tool names). Unlike the hook end-to-end test in
+ * `tests/generators/claude-code.test.ts` (Task 3.2), this test is expected to
+ * PASS already at red time: `run --whole-project` (`runWholeProject` in
+ * `templates/hooks/run-feedback.mjs`) is untouched by this feature by
+ * construction (PH-7) and already passes exactly `.` to every `per-file`
+ * command regardless of any `extensions` field — there is no vanished-path or
+ * extension-gate code path in `--whole-project` for this feature to add. It
+ * stays in this file as the live regression guard SC7 exists to be: the proof
+ * that CI's own argv, and therefore its behavior, is unchanged by this
+ * feature, verified through a real generated artifact rather than by reading
+ * `runWholeProject`'s source.
  */
 import { describe, expect, it } from 'vitest';
-import { fixtureTemplatesRoot, REAL_TEMPLATES_ROOT } from './helpers/paths.js';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fixtureTemplatesRoot, REAL_TEMPLATES_ROOT, TESTS_DIR } from './helpers/paths.js';
 
 async function loadWellFormed() {
   const { loadCanonicalTemplates } = await import('../src/templates.js');
@@ -765,4 +794,119 @@ describe('the CI runner-invocation guard covers both the feedback runner and the
     expect(workflow?.contents).toContain('.sdd/feedback/run-feedback.mjs');
     expect(workflow?.contents).toContain('.sdd/shared/probes.mjs');
   });
+});
+
+describe('CI workflow — python profile end-to-end through the real runner: "." reaches the stub tools unfiltered (feedback-path-hygiene, PH-7, PH-12, SC7) (Task 3.3)', () => {
+  const STUB_TOOL_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'stub-tool.mjs');
+  const tempDirs: string[] = [];
+
+  function ciGeneratedBlockOf(contents: string): string {
+    const lines = contents.split('\n');
+    const beginIndex = lines.findIndex((line) => line.includes('harny:begin generated project configuration'));
+    const endIndex = lines.findIndex((line) => line.includes('harny:end generated project configuration'));
+    expect(beginIndex, 'generated-block begin marker not found').toBeGreaterThanOrEqual(0);
+    expect(endIndex, 'generated-block end marker not found').toBeGreaterThan(beginIndex);
+    return lines.slice(beginIndex + 1, endIndex).join('\n');
+  }
+
+  /** Pairs each `- name: …` line with its following `run: …` line, mirroring
+   *  the sibling `parseSteps` helper in the describe block above (kept
+   *  file-local rather than shared, since neither is exported). */
+  function ciParseSteps(block: string): Array<{ name: string; run: string }> {
+    const steps: Array<{ name: string; run: string }> = [];
+    const regex = /-\s*name:\s*(.+)\n\s*run:\s*(.+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(block))) {
+      steps.push({ name: match[1], run: match[2] });
+    }
+    return steps;
+  }
+
+  async function makeCiE2eProjectDir(): Promise<{ projectDir: string; binDir: string; stubLog: string }> {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-python-ci-e2e-'));
+    tempDirs.push(projectDir);
+
+    const feedbackDir = path.join(projectDir, '.sdd', 'feedback');
+    const sharedDir = path.join(projectDir, '.sdd', 'shared');
+    await fs.mkdir(feedbackDir, { recursive: true });
+    await fs.mkdir(sharedDir, { recursive: true });
+    await fs.copyFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), path.join(feedbackDir, 'run-feedback.mjs'));
+    await fs.copyFile(path.join(REAL_TEMPLATES_ROOT, 'shared', 'probes.mjs'), path.join(sharedDir, 'probes.mjs'));
+
+    const binDir = path.join(projectDir, 'bin');
+    await fs.mkdir(binDir, { recursive: true });
+    for (const tool of ['ruff', 'mypy']) {
+      const target = path.join(binDir, tool);
+      await fs.copyFile(STUB_TOOL_PATH, target);
+      await fs.chmod(target, 0o755);
+    }
+
+    const stubLog = path.join(projectDir, 'stub-tool.log');
+    return { projectDir, binDir, stubLog };
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  (process.platform === 'win32' ? it.skip : it)(
+    'the decoded runner-invocation run: scalar executes and passes exactly "." to both stub tools, exiting 0',
+    async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(feedbackTestConfig({ tools: ['claude-code'], stack: 'python' }) as any, templates);
+      const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH)!;
+      const block = ciGeneratedBlockOf(workflow.contents);
+      const steps = ciParseSteps(block);
+
+      // The python profile declares no ciInstall (BG-21), so the generated
+      // block is exactly one step: the runner invocation.
+      expect(steps).toHaveLength(1);
+
+      // `yamlQuote` (src/generators/markdown-yaml.ts) escapes only `\`, `"`,
+      // and newline — a subset of JSON string syntax — so the quoted `run:`
+      // scalar decodes cleanly with JSON.parse (roadmap.md Phase 3 step 2).
+      const shellCommand = JSON.parse(steps[0].run) as string;
+      expect(shellCommand).toContain('run --whole-project --commands');
+
+      const { projectDir, binDir, stubLog } = await makeCiE2eProjectDir();
+      try {
+        const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+          const child = spawn('sh', ['-c', shellCommand], {
+            cwd: projectDir,
+            env: {
+              ...process.env,
+              PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+              STUB_TOOL_LOG: stubLog,
+            },
+          });
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (chunk) => (stdout += chunk));
+          child.stderr.on('data', (chunk) => (stderr += chunk));
+          child.on('error', reject);
+          child.on('close', (code) => resolve({ code, stdout, stderr }));
+        });
+
+        expect(result.code).toBe(0);
+
+        const logLines = (await fs.readFile(stubLog, 'utf8').catch(() => ''))
+          .trim()
+          .split('\n')
+          .filter(Boolean);
+        const invocations = logLines.map((line) => JSON.parse(line) as { tool: string; argv: string[] });
+
+        const ruffCalls = invocations.filter((inv) => inv.tool === 'ruff');
+        const mypyCalls = invocations.filter((inv) => inv.tool === 'mypy');
+        expect(ruffCalls).toHaveLength(1);
+        expect(ruffCalls[0].argv).toEqual(['check', '.']);
+        expect(mypyCalls).toHaveLength(1);
+        expect(mypyCalls[0].argv).toEqual(['.']);
+      } finally {
+        await cleanupTempDirs();
+      }
+    },
+  );
 });

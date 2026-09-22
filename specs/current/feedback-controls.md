@@ -85,8 +85,8 @@ The system SHALL guarantee that canonical batching and deduplication semantics (
 **Source:** agent-feedback-controls · intent.md § G2, contract.md § BG-6, SC6, SC6a
 
 #### Scenario: multiple edits across multiple files batch to one run
-- **WHEN** a turn edits 3 files in sequence but only 2 distinct paths
-- **THEN** exactly one invocation of the runner occurs, receiving exactly 2 deduped paths
+- **WHEN** a turn edits 3 files in sequence but only 2 distinct paths, each `per-file` command receiving exactly the deduped paths that pass its extension gate and still exist
+- **THEN** exactly one invocation of each command occurs; a `per-file` command with an extension gate receives exactly 2 deduped paths (or fewer if some vanished or do not match), or zero invocations if none pass the filter
 
 #### Scenario: findings reach agent via each tool's documented channel
 - **WHEN** the runner produces findings
@@ -258,6 +258,40 @@ The system SHALL define the `python` profile's CI gate with no install step, so 
 - **WHEN** generating with `--stack python`
 - **THEN** the CI workflow contains no install step, only a runner invocation, and both commands skip with legible notices
 
+### Requirement: FC-22 — Vanished touched paths never reach a per-file command
+
+The system SHALL drop touched paths that no longer exist on disk when the runner evaluates each per-file command in turn-based `run` mode, before that command's argv is built.
+
+**Source:** feedback-path-hygiene · contract.md § PH-1
+
+#### Scenario: vanished path never passed to command
+- **WHEN** a turn records a touched path that is later deleted in the same turn (e.g., by `git mv`, `harny-sync` archive move)
+- **THEN** the per-file command's invocation never receives that path in its argv
+
+### Requirement: FC-23 — Optional per-command extension gate
+
+The system SHALL allow each per-file command to declare optional `extensions` (file suffixes it accepts). Touched paths are filtered by extension (case-sensitive suffix match, valid entries = non-empty strings) before the command is invoked; an empty filtered set silently skips the command, never spawning it with zero path arguments. Absent, non-array, or zero-valid-entry `extensions` means no filter.
+
+**Source:** feedback-path-hygiene · contract.md § PH-2, PH-3, PH-5, PH-6
+
+#### Scenario: per-file command receives only matching paths
+- **WHEN** a per-file command declares `extensions: ['.py', '.pyi']` and a turn touches `.py`, `.json`, and `.js` files
+- **THEN** the command receives exactly the `.py` and `.pyi` file paths, never the others
+
+#### Scenario: empty filtered set skips the command
+- **WHEN** a per-file command with `extensions: ['.py']` is evaluated on a turn touching only `.json` and `.yml` files
+- **THEN** the command is not invoked at all, exits 0 on the run, and produces no output
+
+### Requirement: FC-24 — The `.` sentinel bypasses both filters
+
+The system SHALL ensure that `run --whole-project`, which passes the special `.` argument to each per-file command, bypasses both the extension gate and the existence check, so CI behavior is unchanged.
+
+**Source:** feedback-path-hygiene · contract.md § PH-7
+
+#### Scenario: `--whole-project` passes `.` unconditionally
+- **WHEN** invoking the runner with `--whole-project`
+- **THEN** each per-file command receives exactly `['.']` as its trailing arguments, regardless of any `extensions` it declares, and neither extension nor existence filtering applies
+
 ## Invariants
 
 **I1 — Turn as the batch unit.** All five tools' hooks fire at turn-boundary, never per-edit, so the agent sees findings from its complete set of edits in one batch before it yields control.
@@ -288,6 +322,7 @@ The system SHALL define the `python` profile's CI gate with no install step, so 
 | Feature | Shipped | What it established |
 |---|---|---|
 | agent-feedback-controls | 2026-09-14 | FC-1–FC-21: per-turn hooks (all five tools), CI workflow, harny-feedback core skill, stack→commands mapping, probe-skip behavior, turn-boundary batching, findings delivery channels, CI gate feedback, dogfood fidelity. Post-A1: `ciInstall`, `--whole-project` flag, CI whole-project step, Python probe-skip-only profile. |
+| feedback-path-hygiene | 2026-09-22 | FC-22–FC-24: vanished-path drop, per-command optional `extensions` gate (case-sensitive suffix match), empty filtered set skip, `.` sentinel bypass for CI. Amended FC-6 scenario and FC-4 wording. Post-A1: no-valid-entry `extensions` means no filter (guard against silent linter disable). |
 
 ## Related ADRs
 

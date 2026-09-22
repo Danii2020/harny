@@ -40,6 +40,28 @@
  * `claudeCodeGenerator.guidancePath` reads as `undefined` (a missing member, not
  * a crash — plain property access never throws), which fails the
  * `toBe('CLAUDE.md')` assertion below.
+ *
+ * ---
+ * Spec: specs/feedback-path-hygiene
+ * Covers: contract.md § "Unchanged by construction — no code change"
+ * (`src/generators/claude-code.ts` `renderHook` — the new `extensions` field
+ * is serialized automatically via the existing `JSON.stringify(profile.commands)`
+ * call, no generator code change, PH-12); Behavior Guarantees PH-1 (vanished
+ * paths dropped), PH-2 (extension gate); intent.md SC6; roadmap.md Phase 3
+ * step 1; tasks.md Task 3.2.
+ *
+ * The new describe block below drives the *generated* `PostToolUse` and `Stop`
+ * commands for the python profile as real subprocesses (via `sh -c`, exactly
+ * like the "Stop hook findings arrive via…" block above) against a temp
+ * project holding the real `templates/hooks/run-feedback.mjs` and
+ * `templates/shared/probes.mjs`, with stub `ruff`/`mypy` executables
+ * (`tests/fixtures/hooks/stub-tool.mjs`) on a temp `PATH`. `STACK_PROFILES`'s
+ * `ruff`/`mypy` entries carry no `extensions` field yet at red time, and the
+ * runner does not filter by extension or existence yet either, so today both
+ * stubs receive every touched path — including `.claude/settings.json` and
+ * the vanished `src/gone.py` — rather than only the surviving `src/app.py`.
+ * The test's exact-argv assertions are therefore expected to fail on that
+ * extra, wrong path content, not a test-authoring bug.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -505,6 +527,143 @@ describe('renderHook — Stop hook findings arrive via hookSpecificOutput.additi
       await cleanupTempDirs();
     }
   });
+});
+
+describe('renderHook — python profile end-to-end through the real runner: extensions reach the stub tools (feedback-path-hygiene, PH-1, PH-2, PH-12, SC6) (Task 3.2)', () => {
+  const STUB_TOOL_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'stub-tool.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeE2eProjectDir(): Promise<{ projectDir: string; binDir: string; stubLog: string }> {
+    const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-python-hook-e2e-'));
+    tempDirs.push(projectDir);
+
+    const feedbackDir = path.join(projectDir, '.sdd', 'feedback');
+    const sharedDir = path.join(projectDir, '.sdd', 'shared');
+    await fs.mkdir(feedbackDir, { recursive: true });
+    await fs.mkdir(sharedDir, { recursive: true });
+    await fs.copyFile(path.join(REAL_TEMPLATES_ROOT, 'hooks', 'run-feedback.mjs'), path.join(feedbackDir, 'run-feedback.mjs'));
+    await fs.copyFile(path.join(REAL_TEMPLATES_ROOT, 'shared', 'probes.mjs'), path.join(sharedDir, 'probes.mjs'));
+
+    const binDir = path.join(projectDir, 'bin');
+    await fs.mkdir(binDir, { recursive: true });
+    for (const tool of ['ruff', 'mypy']) {
+      const target = path.join(binDir, tool);
+      await fs.copyFile(STUB_TOOL_PATH, target);
+      await fs.chmod(target, 0o755);
+    }
+
+    const stubLog = path.join(projectDir, 'stub-tool.log');
+    return { projectDir, binDir, stubLog };
+  }
+
+  async function cleanupTempDirs(): Promise<void> {
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  }
+
+  interface GeneratedCommandResult {
+    readonly code: number | null;
+    readonly stdout: string;
+    readonly stderr: string;
+  }
+
+  /** Executes a generated hook `command` string exactly as Claude Code would
+   *  (via a shell, so `${CLAUDE_PROJECT_DIR}` is expanded by the shell), with
+   *  `PATH` prepended by the stub-tool `bin/` dir so the `binary` probes for
+   *  `ruff`/`mypy` resolve, and `STUB_TOOL_LOG` forwarded so the stub records
+   *  its own invocations. Mirrors `runStopCommand` above, generalized to also
+   *  drive the `PostToolUse` (accumulate) registration. */
+  function runGeneratedCommand(
+    command: string,
+    options: { projectDir: string; binDir: string; stubLog: string; stdin: Record<string, unknown> },
+  ): Promise<GeneratedCommandResult> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', command], {
+        cwd: options.projectDir,
+        env: {
+          ...process.env,
+          CLAUDE_PROJECT_DIR: options.projectDir,
+          PATH: `${options.binDir}${path.delimiter}${process.env.PATH ?? ''}`,
+          STUB_TOOL_LOG: options.stubLog,
+        },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify(options.stdin));
+      child.stdin.end();
+    });
+  }
+
+  (process.platform === 'win32' ? it.skip : it)(
+    'each stub tool is invoked exactly once, with only the existing .py file, after a turn that also touched a non-matching existing file and a vanished .py file',
+    async () => {
+      const { claudeCodeGenerator } = await import('../../src/generators/claude-code.js');
+      const { STACK_PROFILES } = await import('../../src/feedback.js');
+      const runnerContents = await loadRunnerContents();
+      const pythonProfile = STACK_PROFILES.find((p) => p.id === 'python')!;
+
+      const generated = claudeCodeGenerator.renderHook(fakeHookPayload(pythonProfile, runnerContents))!;
+      const parsed = JSON.parse(generated.contents);
+      const postToolUseCommand: string = parsed.hooks.PostToolUse[0].hooks[0].command;
+      const stopCommand: string = parsed.hooks.Stop[0].hooks[0].command;
+
+      const { projectDir, binDir, stubLog } = await makeE2eProjectDir();
+      try {
+        const sessionId = 'python-e2e-session';
+
+        const settingsFile = path.join(projectDir, '.claude', 'settings.json');
+        await fs.mkdir(path.dirname(settingsFile), { recursive: true });
+        await fs.writeFile(settingsFile, '{}', 'utf8');
+
+        const goneFile = path.join(projectDir, 'src', 'gone.py');
+        await fs.mkdir(path.dirname(goneFile), { recursive: true });
+        await fs.writeFile(goneFile, '', 'utf8');
+
+        const appFile = path.join(projectDir, 'src', 'app.py');
+        await fs.writeFile(appFile, '', 'utf8');
+
+        for (const file of [settingsFile, goneFile, appFile]) {
+          const acc = await runGeneratedCommand(postToolUseCommand, {
+            projectDir,
+            binDir,
+            stubLog,
+            stdin: { session_id: sessionId, tool_input: { file_path: file } },
+          });
+          expect(acc.code).toBe(0);
+        }
+
+        // The vanished-path case (SC6): gone.py was accumulated, then
+        // deleted before the turn's Stop hook fires.
+        await fs.rm(goneFile);
+
+        const stopResult = await runGeneratedCommand(stopCommand, {
+          projectDir,
+          binDir,
+          stubLog,
+          stdin: { session_id: sessionId },
+        });
+        expect(stopResult.code).toBe(0);
+
+        const logLines = (await fs.readFile(stubLog, 'utf8').catch(() => ''))
+          .trim()
+          .split('\n')
+          .filter(Boolean);
+        const invocations = logLines.map((line) => JSON.parse(line) as { tool: string; argv: string[] });
+
+        const ruffCalls = invocations.filter((inv) => inv.tool === 'ruff');
+        const mypyCalls = invocations.filter((inv) => inv.tool === 'mypy');
+        expect(ruffCalls).toHaveLength(1);
+        expect(ruffCalls[0].argv).toEqual(['check', appFile]);
+        expect(mypyCalls).toHaveLength(1);
+        expect(mypyCalls[0].argv).toEqual([appFile]);
+      } finally {
+        await cleanupTempDirs();
+      }
+    },
+  );
 });
 
 describe('guidancePath — the verified per-tool root instruction file (AR-9, SC6, T12)', () => {

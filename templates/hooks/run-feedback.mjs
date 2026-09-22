@@ -30,18 +30,24 @@
  *   file for the same turn key, dedupes the
  *   accumulated paths to an absolute-path set, evaluates each command's `requires`
  *   probe (skipping with a notice, never a failure, when it resolves false — BG-9),
- *   executes the survivors exactly once (`per-file` commands receive the deduped
- *   paths appended to `argv`; `whole-project` commands do not), deletes the turn
- *   file so a reused turn key cannot leak into the next turn, and exits.
+ *   then executes the survivors exactly once. A `per-file` command receives only
+ *   the deduped paths that match its declared `extensions` (no filter when absent
+ *   or empty) and that still exist on disk when the command is evaluated; when
+ *   that filtered set is empty the command is skipped silently — never spawned
+ *   with zero path arguments (feedback-path-hygiene). `whole-project` commands
+ *   receive no paths, as before. The turn file is deleted, unconditionally, so a
+ *   reused turn key cannot leak into the next turn, and the runner exits.
  * - `run --whole-project` (A1, CI-only) is the same `run` mode with one boolean
  *   flag set, never a third mode. It bypasses turn state entirely: no STDIN turn
  *   key is read or required, `.sdd/feedback/.turns/` is never read, written, or
  *   deleted, and every command runs unconditionally exactly once. `per-file`
  *   commands receive exactly one argument, `.` (the repo root is the whole
- *   project), in place of the turn's touched paths. The `requires` probe path is
- *   identical to normal `run` mode (BG-9). `stop_hook_active` is never read or
- *   honored under this flag — CI has no re-entry/loop-guard concept, so a finding
- *   always exits 2 (BG-19).
+ *   project), in place of the turn's touched paths — unconditionally, whatever
+ *   `extensions` a command declares: neither the extension filter nor the
+ *   existence check applies here (feedback-path-hygiene). The `requires` probe
+ *   path is identical to normal `run` mode (BG-9). `stop_hook_active` is never
+ *   read or honored under this flag — CI has no re-entry/loop-guard concept, so a
+ *   finding always exits 2 (BG-19).
  *
  * Exit code convention for `run`: `0` when the turn produced no blocking-worthy
  * findings (a clean pass, a skip-only outcome, or an empty turn); `2` when a mapped
@@ -167,6 +173,32 @@ function runCommand(command, touchedPaths, cwd) {
   return spawnSync(binary, args, { cwd, stdio: 'pipe', encoding: 'utf8' });
 }
 
+/** True iff `filePath` should reach a command declaring `extensions`.
+ *  (A1) Valid entries are non-empty strings. No filter (always true) when
+ *  `extensions` is not an array or has no valid entry: absent, `[]`, and
+ *  `[null, '']` all mean "no filter". Otherwise a case-sensitive suffix test
+ *  against the valid entries only; invalid entries are ignored. */
+function matchesExtensions(filePath, extensions) {
+  const valid = Array.isArray(extensions) ? extensions.filter((ext) => typeof ext === 'string' && ext.length > 0) : [];
+  if (valid.length === 0) {
+    return true;
+  }
+  return valid.some((ext) => filePath.endsWith(ext));
+}
+
+/** Keeps only the paths that exist on disk when the runner fires (G1).
+ *  Paths are the accumulator's absolute paths. */
+function existingPaths(paths) {
+  return paths.filter((p) => fs.existsSync(p));
+}
+
+/** The argv tail a `per-file` command receives in turn-based `run` mode:
+ *  extension gate FIRST, then existence check. The order is fixed: it keeps the
+ *  `existsSync` calls to paths the command could actually receive. */
+function perFilePathsFor(command, touchedPaths) {
+  return existingPaths(touchedPaths.filter((p) => matchesExtensions(p, command.extensions)));
+}
+
 /** (A1) `--whole-project`: no turn key, no turn file, every command runs
  *  unconditionally. `per-file` commands receive exactly `.` in place of the
  *  turn's touched paths (contract.md § Data Models "Whole-project invocation
@@ -242,7 +274,17 @@ function runRunMode(cwd) {
       continue;
     }
 
-    const result = runCommand(command, touchedPaths, cwd);
+    let paths = touchedPaths;
+    if (command.pathMode === 'per-file') {
+      paths = perFilePathsFor(command, touchedPaths);
+      if (paths.length === 0) {
+        // PH-5: nothing this command should check survived the filters. Never run
+        // it with zero path args (that would lint the whole repo); no output.
+        continue;
+      }
+    }
+
+    const result = runCommand(command, paths, cwd);
     if (result.status !== 0) {
       anyBlockingFinding = true;
       console.log(`finding from \`${command.id}\` (exit ${result.status}):`);

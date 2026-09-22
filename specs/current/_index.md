@@ -1,7 +1,7 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-15 by context7-mcp (archive mode: feature archived, capability docs updated)
+> Last synced: 2026-09-22 by feedback-path-hygiene (archive mode: feature archived, capability docs updated)
 
 ## Capabilities
 
@@ -12,8 +12,8 @@
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/) |
 
 ## Keyword lookup
 
@@ -89,6 +89,7 @@
 | readiness-doctor | [specs/archived/readiness-doctor/](../archived/readiness-doctor/) | [skill-library.md](./skill-library.md), [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 | ai-sdlc-readiness | [specs/archived/ai-sdlc-readiness/](../archived/ai-sdlc-readiness/) | [readiness-checks.md](./readiness-checks.md), [tool-generators.md](./tool-generators.md), [pipeline-roles.md](./pipeline-roles.md) |
 | context7-mcp | [specs/archived/context7-mcp/](../archived/context7-mcp/) | [tool-generators.md](./tool-generators.md), [cli-init.md](./cli-init.md) |
+| feedback-path-hygiene | [specs/archived/feedback-path-hygiene/](../archived/feedback-path-hygiene/) | [feedback-controls.md](./feedback-controls.md), [readiness-checks.md](./readiness-checks.md) |
 
 ## Decisions (ADR registry)
 
@@ -121,6 +122,7 @@
 | 0025 | `guidancePath` as a declarative `Generator` member, continuing ADR 0011 not ADR 0014 | Accepted | tool-generators | `specs/archived/ai-sdlc-readiness/decisions/0025-guidancepath-as-declarative-generator-member.md` |
 | 0026 | Merge-write, never whole-file, for co-owned MCP config | Accepted | cli-init | `specs/archived/context7-mcp/decisions/0026-merge-write-for-mcp-config.md` |
 | 0027 | mcpConfig as a declarative Generator member (continuing ADR 0011/0025) | Accepted | tool-generators | `specs/archived/context7-mcp/decisions/0027-declarative-mcpconfig-generator-member.md` |
+| 0028 | Path filtering lives only in the per-turn code path; the `.` sentinel bypasses it by construction | Accepted | feedback-controls | `specs/archived/feedback-path-hygiene/decisions/0028-path-filtering-in-turn-based-code-path-only.md` |
 
 ## Open reservations
 

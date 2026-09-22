@@ -24,10 +24,16 @@ here).
    tool's turn-completion event enumerates which files the turn touched, every tool
    pairs two registrations: a lightweight accumulator that appends a touched path
    each time the agent edits a file, and a runner that fires once the turn ends,
-   reads back the accumulated paths, deduplicates them to an absolute-path set, and
-   executes each resolved command exactly once against that set (or, for a command
-   that must see the whole project — a type checker, for instance — without any path
-   arguments at all).
+   reads back the accumulated paths, and deduplicates them to an absolute-path set.
+   A command that takes paths receives only the members of that set that match the
+   file types it declares (an unfiltered command takes every member) and that still
+   exist on disk when the turn ends — a path a later step in the same turn moved or
+   deleted is dropped rather than handed to a command that can no longer read it. A
+   command left with no matching, surviving path is skipped silently: it is never
+   run without path arguments, since that would re-check the whole project instead
+   of the turn's own files. A command that must see the whole project regardless of
+   which files changed — a type checker, for instance — runs once with no path
+   arguments at all, exactly as before.
 
 3. **An empty turn produces no output.** A turn that touched no files runs no
    command and prints nothing. Silence, not a passing report, is the no-op case.
@@ -83,9 +89,11 @@ never a third mode — the `accumulate | run` vocabulary above is otherwise unto
 Under the flag: no STDIN turn key is read or required, `.sdd/feedback/.turns/` is
 never read, written, or deleted, and every mapped command runs exactly once,
 unconditionally. A `per-file` command receives exactly one argument, `.` (the repo
-root **is** the whole project), in place of the turn's touched paths. The
-`requires` probe (behavior 4 above) is evaluated through the identical code path,
-so absent tooling is skipped in CI exactly as it is in a per-turn hook.
+root **is** the whole project), in place of the turn's touched paths — passed
+unconditionally, regardless of which file types the command declares: neither the
+file-type filter nor the existence check from behavior 2 applies under this flag.
+The `requires` probe (behavior 4 above) is evaluated through the identical code
+path, so absent tooling is skipped in CI exactly as it is in a per-turn hook.
 
 **The two-way rule.** No generated hook config may ever pass `--whole-project` — a
 hook that ignored the turn's touched files would silently re-check the entire

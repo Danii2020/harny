@@ -73,6 +73,81 @@
  * actually ran, or that a finding actually propagated as exit 2, is therefore
  * expected to fail for that genuine reason (missing `--whole-project` support),
  * not a test-authoring bug.
+ *
+ * ---
+ * Spec: specs/feedback-path-hygiene
+ * Covers: contract.md § "Runner internals — templates/hooks/run-feedback.mjs"
+ * (`matchesExtensions`, `existingPaths`, `perFilePathsFor`, and the modified
+ * `runRunMode` loop); Behavior Guarantees PH-1 (vanished paths dropped), PH-2
+ * (extension gate), PH-3 (case-sensitive suffix match), PH-5 (empty filtered
+ * set skips silently, never a zero-arg spawn), PH-6 (absent/empty/non-array
+ * `extensions` means no filter, existence check still applies), PH-7 (the `.`
+ * sentinel bypasses both filters), PH-8 (whole-project ignores `extensions` in
+ * turn mode); intent.md SC1–SC5; roadmap.md Phase 2 step 4; tasks.md Tasks
+ * 2.1–2.8, 2.12.
+ *
+ * `matchesExtensions`, `existingPaths`, and `perFilePathsFor` do not exist in
+ * `templates/hooks/run-feedback.mjs` yet at red time, and `runRunMode`'s loop
+ * does not apply any extension gate or existence check to a `per-file`
+ * command's touched paths — today it passes every deduped touched path
+ * through unconditionally, whatever `command.extensions` says and whether or
+ * not the path still exists on disk. Every test in the new "vanished path",
+ * "extension gate", "empty filtered set", and "case-sensitive suffix"
+ * describe blocks below is therefore expected to fail on a genuine argv-shape
+ * mismatch (extra stale or non-matching paths present, or a command that
+ * should have been silently skipped but ran and even blocked the turn),
+ * rather than a test-authoring bug.
+ *
+ * Two exceptions, noted explicitly because they are expected to PASS already
+ * at red time — the same documented posture the BG-7/BG-4 leak-gate tests in
+ * `tests/feedback.test.ts` use for a guard that becomes load-bearing only once
+ * its implementation lands: the "whole-project ignores extensions" test (PH-8)
+ * already passes, because `runRunMode`'s whole-project branch never reads
+ * touched paths at all, extension-filtered or not; and the "`.` sentinel
+ * bypasses both filters under `--whole-project`" test (PH-7) already passes,
+ * because `runWholeProject` is untouched by this feature by construction and
+ * already appends exactly `.` regardless of any `extensions` field. Both stay
+ * in this file as live regression guards: once `matchesExtensions` exists,
+ * these are what prove it is never reachable from either code path.
+ *
+ * Task 2.12 (setup-only fix; no expected value changed in any of the four
+ * tests below): the pre-existing "N edits across M distinct files…" (batching),
+ * "deletes the turn file after running it…" (cleanup), and the two re-entry
+ * tests ("a failing mapped command normally causes…" / "the identical failing
+ * turn, re-entered…") accumulate paths that were never created on disk. Once
+ * PH-1 lands, their `per-file` commands — which declare no `extensions` —
+ * would be existence-filtered to an empty set and silently skipped, which
+ * would break the batching and re-entry-baseline assertions outright and
+ * silently weaken the cleanup test to a vacuous pass. Their setup now creates
+ * the accumulated files for real, via the new `writeFile` helper below,
+ * before `run` fires; no assertion in any of the four changed.
+ *
+ * ---
+ * Spec: specs/feedback-path-hygiene (Post-audit amendment A1, audit finding AL-3)
+ * Covers: contract.md § "Post-audit amendment A1" (the rewritten `matchesExtensions`
+ * reference body: valid entries are non-empty strings; no filter when
+ * `extensions` has no valid entry, not "match nothing"); the amended PH-6;
+ * intent.md § "Post-audit amendment A1"; tasks.md Tasks A1.1, A1.2.
+ *
+ * `templates/hooks/run-feedback.mjs`'s `matchesExtensions` today (the
+ * pre-amendment, audited reference body) treats `extensions` as "no filter"
+ * only when the array itself is empty or absent — an array whose entries are
+ * all invalid (`[null, '']`) is non-empty, so it falls through to `.some(...)`,
+ * which finds no valid entry to match against and returns `false` for every
+ * path. That silently filters the command's path set to empty and skips it
+ * every turn (PH-5), which is AL-3's finding: "a misconfigured list can never
+ * silently disable a linter" (PH-6's own rationale) does not yet hold for this
+ * case. The Task A1.1 test below is therefore expected to fail at red time —
+ * `README.md` is dropped instead of passed, because today's `matchesExtensions`
+ * treats an all-invalid list as "match nothing", not "no filter".
+ *
+ * The Task A1.2 test below is documented as expected to ALREADY PASS at red
+ * time: a *mixed* list (`[null, '', 5, '.py']`) already reaches `.some`'s
+ * valid branch via its one genuinely valid entry (`'.py'`), so today's
+ * `matchesExtensions` already suffix-matches correctly against it — AL-3's gap
+ * is specific to a list with *zero* valid entries, not to a mixed list. This
+ * test stays in the suite as the regression guard that pins "invalid entries
+ * are ignored, valid entries still filter" once A1.3's fix lands alongside it.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -143,6 +218,18 @@ async function writeCommandsFile(dir: string, commands: unknown): Promise<string
   return file;
 }
 
+/** (feedback-path-hygiene) Creates `relPath` (`/`-joined, relative to `repoDir`)
+ *  as a real file on disk, making parent directories as needed, and returns its
+ *  absolute path. An accumulated path that a test wants `perFilePathsFor`'s
+ *  `fs.existsSync` check (PH-1) to find, rather than one that merely looks
+ *  plausible via `path.join`. */
+async function writeFile(repoDir: string, relPath: string, contents = ''): Promise<string> {
+  const full = path.join(repoDir, ...relPath.split('/'));
+  await fs.mkdir(path.dirname(full), { recursive: true });
+  await fs.writeFile(full, contents, 'utf8');
+  return full;
+}
+
 /** `.sdd/feedback/.turns/<turn-key>`, contract.md § Data Models. */
 function turnFilePath(repoDir: string, turnKey: string): string {
   return path.join(repoDir, '.sdd', 'feedback', '.turns', turnKey);
@@ -163,9 +250,11 @@ describe('one run per turn, deduped by path — the batching proof (BG-1, SC6a)'
     const sessionId = 'turn-batching-session';
     const invocationLog = path.join(repoDir, 'invocations.log');
 
-    const fileA = path.join(repoDir, 'src', 'a.ts');
-    const fileB = path.join(repoDir, 'src', 'b.ts');
-    const fileC = path.join(repoDir, 'src', 'c.ts');
+    // (feedback-path-hygiene, Task 2.12) Created for real: once PH-1 lands, a
+    // per-file command would otherwise be existence-filtered to empty here.
+    const fileA = await writeFile(repoDir, 'src/a.ts');
+    const fileB = await writeFile(repoDir, 'src/b.ts');
+    const fileC = await writeFile(repoDir, 'src/c.ts');
 
     // 5 edits (N) across 3 distinct files (M): a, b, a, c, b — N > M > 1, with
     // repeats and an interleaved re-visit, mirroring intent.md's own example.
@@ -226,7 +315,9 @@ describe('one run per turn, deduped by path — the batching proof (BG-1, SC6a)'
   it('deletes the turn file after running it, so a reused turn key cannot leak into the next turn', async () => {
     const repoDir = await makeTempRepo();
     const sessionId = 'turn-cleanup-session';
-    const file = path.join(repoDir, 'src', 'only.ts');
+    // (feedback-path-hygiene, Task 2.12) Created for real, so the NOOP command
+    // still actually runs once PH-1 lands, keeping this test non-vacuous.
+    const file = await writeFile(repoDir, 'src/only.ts');
 
     const acc = await runRunner('accumulate', {
       cwd: repoDir,
@@ -364,7 +455,9 @@ describe('the re-entry flag suppresses any blocking response (BG-5)', () => {
   it('a failing mapped command normally causes the runner to signal a blocking finding', async () => {
     const repoDir = await makeTempRepo();
     const sessionId = 'reentry-baseline-session';
-    const file = path.join(repoDir, 'src', 'broken.ts');
+    // (feedback-path-hygiene, Task 2.12) Created for real, so the failing
+    // command still actually runs once PH-1 lands.
+    const file = await writeFile(repoDir, 'src/broken.ts');
 
     const acc = await runRunner('accumulate', {
       cwd: repoDir,
@@ -392,7 +485,9 @@ describe('the re-entry flag suppresses any blocking response (BG-5)', () => {
   it('the identical failing turn, re-entered (stop_hook_active), never signals a blocking response', async () => {
     const repoDir = await makeTempRepo();
     const sessionId = 'reentry-suppressed-session';
-    const file = path.join(repoDir, 'src', 'broken.ts');
+    // (feedback-path-hygiene, Task 2.12) Created for real, so the failing
+    // command still actually runs once PH-1 lands.
+    const file = await writeFile(repoDir, 'src/broken.ts');
 
     const acc = await runRunner('accumulate', {
       cwd: repoDir,
@@ -565,5 +660,496 @@ describe('run --whole-project: the CI-only mode that bypasses turn state entirel
     });
 
     expect(result.code).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// feedback-path-hygiene: turn-based `run` mode's per-command path filtering
+// (PH-1 through PH-8; tasks.md Tasks 2.1–2.8). See this file's top docblock
+// for which of the blocks below are expected to fail at red time and which
+// are documented live regression guards that already pass.
+// ---------------------------------------------------------------------------
+
+describe('vanished path dropped before a per-file command receives it (PH-1, SC1)', () => {
+  it('drops a deleted accumulated path, passing only the surviving file to the per-file command', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'vanished-path-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const fileA = await writeFile(repoDir, 'src/a.py');
+    const fileB = await writeFile(repoDir, 'src/b.py');
+
+    for (const file of [fileA, fileB]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    // The vanished-path case (harny-sync archive mode / git mv / rm, later in
+    // the same turn): b.py was accumulated, then deleted before `run` fires.
+    await fs.rm(fileB);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'per-file-probe',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'PER_FILE'],
+        pathMode: 'per-file',
+        extensions: ['.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv).toEqual(['PER_FILE', fileA]);
+  });
+});
+
+describe('an all-vanished turn skips every per-file command silently but still runs whole-project (PH-1, PH-5, PH-8, PH-13, SC2)', () => {
+  it('produces zero per-file invocations, one whole-project invocation with no path args, exit 0, empty stdout, and turn-file deletion', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'renamed-away-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const oldFile = await writeFile(repoDir, 'src/old.py');
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: oldFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const turnFile = turnFilePath(repoDir, sessionId);
+    expect(await pathExists(turnFile)).toBe(true);
+
+    // The git-mv case: only the old path was ever accumulated; the file now
+    // lives at a path the turn never recorded.
+    await fs.rename(oldFile, path.join(repoDir, 'src', 'new.py'));
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'per-file-probe',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'PER_FILE'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+      {
+        id: 'whole-project-probe',
+        kind: 'typecheck',
+        argv: ['node', RECORD_SCRIPT, 'WHOLE_PROJECT'],
+        pathMode: 'whole-project',
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe('');
+    expect(result.stderr.trim()).toBe('');
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8').catch(() => ''))
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations.filter((inv) => inv.argv[0] === 'PER_FILE')).toHaveLength(0);
+    const wholeProjectCalls = invocations.filter((inv) => inv.argv[0] === 'WHOLE_PROJECT');
+    expect(wholeProjectCalls).toHaveLength(1);
+    expect(wholeProjectCalls[0].argv).toEqual(['WHOLE_PROJECT']);
+
+    expect(await pathExists(turnFile)).toBe(false);
+  });
+});
+
+describe('extension gate: a gated command receives only matching paths; an ungated command still receives everything (PH-2, PH-6, SC3)', () => {
+  it('command A (declaring extensions) gets only the .py file; command B (no extensions) gets all three touched paths', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'mixed-types-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const settingsFile = await writeFile(repoDir, '.claude/settings.json', '{}');
+    const workflowFile = await writeFile(repoDir, '.github/workflows/ci.yml', 'name: ci\n');
+    const appFile = await writeFile(repoDir, 'src/app.py');
+
+    for (const file of [settingsFile, workflowFile, appFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'gated',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'GATED'],
+        pathMode: 'per-file',
+        extensions: ['.py', '.pyi'],
+        requires: {},
+      },
+      {
+        id: 'ungated',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'UNGATED'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+
+    const gated = invocations.filter((inv) => inv.argv[0] === 'GATED');
+    expect(gated).toHaveLength(1);
+    expect(gated[0].argv).toEqual(['GATED', appFile]);
+
+    const ungated = invocations.filter((inv) => inv.argv[0] === 'UNGATED');
+    expect(ungated).toHaveLength(1);
+    expect(new Set(ungated[0].argv.slice(1))).toEqual(new Set([settingsFile, workflowFile, appFile]));
+  });
+});
+
+describe('an empty filtered set skips the command silently — never a zero-arg spawn (PH-5, SC4)', () => {
+  it('invocation count is 0, exit code 0, and stdout is empty, even though the command would fail if spawned', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'non-matching-only-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const settingsFile = await writeFile(repoDir, '.claude/settings.json', '{}');
+    const readmeFile = await writeFile(repoDir, 'README.md', '# readme\n');
+
+    for (const file of [settingsFile, readmeFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'gated',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'GATED'],
+        pathMode: 'per-file',
+        extensions: ['.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      // A failing exit code proves a spawn would have surfaced as a blocking
+      // finding (exit 2) had the command actually run.
+      env: { INVOCATION_LOG: invocationLog, FAKE_EXIT_CODE: '1' },
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe('');
+    expect(await pathExists(invocationLog)).toBe(false);
+  });
+});
+
+describe('case-sensitive suffix matching — an upper-case extension never matches a lower-case declared suffix (PH-3)', () => {
+  it('passes only the lower-case .py file, never the upper-case .PY file', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'case-sensitivity-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const upperFile = await writeFile(repoDir, 'src/A.PY');
+    const lowerFile = await writeFile(repoDir, 'src/b.py');
+
+    for (const file of [upperFile, lowerFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'gated',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'GATED'],
+        pathMode: 'per-file',
+        extensions: ['.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv).toEqual(['GATED', lowerFile]);
+  });
+});
+
+describe('absent, empty, or non-array extensions all mean no filter — the existence check still applies (PH-6)', () => {
+  it.each([
+    ['an empty array', [] as unknown as string[]],
+    ['a non-array value', 'py' as unknown as string[]],
+  ])(
+    'with extensions set to %s, a non-matching existing path is still passed, and a vanished path is still dropped',
+    async (_label, extensions) => {
+      const repoDir = await makeTempRepo();
+      const sessionId = `no-filter-session-${Math.random().toString(36).slice(2)}`;
+      const invocationLog = path.join(repoDir, 'invocations.log');
+
+      const jsonFile = await writeFile(repoDir, 'config.json', '{}');
+      const vanishedFile = await writeFile(repoDir, 'src/gone.py');
+
+      for (const file of [jsonFile, vanishedFile]) {
+        const acc = await runRunner('accumulate', {
+          cwd: repoDir,
+          stdin: { session_id: sessionId, tool_input: { file_path: file } },
+        });
+        expect(acc.code).toBe(0);
+      }
+
+      await fs.rm(vanishedFile);
+
+      const commandsFile = await writeCommandsFile(repoDir, [
+        {
+          id: 'unfiltered',
+          kind: 'lint',
+          argv: ['node', RECORD_SCRIPT, 'UNFILTERED'],
+          pathMode: 'per-file',
+          extensions,
+          requires: {},
+        },
+      ]);
+
+      const result = await runRunner('run', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, stop_hook_active: false },
+        args: ['--commands', commandsFile],
+        env: { INVOCATION_LOG: invocationLog },
+      });
+
+      expect(result.code).toBe(0);
+
+      const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+      const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0].argv).toEqual(['UNFILTERED', jsonFile]);
+    },
+  );
+});
+
+describe('a whole-project command ignores extensions entirely in turn-based mode (PH-8)', () => {
+  it('still runs once, with no path args, on a turn that touched only a non-matching file — already true by construction; a live regression guard', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'whole-project-ignores-extensions-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const readmeFile = await writeFile(repoDir, 'README.md', '# readme\n');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: readmeFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'whole-project-probe',
+        kind: 'typecheck',
+        argv: ['node', RECORD_SCRIPT, 'WHOLE_PROJECT'],
+        pathMode: 'whole-project',
+        extensions: ['.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv).toEqual(['WHOLE_PROJECT']);
+  });
+});
+
+describe('run --whole-project bypasses both filters — the "." sentinel is unconditional (PH-7, SC5)', () => {
+  it('passes exactly "." to a per-file command that declares extensions — already true by construction; a live regression guard', async () => {
+    const repoDir = await makeTempRepo();
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'per-file-check',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'PER_FILE'],
+        pathMode: 'per-file',
+        extensions: ['.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: null,
+      args: ['--whole-project', '--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+    expect(await pathExists(invocationLog)).toBe(true);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    expect(logLines).toHaveLength(1);
+    const invocation = JSON.parse(logLines[0]) as { argv: string[] };
+    expect(invocation.argv).toEqual(['PER_FILE', '.']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// feedback-path-hygiene, Post-audit amendment A1 (audit finding AL-3): an
+// extensions list with no valid entry (valid = non-empty string) means "no
+// filter", the same as an absent or empty extensions. See this file's top
+// docblock for which of the two tests below is expected to fail at red time.
+// ---------------------------------------------------------------------------
+
+describe('an extensions list with no valid entry means no filter, not "match nothing" (A1, AL-3, PH-6)', () => {
+  it('an all-invalid extensions list still passes a non-matching existing path, and still drops a vanished one', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'all-invalid-extensions-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const readmeFile = await writeFile(repoDir, 'README.md', '# readme\n');
+    const goneFile = await writeFile(repoDir, 'src/gone.py');
+
+    for (const file of [readmeFile, goneFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    await fs.rm(goneFile);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'all-invalid',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'ALL_INVALID'],
+        pathMode: 'per-file',
+        // Non-empty, but every entry is invalid (null is not a string; '' is
+        // a string of length 0) — AL-3's exact case.
+        extensions: [null, ''],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8').catch(() => ''))
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv).toEqual(['ALL_INVALID', readmeFile]);
+  });
+
+  it('a mixed list of invalid and valid entries filters on the valid entries only', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'mixed-invalid-valid-extensions-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const appFile = await writeFile(repoDir, 'src/app.py');
+    const readmeFile = await writeFile(repoDir, 'README.md', '# readme\n');
+    const jsonFile = await writeFile(repoDir, 'config.json', '{}');
+
+    for (const file of [appFile, readmeFile, jsonFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      {
+        id: 'mixed',
+        kind: 'lint',
+        argv: ['node', RECORD_SCRIPT, 'MIXED'],
+        pathMode: 'per-file',
+        // Three invalid entries (null, '', a number) and one valid entry
+        // ('.py') — invalid entries are ignored; the valid one still filters.
+        extensions: [null, '', 5, '.py'],
+        requires: {},
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const logLines = (await fs.readFile(invocationLog, 'utf8')).trim().split('\n').filter(Boolean);
+    const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv).toEqual(['MIXED', appFile]);
   });
 });

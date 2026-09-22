@@ -60,6 +60,33 @@
  * regression guard once Phase 1/2 land" posture the BG-7 test's own red-phase
  * note above describes. The `readiness` describe block itself remains the
  * real red-phase signal for this addition.
+ *
+ * ---
+ * Spec: specs/feedback-path-hygiene
+ * Covers: contract.md § Interfaces `CommandSpec.extensions` and `ReadinessCommand`'s
+ * `extensions?: never` narrowing; § Data Models "STACK_PROFILES after this
+ * feature" (`extensions` on `eslint`/`ruff`/`mypy`); Behavior Guarantee PH-10
+ * (the profile invariant); intent.md SC8; roadmap.md Phase 1 step 5; tasks.md
+ * Tasks 1.1, 1.2.
+ *
+ * `CommandSpec.extensions` does not exist on `src/feedback.ts` yet at red time,
+ * so every `per-file` command in `STACK_PROFILES` today has `extensions ===
+ * undefined`. The new "extensions field invariant" test below is therefore
+ * expected to fail on that `undefined` (an array was expected), not a wrong
+ * assumption about which suffixes each command declares. The updated
+ * full-shape `toEqual` assertions in the first `it` above ("fixes the
+ * typescript and python profiles…") now include an `extensions` key for
+ * `eslint`, `ruff`, and `mypy`; today's objects lack that key entirely, so
+ * those three `toEqual` calls are also expected to fail at red time — this is
+ * the documented "modified existing test, fails until the amendment lands"
+ * case (AGENTS.md S6), not a new tautology. `tsc`'s assertion is intentionally
+ * unchanged (a `whole-project` command never declares `extensions`).
+ *
+ * `ReadinessCommand`'s `extensions?: never` narrowing (PH-9) is a compile-time
+ * guarantee only (tasks.md Task 1.6, a manual stop-gate): this repo's
+ * `tsconfig.json` does not type-check `tests/`, so it is not, and cannot be,
+ * asserted by a test in this file (per `high-value-tests`, a compiler-enforced
+ * invariant is not re-verified at runtime by a change-detector).
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -87,6 +114,9 @@ describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
       kind: 'lint',
       argv: ['npx', 'eslint'],
       pathMode: 'per-file',
+      // (feedback-path-hygiene, PH-12) JS_TS_SOURCE_EXTENSIONS, read via
+      // STACK_PROFILES rather than re-literalled (S5).
+      extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'],
       requires: { anyFile: ['eslint.config.js', 'eslint.config.mjs', '.eslintrc.json', '.eslintrc.cjs'] },
     });
     expect(typescript?.commands[1]).toEqual({
@@ -94,6 +124,8 @@ describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
       kind: 'typecheck',
       argv: ['npx', 'tsc', '--noEmit'],
       pathMode: 'whole-project',
+      // (feedback-path-hygiene, PH-8, PH-10) unchanged: a whole-project
+      // command never declares `extensions`.
       requires: { anyFile: ['tsconfig.json'] },
     });
     expect(python?.commands[0]).toEqual({
@@ -101,6 +133,8 @@ describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
       kind: 'lint',
       argv: ['ruff', 'check'],
       pathMode: 'per-file',
+      // (feedback-path-hygiene, PH-12) PYTHON_SOURCE_EXTENSIONS.
+      extensions: ['.py', '.pyi'],
       requires: { binary: 'ruff' },
     });
     expect(python?.commands[1]).toEqual({
@@ -108,6 +142,9 @@ describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
       kind: 'typecheck',
       argv: ['mypy'],
       pathMode: 'per-file',
+      // (feedback-path-hygiene, PH-12) same PYTHON_SOURCE_EXTENSIONS
+      // constant, shared with ruff (S5) rather than repeated.
+      extensions: ['.py', '.pyi'],
       requires: { binary: 'mypy' },
     });
   });
@@ -128,6 +165,46 @@ describe('STACK_PROFILES (contract.md § Data Models, SC1)', () => {
     expect(FEEDBACK_RUNNER_PATH).toBe('.sdd/feedback/run-feedback.mjs');
     expect(CI_WORKFLOW_PATH).toBe('.github/workflows/harny-feedback.yml');
     expect(TOUCHED_FILES_DIR).toBe('.sdd/feedback/.turns');
+  });
+});
+
+describe('extensions field invariant across STACK_PROFILES (feedback-path-hygiene, PH-10, SC8)', () => {
+  it('every per-file command declares a non-empty, dot-prefixed extensions list; every whole-project and readiness command declares none', async () => {
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+
+    for (const profile of STACK_PROFILES) {
+      for (const command of profile.commands) {
+        if (command.pathMode === 'per-file') {
+          expect(
+            Array.isArray(command.extensions),
+            `${profile.id}/${command.id} is per-file and must declare a non-empty extensions array`,
+          ).toBe(true);
+          expect(command.extensions!.length).toBeGreaterThan(0);
+          for (const ext of command.extensions!) {
+            expect(
+              ext.startsWith('.'),
+              `${profile.id}/${command.id} extension "${ext}" must start with "."`,
+            ).toBe(true);
+            expect(
+              ext.length,
+              `${profile.id}/${command.id} extension "${ext}" must be longer than just "."`,
+            ).toBeGreaterThan(1);
+          }
+        } else {
+          expect(
+            command.extensions,
+            `${profile.id}/${command.id} is whole-project and must not declare extensions`,
+          ).toBeUndefined();
+        }
+      }
+
+      for (const command of profile.readiness ?? []) {
+        expect(
+          (command as { extensions?: unknown }).extensions,
+          `${profile.id} readiness command "${command.id}" must not declare extensions`,
+        ).toBeUndefined();
+      }
+    }
   });
 });
 

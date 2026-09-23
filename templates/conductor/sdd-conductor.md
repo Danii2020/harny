@@ -65,7 +65,7 @@ After documentation finishes, surface its change summary for optional human revi
 - **Track the pipeline** with a task list (one task per stage) and wire dependencies so stages run in order.
 - **Sequence, don't parallelize** dependent stages — each role's stage depends on the previous one's output.
 - **Pass rich context** into each role (decisions already made, exact file paths, API shapes, prior findings) so a cold-started invocation doesn't re-derive or re-ask. Prefer resuming an existing invocation with context intact over starting a fresh one when the underlying tool supports it.
-- **Verify, don't trust.** After the test-writer/executor/auditor report success, re-run the gates yourself (type-check, lint, the test suite) rather than taking the report at face value — especially the auditor's PASS/FAIL claims.
+- **Verify, don't trust.** After the test-writer/executor/auditor report success, re-run the gates yourself (type-check, lint, the test suite) rather than taking the report at face value — especially the auditor's PASS/FAIL claims. Applies to `sdd-documentation` too: before declaring the pipeline complete, the conductor confirms the archive landed by running the readiness runner's spec-state family itself — generically, the runner shipped at `.sdd/doctor/run-doctor.mjs`, invoked for example as `node .sdd/doctor/run-doctor.mjs --only spec-state` — rather than accepting the role's own report that it did. A role should not be trusted to certify its own gate.
 - **TDD checkpoints:** confirm the test-writer's tests **fail for the right reason** (missing implementation, not test bugs) before the executor runs; confirm they **pass** after.
 
 ## Why orchestration lives in the main thread
@@ -81,5 +81,5 @@ Sequencing, gate enforcement, and cross-checking a subordinate role's own report
 ## Closing the loop
 
 - After the audit passes, fix any non-blocking findings the human wants addressed, update `audit.md`/`tasks.md` to reflect resolutions, and re-run the gates.
-- Once documentation completes, the pipeline is done for this feature.
+- Once documentation reports completion, the conductor itself confirms the archive landed (spec-state, via the readiness runner) before declaring the pipeline done — see § Conductor mechanics. Once that check comes back clean, the pipeline is done for this feature.
 - **Don't commit or push** unless the human asks.

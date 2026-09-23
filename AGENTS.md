@@ -175,7 +175,12 @@ symlinks at `.claude/skills/harny-*/`:
 - `harny-implement` — phase execution, contract-is-law, adherence rules
 - `harny-audit` — 7-step audit process, severity ratings, verdict enum
 - `harny-document` — documentation trigger check, README/CHANGELOG/AGENTS update,
-  `Shipped:` stamp, and the six-step hand-off ordering
+  `Shipped:` stamp, a three-sub-step archive hand-off (`harny-sync` archive mode →
+  `harny-adr` → `harny-sync` again for the capability docs and `_index.md`), and —
+  since `documentation-role-completion` — a completion precondition verified via
+  the readiness runner's spec-state family (e.g. `--only spec-state`) before the
+  role reports done. `templates/roles/sdd-documentation.md` now sits at
+  `cost_tier: mid`, raised from `cheapest` (`specs/current/pipeline-roles.md` PR-2)
 - `harny-sync` — knowledge-base lookup and archive modes; updates `specs/current/`
   and moves features to `specs/archived/`
 - `harny-adr` — Architecture Decision Record generation, global numbering, registry

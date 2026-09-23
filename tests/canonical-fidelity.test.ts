@@ -302,6 +302,14 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     // `templates/mcp/**` (the tool-neutral Context7 MCP mechanism doc) is new
     // canonical content this feature introduces (contract.md § Integration
     // Points, "templates/mcp/README.md").
+    //
+    // (documentation-role-completion amendment round.) A ninth entry joins the
+    // pre-existing single-file allowance `templates/roles/sdd-documentation.md`
+    // already establishes: `templates/conductor/sdd-conductor.md` is the other
+    // sanctioned canonical-body content change this feature makes (contract.md
+    // § State Changes, RC-14) — the conductor now verifies the documentation
+    // role's archive hand-off before declaring the pipeline complete, rather
+    // than accepting that role's own report.
     const isContractedEntry = (relativePath: string): boolean =>
       CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
       relativePath.startsWith('templates/skills/') ||
@@ -311,6 +319,7 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
       relativePath.startsWith('templates/shared/') ||
       relativePath.startsWith('templates/mcp/') ||
       relativePath === 'templates/roles/sdd-documentation.md' ||
+      relativePath === 'templates/conductor/sdd-conductor.md' ||
       relativePath === '.claude/settings.json';
 
     // (templates-skill-library-parity fix.) Each porcelain line is a fixed-width
@@ -636,5 +645,176 @@ describe('ci-workflow-root — the three generated-entry-point runner templates 
       'utf8',
     );
     expect(live).toBe(golden);
+  });
+});
+
+/**
+ * Spec: specs/documentation-role-completion
+ * Covers: contract.md § Interfaces items 2, 3; Behavior Guarantees RC-7,
+ * RC-8, RC-9, RC-10, RC-11, RC-14, RC-17; intent.md SC5, SC6, SC9, SC10,
+ * SC11; audit.md Test Coverage T12-T15, T17, T19, T23; tasks.md Tasks 2.1R,
+ * 2.2R, 2.3R, 2.4R, 2.5R, 3.1R.
+ *
+ * `templates/roles/sdd-documentation.md` still declares `cost_tier: cheapest`
+ * and its old `cost_rationale` at red time (verified above, § Role
+ * Metadata), never mentions `harny-adr`, and carries none of the four
+ * completion-precondition elements pinned below — every describe block
+ * through "reaches all five generators" is expected to fail on a genuine
+ * missing substring or a mismatched model id, not a wrong assumption about
+ * `renderRole`'s mechanism (already proven correct by the T40/T41 blocks
+ * above; RC-8/RC-11 need no generator change for these assertions to pass
+ * once the template text lands). `templates/conductor/sdd-conductor.md`
+ * likewise carries no archive-verification language yet, so the RC-14 block
+ * fails the same way. The RC-17 byte-identity block is a declared
+ * regression guard (see the ci-workflow-root block immediately above, which
+ * documents the identical posture): all three `run-doctor.mjs` copies are
+ * byte-identical today and this assertion passes already, staying green
+ * through the feature as the pairwise invariant Task 4.2 verifies.
+ */
+const DOCUMENTATION_ROLE_ID = 'sdd-documentation';
+
+async function readRealRoleFile(roleId: string): Promise<string> {
+  return fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'roles', `${roleId}.md`), 'utf8');
+}
+
+describe('sdd-documentation declares cost_tier: mid, with a corrected cost_rationale (RC-7; intent SC9) (T12)', () => {
+  it('carries "cost_tier: mid" and no longer claims the role performs no verification of its own', async () => {
+    const source = await readRealRoleFile(DOCUMENTATION_ROLE_ID);
+
+    expect(source).toMatch(/cost_tier:\s*mid\b/);
+    expect(source).not.toContain('no independent verification of its own');
+  });
+});
+
+describe('the tier propagates to all five tools with no generator change (RC-8; intent SC10) (T13)', () => {
+  function extractModelValue(contents: string): string {
+    const match = contents.match(/\bmodel\b\s*[:=]\s*"?([\w.\-]+)"?/);
+    expect(match, 'no "model" key found in generated output').toBeTruthy();
+    return match![1]!;
+  }
+
+  it('resolves sdd-documentation to the exact same model id as sdd-executor (an existing mid-tier role), for every generator', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+    const docTemplate = templates.roles.get('sdd-documentation')!;
+    const executorTemplate = templates.roles.get('sdd-executor')!;
+    expect(executorTemplate.metadata.costTier).toBe('mid');
+
+    for (const generator of generators) {
+      const docGenerated = generator.renderRole({ template: docTemplate, tier: docTemplate.metadata.costTier });
+      const executorGenerated = generator.renderRole({
+        template: executorTemplate,
+        tier: executorTemplate.metadata.costTier,
+      });
+
+      expect(
+        extractModelValue(docGenerated.contents),
+        `${generator.id} resolves sdd-documentation to a different model id than sdd-executor, despite both declaring cost_tier: mid`,
+      ).toBe(extractModelValue(executorGenerated.contents));
+    }
+  });
+});
+
+describe('the role template names all three hand-off sub-steps in order, including harny-adr (RC-10; intent SC11) (T14)', () => {
+  it('names harny-adr, and the two harny-sync mentions bracket it in order', async () => {
+    const source = await readRealRoleFile(DOCUMENTATION_ROLE_ID);
+
+    expect(source, 'templates/roles/sdd-documentation.md never mentions harny-adr').toContain('harny-adr');
+
+    const syncIndices: number[] = [];
+    let cursor = 0;
+    while (true) {
+      const found = source.indexOf('harny-sync', cursor);
+      if (found === -1) break;
+      syncIndices.push(found);
+      cursor = found + 1;
+    }
+    expect(syncIndices.length, 'expected at least two harny-sync mentions (archive mode, then capability/index update)').toBeGreaterThanOrEqual(2);
+
+    const adrIndex = source.indexOf('harny-adr');
+    expect(adrIndex, 'harny-adr must be named after the first harny-sync mention').toBeGreaterThan(syncIndices[0]!);
+    expect(
+      adrIndex,
+      'harny-adr must be named before the final harny-sync mention',
+    ).toBeLessThan(syncIndices[syncIndices.length - 1]!);
+  });
+});
+
+/** The four elements contract.md § Interfaces item 3 requires, each pinned as
+ *  a concrete acceptance substring — the same convention `NEVER_COMMIT_OR_PUSH`
+ *  above already establishes for a prose commitment with no other means of
+ *  verification. Shared, by value, with `tests/skills-fidelity.test.ts`'s
+ *  identical list (RC-9 requires parity across the role template and both
+ *  skill copies, so the two files intentionally pin the same substrings
+ *  rather than importing from one another). */
+const COMPLETION_PRECONDITION_ELEMENTS: ReadonlyArray<{ name: string; needles: string[] }> = [
+  { name: 'reports completion only after a clean spec-state check for its own feature', needles: ['only after', 'spec-state'] },
+  { name: 'names the runnable command generically with a concrete attributed example', needles: ['run-doctor.mjs', '--only spec-state'] },
+  { name: "a different feature's failing line is surfaced as a finding", needles: ['different feature', 'finding'] },
+  { name: 'narrating or handing back the archive step is not completing it', needles: ['next step', 'not completing it'] },
+];
+
+describe('the role template states the completion precondition\'s four elements (RC-9; intent SC4) (T15)', () => {
+  it('contains every required substring for every element', async () => {
+    const source = await readRealRoleFile(DOCUMENTATION_ROLE_ID);
+
+    for (const element of COMPLETION_PRECONDITION_ELEMENTS) {
+      for (const needle of element.needles) {
+        expect(source, `missing "${needle}" for element: ${element.name}`).toContain(needle);
+      }
+    }
+  });
+});
+
+describe('the completion precondition reaches all five generators\' sdd-documentation artifact, and only that role (RC-11; intent SC5) (T17)', () => {
+  const ANCHOR = 'not completing it';
+  const OTHER_ROLE_IDS = ['sdd-architect', 'sdd-test-writer', 'sdd-executor', 'sdd-auditor'] as const;
+
+  it('is present in the generated sdd-documentation artifact, and absent from the other four roles, for every generator', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      const docTemplate = templates.roles.get('sdd-documentation')!;
+      const docGenerated = generator.renderRole({ template: docTemplate, tier: docTemplate.metadata.costTier });
+      expect(
+        docGenerated.contents,
+        `${generator.id}'s sdd-documentation artifact is missing the completion-precondition anchor`,
+      ).toContain(ANCHOR);
+
+      for (const roleId of OTHER_ROLE_IDS) {
+        const template = templates.roles.get(roleId)!;
+        const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+        expect(
+          generated.contents,
+          `${generator.id}'s ${roleId} artifact unexpectedly carries the sdd-documentation-only completion precondition`,
+        ).not.toContain(ANCHOR);
+      }
+    }
+  });
+});
+
+describe('the shipped conductor verifies the archive before declaring the pipeline complete (RC-14; intent SC6) (T19)', () => {
+  it('states that it confirms the archive landed by running the spec-state check, rather than accepting the role\'s report', async () => {
+    const source = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'conductor', 'sdd-conductor.md'), 'utf8');
+
+    expect(source).toContain('confirms the archive landed');
+    expect(source).toContain('spec-state');
+  });
+});
+
+describe('RC-17 — the three run-doctor.mjs copies stay byte-identical to one another (T23)', () => {
+  const COPIES = [
+    'templates/doctor/run-doctor.mjs',
+    '.sdd/doctor/run-doctor.mjs',
+    'tests/fixtures/golden/ci-workflow-root/run-doctor.mjs',
+  ];
+
+  it('every copy is byte-identical to the first', async () => {
+    const contents = await Promise.all(COPIES.map((relativePath) => fs.readFile(path.join(REPO_ROOT, relativePath), 'utf8')));
+
+    for (let i = 1; i < contents.length; i += 1) {
+      expect(contents[i], `${COPIES[i]} diverges from ${COPIES[0]}`).toBe(contents[0]);
+    }
   });
 });

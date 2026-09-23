@@ -298,12 +298,15 @@ describe('Structural (not byte-wise) oracle comparison against live .claude/agen
     return result;
   }
 
+  // documentation-role-completion (contract.md RC-7): sdd-documentation's
+  // cost_tier moved from `cheapest` to `mid`, so its generated model now
+  // matches sdd-test-writer/sdd-executor's `sonnet`, not `haiku`.
   const expectedModelByRole: Record<string, string> = {
     'sdd-architect': 'opus',
     'sdd-test-writer': 'sonnet',
     'sdd-executor': 'sonnet',
     'sdd-auditor': 'opus',
-    'sdd-documentation': 'haiku',
+    'sdd-documentation': 'sonnet',
   };
 
   it('generated role files carry the same frontmatter keys as the live oracle, with the model value implied by cost_tier', async () => {

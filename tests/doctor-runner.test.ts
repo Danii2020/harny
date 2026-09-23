@@ -127,14 +127,23 @@ const OK_TEST_COMMAND = {
 async function writeFeature(
   repoDir: string,
   name: string,
-  options: { schemaFiles?: readonly string[]; shipped?: boolean; approved?: boolean } = {},
+  options: {
+    schemaFiles?: readonly string[];
+    shipped?: boolean;
+    approved?: boolean;
+    /** The literal `intent.md` line carrying the stamp. Defaults to the bare form;
+     *  pass the bolded `**Shipped: …**` form the documentation role actually writes,
+     *  or a prose mention, to exercise the marker matcher's tolerance. */
+    stampLine?: string;
+  } = {},
 ): Promise<void> {
   const dir = path.join(repoDir, 'specs', name);
   await fs.mkdir(dir, { recursive: true });
   const schemaFiles = options.schemaFiles ?? SPECS.schemaFiles;
+  const stampLine = options.stampLine ?? 'Shipped: 2026-01-01';
   for (const schema of schemaFiles) {
     const isIntent = schema === 'intent';
-    const body = isIntent && options.shipped ? `# Intent: ${name}\n\nShipped: 2026-01-01\n` : `# ${schema}\n`;
+    const body = isIntent && options.shipped ? `# Intent: ${name}\n\n${stampLine}\n` : `# ${schema}\n`;
     await fs.writeFile(path.join(dir, `${schema}.md`), body, 'utf8');
   }
   if (options.approved && schemaFiles.includes('audit')) {
@@ -298,6 +307,53 @@ describe('a shipped-but-unarchived feature requires both the marker and an appro
     expect(result.code).toBe(2);
     expect(output).toContain('forgotten-to-archive');
   });
+
+  it.each([
+    ['the bolded form the documentation role actually writes', '**Shipped: 2026-01-01**'],
+    ['a bolded form with surrounding whitespace', '   **Shipped: 2026-01-01**   '],
+    ['an underscore-emphasised form', '__Shipped: 2026-01-01__'],
+    ['a list-item form', '- Shipped: 2026-01-01'],
+    ['a heading form', '## Shipped: 2026-01-01'],
+  ])(
+    'detects the stamp written as %s, not only the bare marker (RC-19)',
+    async (_label, stampLine) => {
+      const repoDir = await makeReadyRepo();
+      await writeFeature(repoDir, 'stamped-with-markup', {
+        shipped: true,
+        approved: true,
+        stampLine,
+      });
+      const checksFile = await writeChecksFile(repoDir, readyChecks());
+
+      const result = await runRunner({ cwd: repoDir, args: ['--checks', checksFile] });
+      const output = result.stdout + result.stderr;
+
+      expect(output).toContain('stamped-with-markup');
+      expect(result.code).toBe(2);
+    },
+  );
+
+  it.each([
+    ['an indented prose mention in a backtick span', '      in-place `Shipped: <date>` header on `intent.md`'],
+    ['a sentence that merely names the marker', 'The role adds a Shipped: header before archiving.'],
+  ])(
+    'does not mistake %s for a stamp (RC-19: markup tolerance must not become a substring match)',
+    async (_label, stampLine) => {
+      const repoDir = await makeReadyRepo();
+      await writeFeature(repoDir, 'merely-mentions-the-marker', {
+        shipped: true,
+        approved: true,
+        stampLine,
+      });
+      const checksFile = await writeChecksFile(repoDir, readyChecks());
+
+      const result = await runRunner({ cwd: repoDir, args: ['--checks', checksFile] });
+      const output = result.stdout + result.stderr;
+
+      expect(output).not.toContain('merely-mentions-the-marker');
+      expect(result.code).toBe(0);
+    },
+  );
 
   it('does not report a feature that is shipped but not yet approved (only one of the two conditions holds)', async () => {
     const repoDir = await makeReadyRepo();

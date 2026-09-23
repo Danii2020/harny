@@ -538,3 +538,42 @@ describe('the "never commit or push" hard rule is present in both harny-document
     expect(source).toContain('Never commit or push.');
   });
 });
+
+/**
+ * Spec: specs/documentation-role-completion
+ * Covers: contract.md § Interfaces item 3; Behavior Guarantee RC-9; intent.md
+ * SC4; audit.md Test Coverage T16; tasks.md Task 2.4R.
+ *
+ * Neither `harny-document/SKILL.md` copy carries any of these four elements
+ * yet at red time (verified absent, repo-wide, before writing this test), so
+ * every element below fails on a genuine missing substring — the same
+ * convention the "never commit or push" block immediately above already
+ * uses. The element list is pinned identically (by value) in
+ * `tests/canonical-fidelity.test.ts`'s matching RC-9 block for the role
+ * template: RC-9 requires the role template and both skill copies to state
+ * the same four elements, so the two files intentionally duplicate the same
+ * acceptance substrings rather than one importing them from the other.
+ */
+describe('both harny-document skill copies state the completion precondition\'s four elements (RC-9; intent SC4) (T16)', () => {
+  const REQUIRED_ELEMENTS: ReadonlyArray<{ name: string; needles: string[] }> = [
+    { name: 'reports completion only after a clean spec-state check for its own feature', needles: ['only after', 'spec-state'] },
+    { name: 'names the runnable command generically with a concrete attributed example', needles: ['run-doctor.mjs', '--only spec-state'] },
+    { name: "a different feature's failing line is surfaced as a finding", needles: ['different feature', 'finding'] },
+    { name: 'narrating or handing back the archive step is not completing it', needles: ['next step', 'not completing it'] },
+  ];
+
+  it.each([
+    ['.agents/skills/harny-document/SKILL.md', path.join(AGENTS_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+    ['templates/skills/harny-document/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+  ])('%s states every required substring for every element', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+    const normalized = normalizeWhitespace(source!);
+
+    for (const element of REQUIRED_ELEMENTS) {
+      for (const needle of element.needles) {
+        expect(normalized, `missing "${needle}" for element: ${element.name}`).toContain(needle);
+      }
+    }
+  });
+});

@@ -87,7 +87,15 @@ Read exactly these three inputs — nothing else counts as ground truth for this
       docs and regenerate `_index.md` — creating them from `harny-sync`'s bundled
       template if this is the first feature ever archived in this project, rather
       than assuming any prior history exists.
-4. **Present a change summary.** After making the updates, present a concise summary of
+4. **Verify before reporting completion.** Report this hand-off as complete only after
+   confirming, via the spec-state family of the readiness runner shipped at
+   `.sdd/doctor/run-doctor.mjs` — invoked, for example, as
+   `node .sdd/doctor/run-doctor.mjs --only spec-state` — that this feature no longer
+   appears as shipped-but-unarchived. A failing line for a different feature is
+   reported as a finding, never silently ignored and never fixed in passing — that
+   other feature's archive is not this invocation's business. Describing the archive
+   step, or handing it back as a "next step", is not completing it.
+5. **Present a change summary.** After making the updates, present a concise summary of
    exactly what changed (which files, which sections, which capability docs, which
    ADRs) for optional human review. This review is optional and does not block
    anything — the pipeline is complete once this skill finishes.

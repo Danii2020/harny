@@ -1,19 +1,19 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-22 by feedback-path-hygiene (archive mode: feature archived, capability docs updated)
+> Last synced: 2026-09-23 by documentation-role-completion (archive mode: feature archived, capability docs updated)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/) |
 
 ## Keyword lookup
 
@@ -81,6 +81,9 @@
 | coherence (presence vs. content) | readiness-checks |
 | bootstrap mode | pipeline-roles, readiness-checks |
 | guidancePath | tool-generators |
+| --only / family selector | readiness-checks |
+| completion precondition / archive verification | pipeline-roles |
+| shipped stamp / marker matching / bolded marker | readiness-checks |
 
 ## Synchronized Changes
 
@@ -98,6 +101,7 @@
 | context7-mcp | [specs/archived/context7-mcp/](../archived/context7-mcp/) | [tool-generators.md](./tool-generators.md), [cli-init.md](./cli-init.md) |
 | feedback-path-hygiene | [specs/archived/feedback-path-hygiene/](../archived/feedback-path-hygiene/) | [feedback-controls.md](./feedback-controls.md), [readiness-checks.md](./readiness-checks.md) |
 | dogfood-quick-fixes | [specs/archived/dogfood-quick-fixes/](../archived/dogfood-quick-fixes/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
+| documentation-role-completion | [specs/archived/documentation-role-completion/](../archived/documentation-role-completion/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [readiness-checks.md](./readiness-checks.md) |
 
 ## Decisions (ADR registry)
 
@@ -137,6 +141,9 @@
 | 0032 | Scope a subdirectory install with step-level `working-directory`, no `paths:` filter | Accepted | feedback-controls | `specs/archived/ci-workflow-root/decisions/0032-step-scoping-no-paths-filter.md` |
 | 0033 | Detect the repository root by walking for a `.git` entry, not by shelling out to `git rev-parse` | Accepted | cli-init | `specs/archived/ci-workflow-root/decisions/0033-walk-git-dont-shell.md` |
 | 0034 | Derive the workflow file name from the install prefix; surface a name collision as `CONFLICT` rather than resolving it | Accepted | feedback-controls | `specs/archived/ci-workflow-root/decisions/0034-slug-collision-conflict.md` |
+| 0035 | Verify the archive with the existing spec-state detector via a family selector, not with new advisory prose or a second check | Accepted | readiness-checks | `specs/archived/documentation-role-completion/decisions/0035-family-selector-not-new-check.md` |
+| 0036 | Raise `sdd-documentation` to `mid`; leave `cheapest` unoccupied rather than reassigning another role to it | Accepted | pipeline-roles | `specs/archived/documentation-role-completion/decisions/0036-raise-documentation-tier-to-mid.md` |
+| 0037 | Guard the untracked live conductor with a presence-gated parity test rather than tracking the file or leaving it unguarded | Accepted | pipeline-roles | `specs/archived/documentation-role-completion/decisions/0037-presence-gated-conductor-guard.md` |
 
 ## Open reservations
 
@@ -185,6 +192,12 @@
 | R-Cursor | MCP support in some Cursor installs may sit behind a settings toggle that defaults off; the generated `.cursor/mcp.json` would be correct but inert until toggled in Cursor settings | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Cursor | tool-generators |
 | R-Codex | Codex Desktop may ignore project-scope `.codex/config.toml` MCP servers per `openai/codex#13025`, loading only user-global config; the generated file is correct for Codex CLI surface | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Codex | tool-generators |
 | R-OAuth | `/mcp/oauth` is documented as gated on a client implementing the MCP OAuth specification and was never loaded into a live install of any of the five tools. Same AL-30 / CG-1 class: vendor-side facts verified through documentation rather than live-install testing. | MEDIUM (human-gated) | `specs/archived/dogfood-quick-fixes/audit.md` R-OAuth | cli-init |
+| RC-R1 | The residual tail-drop risk is not closed: `PR-11`'s check's judgment is deterministic, but its invocation is still an agent instruction; an agent that drops the archive hand-off can equally drop the verification step after it. Deliberate — this feature guarantees the answer is computed when the check runs, not that the check always runs. | MEDIUM (design, deliberate) | `specs/archived/documentation-role-completion/audit.md` RC-R1; `contract.md` RC-13 | pipeline-roles |
+| RC-R4 | The live, per-tool conductor copy remains untracked; the parity guard detects drift only where that file exists on a given machine, and its own repair during this feature's ship is covered by no commit (`.claude/skills/sdd-conductor/` is gitignored). | MEDIUM | `specs/archived/documentation-role-completion/audit.md` RC-R4, AL-8 | pipeline-roles |
+| RC-R7 | FC-13's byte-identity guarantee has no automated test covering the T24 case (fresh-init byte-identity of `.sdd/`, including `.sdd/harness.json`'s recorded tier); verified manually at audit time only. | LOW (coverage) | `specs/archived/documentation-role-completion/audit.md` RC-R7 | readiness-checks |
+| RC-AL2 | The acceptance-substring tests pinning the documentation role's completion-precondition text are looser than the guarantee itself; verified to hold today only by independent auditor re-derivation. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-2 | pipeline-roles |
+| RC-AL3 | The per-generator propagation test for the completion-precondition text pins a single anchor substring rather than the full element list, weaker than its "verbatim" guarantee; verified to hold today only by independent auditor re-derivation across all five scaffolded artifacts. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-3 | pipeline-roles |
+| RC-AL5 | A misconfigured `specs.dir` yields a green `--only spec-state` run indistinguishable from a genuinely clean repo; pre-existing family-4 behavior deliberately reused, not introduced, by this feature. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-5 | readiness-checks |
 
 ## Notes
 

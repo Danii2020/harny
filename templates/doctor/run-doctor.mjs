@@ -13,11 +13,23 @@
  * (`templates/shared/probes.mjs`), rather than each carrying its own copy. This
  * script contains no probe logic of its own (BG-19).
  *
- * Invocation: `node run-doctor.mjs [--checks <path-or-inline-json>]`, run with `cwd`
- * set to the repo being checked. `--checks` defaults to `.sdd/doctor/checks.json`,
- * relative to `cwd`, when omitted. `--checks` accepts either a path to a JSON file or
- * inline JSON text detected by a leading `{` — the identical dual-form convention
- * `run-feedback.mjs`'s `--commands` flag already implements.
+ * Invocation: `node run-doctor.mjs [--checks <path-or-inline-json>] [--only <family>]`,
+ * run with `cwd` set to the repo being checked. `--checks` defaults to
+ * `.sdd/doctor/checks.json`, relative to `cwd`, when omitted. `--checks` accepts
+ * either a path to a JSON file or inline JSON text detected by a leading `{` — the
+ * identical dual-form convention `run-feedback.mjs`'s `--commands` flag already
+ * implements.
+ *
+ * `--only <family>` (added by documentation-role-completion, contract.md RC-1-RC-4)
+ * scopes a run to exactly one of the five families named below (`FAMILY_TOKENS`),
+ * instead of all five. It is additive and default-transparent: when absent, every
+ * family runs, byte-for-byte identical to this script's pre-`--only` behavior. The
+ * selector this feature exists for is `--only spec-state`, cheap enough to run at
+ * the end of every documentation turn because it spawns no child process — in
+ * particular, none from family 5 (tests). A value outside `FAMILY_TOKENS`, or
+ * `--only` with no following value, is a usage error (exit 1) naming the offending
+ * value/flag — never a silently-empty run that exits 0 and falsely reports
+ * readiness.
  *
  * Five check families run in this fixed order, every time, so two runs of the same
  * repo state produce identical output (BG-1, amended by ai-sdlc-readiness from four
@@ -36,7 +48,11 @@
  *    `reservedDirs`) is checked for the configured `schemaFiles`, and for the
  *    shipped-but-unarchived condition (BOTH a `shippedMarker` header line in
  *    `intent.md` AND an `approvedVerdicts` match in `audit.md`) — reported by feature
- *    name, one line per finding; a feature with no finding contributes no line.
+ *    name, one line per finding; a feature with no finding contributes no line. The
+ *    marker is matched at the line start after stripping leading Markdown emphasis,
+ *    list-item, blockquote and heading punctuation (`STAMP_LEADING_MARKUP`), so the
+ *    bolded `**Shipped: <date>**` stamp the documentation role writes is seen as
+ *    readily as a bare one — but prose that merely names the marker is not.
  * 5. **tests** — one line per `commands` entry: its `requires` probe is evaluated
  *    first (a false probe is `skip`, never a failure); when it passes, the command is
  *    spawned once and its exit status becomes `ok`/`fail`.
@@ -71,6 +87,24 @@ import { probeSatisfied as requirementMet } from '../shared/probes.mjs';
  *  `TOUCHED_FILES_DIR`. */
 const DEFAULT_CHECKS_PATH = path.join('.sdd', 'doctor', 'checks.json');
 
+/** Markdown emphasis, list-item, blockquote and heading punctuation a stamp line may
+ *  carry ahead of the marker itself. The documentation role writes the stamp bolded
+ *  (`**Shipped: <date>**`), so matching the bare marker at the exact line start missed
+ *  every stamp it produced — the shipped-but-unarchived check could not see the very
+ *  artifact it exists to detect. Stripped only from the START of an already-trimmed
+ *  line, never searched for anywhere in it: a substring match would mistake prose that
+ *  merely names the marker (e.g. an indented "in-place `Shipped: <date>` header"
+ *  sentence) for a real stamp. `shippedMarker` itself stays the literal configured in
+ *  `checks.json`, so an older checks file keeps working unchanged. */
+const STAMP_LEADING_MARKUP = /^[*_~>#\s-]+/;
+
+/** The five check families, in the fixed order `main` runs them below. Structural —
+ *  which code paths exist in this script — not data that arrives via `--checks`, so
+ *  it follows `DEFAULT_CHECKS_PATH`'s precedent of being a hard-coded convention of
+ *  the runner's own invocation (contract.md § Interfaces item 1). `--only`'s value
+ *  must be a member of this array. */
+const FAMILY_TOKENS = ['environment', 'harness', 'repo-readiness', 'spec-state', 'tests'];
+
 function fail(message) {
   console.error(`run-doctor.mjs: ${message}`);
   process.exit(1);
@@ -78,17 +112,28 @@ function fail(message) {
 
 function parseArgs(argv) {
   let checksArg;
+  let onlyArg;
   let i = 0;
   while (i < argv.length) {
     const token = argv[i];
     if (token === '--checks') {
       checksArg = argv[i + 1];
       i += 2;
+    } else if (token === '--only') {
+      const value = argv[i + 1];
+      if (value === undefined) {
+        fail(`--only requires a value (one of: ${FAMILY_TOKENS.join(', ')})`);
+      }
+      if (!FAMILY_TOKENS.includes(value)) {
+        fail(`--only "${value}" is not a recognized family (expected one of: ${FAMILY_TOKENS.join(', ')})`);
+      }
+      onlyArg = value;
+      i += 2;
     } else {
-      fail(`unknown flag "${token}" (expected --checks <path-or-inline-json>)`);
+      fail(`unknown flag "${token}" (expected --checks <path-or-inline-json> or --only <family>)`);
     }
   }
-  return checksArg;
+  return { checksArg, onlyArg };
 }
 
 /** Dual-form `--checks` resolution, in spirit identical to `run-feedback.mjs`'s
@@ -132,9 +177,17 @@ function anyPathExists(paths, cwd) {
 }
 
 function main() {
-  const checksArg = parseArgs(process.argv.slice(2));
+  const { checksArg, onlyArg } = parseArgs(process.argv.slice(2));
   const checks = readChecks(checksArg);
   const cwd = process.cwd();
+
+  /** `onlyArg` undefined (the flag absent) means "run all five families" — the
+   *  default-transparent, pre-`--only` behavior (RC-1). `parseArgs` already
+   *  rejected any value outside `FAMILY_TOKENS`, so a defined `onlyArg` here is
+   *  always a valid family token. */
+  function selected(token) {
+    return onlyArg === undefined || onlyArg === token;
+  }
 
   const lines = [];
   let okCount = 0;
@@ -170,99 +223,112 @@ function main() {
   }
 
   // 1. environment.
-  emit('node-version', 'ok', `running on Node ${process.version}`);
   const commands = checks.commands ?? [];
-  if (commands.length === 0) {
-    emit(
-      'readiness-commands',
-      'skip',
-      'no test-suite command configured for this stack; the test family reports no findings',
-    );
+  if (selected('environment')) {
+    emit('node-version', 'ok', `running on Node ${process.version}`);
+    if (commands.length === 0) {
+      emit(
+        'readiness-commands',
+        'skip',
+        'no test-suite command configured for this stack; the test family reports no findings',
+      );
+    }
   }
 
   // 2. harness manifest.
-  for (const entry of checks.require ?? []) {
-    evaluateEntry(entry, cwd);
+  if (selected('harness')) {
+    for (const entry of checks.require ?? []) {
+      evaluateEntry(entry, cwd);
+    }
   }
 
   // 3. repo readiness. `checks.repoReadiness`/`checks.repoReadinessLabel` are the
   // only new reads (AR-11); both tolerate absence so a pre-feature checks.json
   // contributes no family-3 lines rather than erroring (AR-5, SC9).
-  if (checks.repoReadinessLabel) {
-    lines.push(`-- ${checks.repoReadinessLabel} --`);
-  }
-  for (const entry of checks.repoReadiness ?? []) {
-    evaluateEntry(entry, cwd);
+  if (selected('repo-readiness')) {
+    if (checks.repoReadinessLabel) {
+      lines.push(`-- ${checks.repoReadinessLabel} --`);
+    }
+    for (const entry of checks.repoReadiness ?? []) {
+      evaluateEntry(entry, cwd);
+    }
   }
 
   // 4. spec state.
-  const specs = checks.specs ?? {};
-  const specsDir = specs.dir;
-  const reservedDirs = new Set(specs.reservedDirs ?? []);
-  const schemaFiles = specs.schemaFiles ?? [];
-  const shippedMarker = specs.shippedMarker;
-  const approvedVerdicts = specs.approvedVerdicts ?? [];
+  if (selected('spec-state')) {
+    const specs = checks.specs ?? {};
+    const specsDir = specs.dir;
+    const reservedDirs = new Set(specs.reservedDirs ?? []);
+    const schemaFiles = specs.schemaFiles ?? [];
+    const shippedMarker = specs.shippedMarker;
+    const approvedVerdicts = specs.approvedVerdicts ?? [];
 
-  let featureNames = [];
-  try {
-    featureNames = fs
-      .readdirSync(path.join(cwd, specsDir), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !reservedDirs.has(entry.name))
-      .map((entry) => entry.name);
-  } catch {
-    featureNames = [];
-  }
-
-  for (const name of featureNames) {
-    const featureDir = path.join(cwd, specsDir, name);
-    let entries;
+    let featureNames = [];
     try {
-      entries = fs.readdirSync(featureDir);
-    } catch (err) {
-      emit(`spec-state:${name}`, 'fail', `could not read ${specsDir}/${name}: ${err.message}`);
-      continue;
+      featureNames = fs
+        .readdirSync(path.join(cwd, specsDir), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !reservedDirs.has(entry.name))
+        .map((entry) => entry.name);
+    } catch {
+      featureNames = [];
     }
 
-    const missing = schemaFiles.filter((name2) => !entries.includes(`${name2}.md`));
-    if (missing.length > 0) {
-      emit(
-        `spec-state:${name}`,
-        'fail',
-        `${specsDir}/${name} is missing ${missing.map((m) => `${m}.md`).join(', ')}`,
-      );
-      continue;
-    }
+    for (const name of featureNames) {
+      const featureDir = path.join(cwd, specsDir, name);
+      let entries;
+      try {
+        entries = fs.readdirSync(featureDir);
+      } catch (err) {
+        emit(`spec-state:${name}`, 'fail', `could not read ${specsDir}/${name}: ${err.message}`);
+        continue;
+      }
 
-    const intentContents = safeRead(path.join(featureDir, 'intent.md'));
-    const auditContents = safeRead(path.join(featureDir, 'audit.md'));
-    const shipped = Boolean(
-      intentContents && intentContents.split('\n').some((line) => line.trim().startsWith(shippedMarker)),
-    );
-    const approved = Boolean(
-      auditContents && approvedVerdicts.some((verdict) => auditContents.includes(verdict)),
-    );
-    if (shipped && approved) {
-      emit(
-        `spec-state:${name}`,
-        'fail',
-        `${specsDir}/${name} is shipped and approved but was never archived (run harny-sync archive mode)`,
+      const missing = schemaFiles.filter((name2) => !entries.includes(`${name2}.md`));
+      if (missing.length > 0) {
+        emit(
+          `spec-state:${name}`,
+          'fail',
+          `${specsDir}/${name} is missing ${missing.map((m) => `${m}.md`).join(', ')}`,
+        );
+        continue;
+      }
+
+      const intentContents = safeRead(path.join(featureDir, 'intent.md'));
+      const auditContents = safeRead(path.join(featureDir, 'audit.md'));
+      const shipped = Boolean(
+        intentContents &&
+          intentContents
+            .split('\n')
+            .some((line) => line.trim().replace(STAMP_LEADING_MARKUP, '').startsWith(shippedMarker)),
       );
+      const approved = Boolean(
+        auditContents && approvedVerdicts.some((verdict) => auditContents.includes(verdict)),
+      );
+      if (shipped && approved) {
+        emit(
+          `spec-state:${name}`,
+          'fail',
+          `${specsDir}/${name} is shipped and approved but was never archived (run harny-sync archive mode)`,
+        );
+      }
     }
   }
 
   // 5. tests.
-  for (const command of commands) {
-    if (!requirementMet(command.requires, cwd)) {
-      emit(command.id, 'skip', 'requirement not met, skipping');
-      continue;
-    }
-    const [binary, ...rest] = command.argv;
-    const result = spawnSync(binary, rest, { cwd, stdio: 'pipe', encoding: 'utf8' });
-    if (result.status === 0) {
-      emit(command.id, 'ok');
-    } else {
-      const output = [result.stdout, result.stderr].filter((part) => part && part.trim()).join('\n').trim();
-      emit(command.id, 'fail', output || `exited with status ${result.status}`);
+  if (selected('tests')) {
+    for (const command of commands) {
+      if (!requirementMet(command.requires, cwd)) {
+        emit(command.id, 'skip', 'requirement not met, skipping');
+        continue;
+      }
+      const [binary, ...rest] = command.argv;
+      const result = spawnSync(binary, rest, { cwd, stdio: 'pipe', encoding: 'utf8' });
+      if (result.status === 0) {
+        emit(command.id, 'ok');
+      } else {
+        const output = [result.stdout, result.stderr].filter((part) => part && part.trim()).join('\n').trim();
+        emit(command.id, 'fail', output || `exited with status ${result.status}`);
+      }
     }
   }
 

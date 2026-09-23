@@ -1,6 +1,6 @@
 # Readiness Checks Specification
 
-> Last synced: 2026-09-15. Owned artifacts: `templates/doctor/run-doctor.mjs`, `templates/doctor/README.md`, `templates/shared/probes.mjs`, `harny-doctor` skill, `harny-document` skill (bootstrap mode only), `npx harny doctor` CLI verb.
+> Last synced: 2026-09-23. Owned artifacts: `templates/doctor/run-doctor.mjs`, `templates/doctor/README.md`, `templates/shared/probes.mjs`, `harny-doctor` skill, `harny-document` skill (bootstrap mode only), `npx harny doctor` CLI verb.
 
 ## Purpose
 
@@ -138,6 +138,71 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 - **WHEN** the repo-readiness family reports `repo-readiness:readme` as `FAIL`
 - **THEN** `harny-doctor` names the file and the gap, asks whether to delegate to `harny-document`, and invokes it only on an explicit yes
 
+### Requirement: RD-12 — Family selector for cheap, scoped runs
+
+The system SHALL let `templates/doctor/run-doctor.mjs` accept an optional
+`--only <family>` argument naming exactly one of the five `RD-1` family tokens
+(`environment`, `harness`, `repo-readiness`, `spec-state`, `tests`), evaluating that
+family alone and reusing each family's existing detection logic — never a duplicated
+or parallel implementation. Its absence reproduces the pre-existing five-family
+behavior byte for byte; an unrecognized value or a value-less `--only` is a usage
+error (the runner's existing exit `1` path, extended to name `--only`), never a
+silently-empty run that reports ready having evaluated nothing. `--only spec-state`
+spawns no child process, in particular none from the `tests` family, so it is cheap
+enough to invoke as a completion precondition at the moment of a claim rather than
+only at `harny-doctor`'s session-start/pre-spec-work checkpoints. `--only` is scoped
+to the direct runner invocation only; `npx harny doctor` (`src/doctor.ts`) is
+unchanged and continues to spawn the runner with `['--checks', checksJson]` and no
+selector — `DoctorChecksFile`'s schema and `checks.json` gain no field.
+
+**Source:** documentation-role-completion · intent.md SC1–SC3; contract.md § Interfaces item 1, § Behavior Guarantees RC-1–RC-6; § Amendment A-RD
+
+### Requirement: RC-19 — The shipped-stamp marker tolerates Markdown emphasis
+
+The system SHALL match `specs.shippedMarker` at the start of an `intent.md` line
+*after* stripping that line's leading Markdown emphasis, list-item, blockquote and
+heading punctuation (`STAMP_LEADING_MARKUP`, `/^[*_~>#\s-]+/`), so the bolded
+`**Shipped: <date>**` stamp the documentation role actually writes is detected as
+readily as a bare `Shipped: <date>`. The strip SHALL apply only at the line start and
+SHALL NOT become a substring search: a line that merely names the marker in prose —
+for example an indented ``in-place `Shipped: <date>` header`` sentence — is not a
+stamp. `specs.shippedMarker` in `checks.json` stays the literal configured value, so
+an older `checks.json` keeps working against the corrected runner unchanged.
+
+Before this correction the check matched only the bare form, making **6 of 14**
+archived specs — including `dogfood-quick-fixes` and `ci-workflow-root`, two of the
+three tail-drop reproductions that motivated `RD-12` — invisible to the very detector
+built to catch them. A `--only spec-state` run over a bold-stamped stranded spec
+exited `0`: a green that had seen nothing. The defect predated `RD-12` (the line is
+byte-identical at commit `d3c2741`); `RD-12` made it load-bearing.
+
+**Source:** documentation-role-completion · post-ship correction 2026-09-23; `tests/doctor-runner.test.ts` (five markup forms, two false-positive guards); archived `intent.md` § F3 dated correction note
+
+#### Scenario: the stamp carries Markdown emphasis
+- **WHEN** `intent.md` contains `**Shipped: 2026-09-23**` and `audit.md` matches an approved verdict
+- **THEN** the feature is reported shipped-but-unarchived and the runner exits `2`
+
+#### Scenario: a line merely names the marker
+- **WHEN** `intent.md` contains prose such as ``in-place `Shipped: <date>` header on `intent.md` ``
+- **THEN** it is not treated as a stamp, and the runner exits `0`
+
+#### Scenario: `--only` is absent
+- **WHEN** the runner is invoked with no `--only` argument
+- **THEN** all five families are evaluated in the existing fixed order, producing
+  byte-identical stdout to the pre-selector runner for the same repo state
+
+#### Scenario: `--only spec-state` is given
+- **WHEN** the runner is invoked with `--only spec-state`
+- **THEN** only family 4 is evaluated, no child process is spawned (in particular
+  none from the `tests` family), and the run exits `0` (nothing stranded) or `2`
+  (at least one feature shipped-but-unarchived) per the unchanged exit-code taxonomy
+
+#### Scenario: `--only` is given an unrecognized value, or no value
+- **WHEN** `--only` names a token outside the five family tokens, or is given with
+  no following value
+- **THEN** the runner exits `1`, naming the offending value (or the flag) and the
+  accepted set — never a silently-empty, falsely-ready exit `0`
+
 ## Invariants
 
 **I1 — Entry-level probe gating.** A `require` entry whose `requires` probe is false is skipped with a notice, never failed, using the same probe semantics as feedback controls (`I3`).
@@ -162,6 +227,8 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 | RD-R8 | AR-16/RD-7 ("verb and direct invocation agree") now holds only up to `DOCTOR_RUNNER_MAX_BUFFER` (64 MiB); above that the verb abstains with a diagnosable `HarnessError('USAGE')` rather than reaching a ready/not-ready conclusion. This bound is real and deliberate (see RD-8/RD-9 gate design) but is not yet stated in `contract.md`. | LOW | ai-sdlc-readiness · audit.md F12 |
 | RD-R9 | `'CLAUDE.md'` is a literal in both `src/doctor.ts` (inside the deliberately-untouched `conventions-doc` entry) and `src/generators/claude-code.ts` (its `guidancePath` declaration) — an accepted, contracted exception to the "derive every per-tool fact, never re-literal it" rule, since moving or removing `conventions-doc`'s literal was explicitly out of scope (see RD-1's amendment note). | LOW | ai-sdlc-readiness · audit.md F5 |
 | RD-R10 | A generated `checks.json`'s `ci-workflow` entry records an install-relative path that goes stale if the install directory is moved to a different depth; `npx harny doctor` re-derives and is never stale; remediation is to re-run `npx harny init`. The relative path is data produced during init, and persisting it would create a second source of truth that can diverge from the filesystem. | LOW | ci-workflow-root · contract.md § Behavior Guarantees (DR-5) |
+| RC-R7 | **FC-13's byte-identity guarantee has no automated test covering the T24 case.** After `RD-12`'s regeneration, this repo's `.sdd/` (including `.sdd/harness.json`'s recorded `mid` tier) was verified byte-identical to fresh `npx harny init` output — but only manually, at audit time. Nothing in the suite will catch a future drift on this specific path. | LOW (coverage) | documentation-role-completion · audit.md RC-R7 |
+| RC-AL5 | **A misconfigured `specs.dir` yields a green `--only spec-state` run indistinguishable from a genuinely clean repo.** Family 4 swallows a `readdirSync` failure into an empty feature list, so a wrong `specs.dir` exits `0` with the same output shape as a repo with nothing stranded. Pre-existing family-4 behavior that `RD-12` deliberately reuses rather than changes; `contract.md`'s Error Handling Contract explicitly sanctions "`specs/` absent or empty ⇒ exit 0". Running from the wrong working directory is still caught loudly (missing `checks.json` ⇒ exit 1). | LOW | documentation-role-completion · audit.md AL-5 |
 
 ## Contributing features
 
@@ -170,6 +237,7 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 | readiness-doctor | 2026-09-14 | RD-1–RD-7: four-family readiness check, probe-skip determinism, spec-state coherence detection, verb + direct invocation agreement, no mutations, distinct not-ready exit code. |
 | ai-sdlc-readiness | 2026-09-15 | RD-8–RD-11: fifth `repo readiness` family (README must-have; architecture + per-tool agent-guidance recommended); two-tier model and `warn` outcome; presence-vs-coherence layering (runner checks presence only, `harny-doctor` judges coherence); ask-before-delegating hand-off to `harny-document`'s new bootstrap mode. Amended RD-1/I3 (four families → five) and I2 (ready/not-ready now admits `warn`). |
 | ci-workflow-root | 2026-09-23 | Amended RD-7: the verb re-derives install location before building checks, which keeps agreement true for subdirectory installs. Added RD-R10: generated `checks.json`'s `ci-workflow` entry records install-relative path that goes stale after a directory move; verb is never stale. |
+| documentation-role-completion | 2026-09-23 | Added RD-12: an optional `--only <family>` selector on the direct runner invocation, reusing each family's existing detection logic (never a duplicate), making the spec-state family cheap enough to invoke as a completion precondition rather than only at `harny-doctor`'s two existing checkpoints. `npx harny doctor` (`src/doctor.ts`) is unaffected — no selector, no schema change. |
 
 ## Related ADRs
 
@@ -178,3 +246,4 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 | 0022 | A fifth check family, `repo readiness`, rather than more entries in family 2 | Accepted |
 | 0023 | Must-have/recommended tier split, a new `warn` outcome, and `conventions-doc` stays in family 2 | Accepted |
 | 0024 | Presence checked in the deterministic runner; coherence judged one layer up, in the skill | Accepted |
+| 0035 | Verify the archive with the existing spec-state detector via a family selector, not with new advisory prose or a second check | Accepted |

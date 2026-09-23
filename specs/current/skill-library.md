@@ -1,6 +1,6 @@
 # Skill Library Specification
 
-> Last synced: 2026-09-09. Owned artifacts: `.agents/skills/harny-*/`,
+> Last synced: 2026-09-23. Owned artifacts: `.agents/skills/harny-*/`,
 > `.agents/skills/README.md`, `.claude/skills/harny-*` (bridge symlinks),
 > `AGENTS.md` § "Coding standards", `specs/current/`, `specs/archived/`.
 
@@ -114,7 +114,13 @@ shipped truth) and invoke `harny-sync` archive automatically inside the
 `sdd-documentation` hand-off (additively — never replacing that role's
 README/CHANGELOG/AGENTS.md duties).
 
-**Source:** sdd-skill-library · contract.md § "harny-sync" trigger matrix T2/T3
+**Source:** sdd-skill-library · contract.md § "harny-sync" trigger matrix T2/T3.
+**Amended by** documentation-role-completion · contract.md § Amendment A-SL7: unchanged
+in substance (no `harny-sync` behavior changes; `RC-5` reuses the existing spec-state
+detector rather than a `harny-sync`-owned one), but strengthened in enforcement — the
+`sdd-documentation` hand-off's archive step is now checked by a deterministic
+completion precondition (`pipeline-roles` PR-5, PR-11) rather than trusted by
+narration alone.
 
 #### Scenario: `harny-propose` begins drafting a new feature
 - **WHEN** `harny-propose` begins drafting a new feature's specs
@@ -201,6 +207,7 @@ can see.
 | sdd-skill-library | 2026-09-09 | The entire `harny-*` skill library (eight skills), the shape contract, the symlink bridge, `harny-sync` (lookup/archive modes), `harny-adr` (global monotonic numbering, no backfill), `harny-standards` (pointer to AGENTS.md), and the `specs/current`/`specs/archived` knowledge base this file itself lives in; Amendment A2 (track all of specs/) |
 | templates-skill-library-parity | 2026-09-13 | Scaffolded skill library parity: the same eight `harny-*` skills now write as real files to each tool's native skill-discovery root (`.claude/skills/`, `.kiro/skills/`, `.agents/skills/` shared by three tools), with six core skills always scaffolded and two optional (selectable via `--skills` flag); closed the `templates-parity` reservation that diverged the live pipeline from `templates/` |
 | dogfood-quick-fixes | 2026-09-22 | `harny-document`'s § Guardrails now carries an explicit hard rule forbidding `git commit` and `git push` (matching the identical rule in the canonical role body). This is the layer thinned live agents actually execute (SL-5's degradation mode made concrete): when the live agent is a thin pointer delegating to the skill, the rule enters the execution context here, not in the agent body. |
+| documentation-role-completion | 2026-09-23 | Both `harny-document/SKILL.md` copies gain identical text stating the archive-verification completion precondition (`pipeline-roles` PR-5), landed together to preserve `SL-1`'s exhaustive fidelity sweep; the pre-existing `DIVERGENCE_TABLE` entry for `harny-document` is unchanged. Amended SL-7 (A-SL7): unchanged in substance, strengthened in enforcement. |
 
 ## Related ADRs
 

@@ -6,6 +6,87 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`harny doctor`'s shipped-but-unarchived check now sees the stamp it was built to
+  find (`RC-19`).** The check matched `specs.shippedMarker` at the exact start of an
+  `intent.md` line, so it recognised only a bare `Shipped: <date>`. The documentation
+  role stamps the **bolded** `**Shipped: <date>**`, which that match missed entirely —
+  leaving 6 of 14 archived specs invisible to it, including `dogfood-quick-fixes` and
+  `ci-workflow-root`, two of the three tail-drop reproductions the check is meant to
+  catch. A `--only spec-state` run over a bold-stamped stranded spec exited `0`: a
+  green that had seen nothing. The marker is now matched after stripping a line's
+  leading Markdown emphasis, list-item, blockquote and heading punctuation, at the line
+  start only — never as a substring, so prose that merely names the marker is still not
+  a stamp. `checks.json` is unchanged, so an older checks file keeps working. The defect
+  predated the family selector below (byte-identical at `d3c2741`); that feature made it
+  load-bearing, and it was found by probe immediately before commit rather than by any
+  pipeline gate. Covered by seven tests spanning five markup forms and two
+  false-positive guards; the archived `intent.md` carries a dated correction note
+  retracting its claim that the check "would have caught all three reproductions".
+
+- **Documentation role's archive hand-off no longer completes by narration** —
+  `sdd-documentation` had reliably reproduced the same failure three times across two
+  features: it would finish the README/CHANGELOG/AGENTS.md updates and the `Shipped:`
+  stamp, then hand the archive move, ADR generation, and capability-doc sync back as
+  "next steps required" instead of performing them — even once, with an invocation
+  brief that explicitly warned it not to. A layered fix, each layer's strength stated
+  honestly rather than oversold. **Load-bearing (L1):** `templates/doctor/run-doctor.mjs`
+  gains an optional `--only <family>` selector (`environment` / `harness` /
+  `repo-readiness` / `spec-state` / `tests`) that runs one of the five existing check
+  families alone — reusing family 4's existing shipped-but-unarchived detector rather
+  than authoring a second one — and spawns no command from the `tests` family, so it is
+  cheap enough to run at the end of every documentation turn. Its absence reproduces
+  today's five-family output byte for byte; an unrecognized or value-less `--only` is a
+  usage error (exit `1`), never a silently-empty, falsely-ready run. Both the role
+  template and the conductor now treat "no failing spec-state line for this feature" as
+  a **precondition on reporting completion**, checked with `node .sdd/doctor/run-doctor.mjs
+  --only spec-state`, rather than trusting the role's own narration — the conductor
+  verifies the archive itself before declaring the pipeline done, the same "a role
+  should not be trusted to certify its own gate" principle it already applies elsewhere.
+  **Probability reduction at the source (L2):** `sdd-documentation` is raised from
+  `cost_tier: cheapest` to `mid`, with a `cost_rationale` that no longer claims the role
+  performs no independent verification — it orchestrates a three-call knowledge-base
+  hand-off and must now verify the archive landed. This propagates to all five tools
+  through each generator's existing tier→model map with no generator change; `COST_TIERS`
+  is unchanged and `cheapest` becomes unoccupied by the five default roles, not removed
+  — it stays reachable via a `--model` override or a custom role (amends
+  `specs/current/pipeline-roles.md` PR-2, declared as **amended, not repealed**: only the
+  documentation clause changes). **Defence in depth (L3):** the role template and both
+  `harny-document/SKILL.md` copies are brought back to parity on the hand-off's tail —
+  the role template previously named `harny-adr` zero times — and both now state the
+  completion precondition identically; the completion-precondition text reaches all five
+  generators' `sdd-documentation` artifact verbatim, with no generator change, and no
+  other role; and this repo's own live `.claude/skills/sdd-conductor/SKILL.md`, which had
+  drifted to not mention the documentation stage at all, is repaired to match the shipped
+  conductor template, guarded going forward by a presence-gated parity test that skips
+  cleanly (never fails) when that untracked file is absent, e.g. in CI. **Stated limit,
+  in the same breath as the guarantee:** this feature does **not** guarantee the archive
+  always happens. The check's *judgment* is deterministic — an exit code, not a
+  narration — but its *invocation* remains an agent instruction, so an agent that drops
+  the hand-off can still drop the verification step after it; the unchanged backstop is
+  `harny-doctor`'s next session-start run. Adds ADRs 0035–0037 (verify via the existing
+  detector rather than new prose or a second check; raise the tier and leave `cheapest`
+  unoccupied; guard the untracked live conductor by presence rather than tracking it or
+  leaving it unguarded). 730 passing / 1 failing baseline preserved (the sole failure is
+  the pre-existing, unrelated `tests/packaging.test.ts` vitest pin). Verdict: **APPROVED
+  WITH RESERVATIONS**, not rounded up. Open reservations carried forward: RC-R1 (MEDIUM,
+  deliberate — the residual tail-drop risk described above is explicitly not closed by
+  this audit); RC-R4 (MEDIUM — the live conductor's repair is itself covered by no
+  commit, since `.claude/skills/sdd-conductor/` is gitignored); RC-R7 (LOW, new — the
+  dogfood byte-identity check this feature depends on, FC-13/T24, has no automated test,
+  only a manual audit-time verification); AL-2 and AL-3 (LOW — the tests' pinned
+  acceptance substrings for the completion precondition and its per-generator
+  propagation are looser than the guarantees they stand for, verified to hold today only
+  by independent auditor re-derivation); AL-5 (LOW — a misconfigured `specs.dir` still
+  yields a green `--only spec-state` run indistinguishable from a genuinely clean repo,
+  pre-existing family-4 behavior this feature deliberately reuses rather than changes).
+  Worth recording plainly: this feature's own archive was the first live exercise of the
+  mechanism it builds, and this repo's live documentation agent was moved from `haiku` to
+  `sonnet` immediately before this run — so a clean archive here reflects the tier change
+  and the new verification step together, and, being a single data point, is evidence at
+  n = 1, not confirmation that RC-R1 is closed. (Shipped 2026-09-23.)
+
 ### Added
 
 - **CI workflow repository-root placement for monorepo installs** — when `npx harny init` is run in a subdirectory of a git repository, the generated GitHub Actions workflow file is now placed at the repository root (`.github/workflows/`) where GitHub reads it, rather than inside the install directory where it would be silently ignored. The workflow is named after the install path (e.g., `harny-feedback-apps-web.yml` for an install at `apps/web`) to distinguish multiple installs in one repository. All other artifacts (`.sdd/`, agents, skills, MCP config) remain in the install directory. Each generated step carries `working-directory: <component>` so lint/type-check commands run scoped to the component, not the whole repository. Implements repository-root placement via a declared write root on `GeneratedFile` (`root?: 'repo'`), adds `src/repo.ts` for git-root detection, and introduces four Architecture Decision Records (ADRs 0031–0034). A second install deriving the same workflow name exits 3 with the path named and writes nothing (no silent overwrites). Preserves byte-identity for root-install workflows and re-proves FC-13's dogfood guarantee. Includes two low-severity findings: a post-write report that does not distinguish writes above the install directory (AL-5), and an untested case of same-slug collision for distinct-directory installs (AL-6). (Shipped 2026-09-23.)

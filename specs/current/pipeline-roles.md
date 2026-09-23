@@ -1,6 +1,6 @@
 # Pipeline Roles Specification
 
-> Last synced: 2026-09-15. Owned artifacts: `templates/roles/*.md`,
+> Last synced: 2026-09-23. Owned artifacts: `templates/roles/*.md`,
 > `templates/conductor/sdd-conductor.md`, `.claude/agents/sdd-*.md`,
 > `.claude/skills/sdd-conductor/SKILL.md`, the cost-tier and capability
 > vocabularies, the three human gates.
@@ -31,14 +31,19 @@ The system SHALL define five roles — `sdd-architect`, `sdd-test-writer`,
 ### Requirement: PR-2 — Cost-tier assignment per role
 
 The system SHALL map `cost_tier`: architect and auditor → `most-capable`;
-test-writer and executor → `mid`; documentation → `cheapest`.
+test-writer, executor, and documentation → `mid`.
 
-**Source:** canonical-role-templates · contract.md § "Per-role content contract"; audit.md C3
+**Source:** canonical-role-templates · contract.md § "Per-role content contract"; audit.md C3.
+**Amended by** documentation-role-completion · contract.md § Amendments A-PR2, A-PR2b
+(documentation clause `cheapest` → `mid`; the other four roles' clauses, and the
+3-tier `COST_TIERS` vocabulary itself, are unchanged — `cheapest` becomes
+unoccupied by the five default roles, not removed, and stays reachable via a
+`--model` override or a custom role).
 
 #### Scenario: A role's cost_tier is resolved
 - **WHEN** a role's `cost_tier` is resolved
-- **THEN** architect and auditor resolve to `most-capable`, test-writer and
-  executor resolve to `mid`, and documentation resolves to `cheapest`
+- **THEN** architect and auditor resolve to `most-capable`, and test-writer,
+  executor, and documentation resolve to `mid`
 
 ### Requirement: PR-3 — Portability invariant for canonical role files
 
@@ -75,16 +80,30 @@ The system SHALL run `sdd-documentation` as an automatic, non-gated hand-off
 immediately after a human approves the auditor's verdict (`APPROVED` or
 `APPROVED WITH RESERVATIONS`, never `REJECTED`); it updates `README.md`,
 `CHANGELOG.md` (Keep a Changelog style), and `ARCHITECTURE.md`/`AGENTS.md`,
-then stamps `Shipped: <date>` on `intent.md`.
+stamps `Shipped: <date>` on `intent.md`, then hands off in order to `harny-sync`
+archive mode, `harny-adr`, and `harny-sync` again for the capability docs and
+`_index.md`. The role SHALL report completion only after confirming — via the
+readiness runner's spec-state family, invocable in isolation as
+`node .sdd/doctor/run-doctor.mjs --only spec-state` — that its own feature no
+longer appears as shipped-but-unarchived; a failing line for a *different*
+feature is surfaced as a finding, never silently ignored and never fixed in
+passing; narrating the archive step, or handing it back as a "next step", does
+not satisfy this precondition.
 
-**Source:** canonical-role-templates · contract.md § "sdd-documentation content contract — fixed design"
+**Source:** canonical-role-templates · contract.md § "sdd-documentation content contract — fixed design".
+**Extended by** documentation-role-completion · contract.md § Amendment A-PR5, § Behavior
+Guarantees RC-9, RC-10, RC-11: the hand-off's completion now additionally requires the
+archive to be verified, not just performed; PR-5's trigger, its `REJECTED` refusal, and
+its non-gated character are unchanged.
 
 #### Scenario: A human approves the auditor's verdict
 - **WHEN** a human approves the auditor's `APPROVED` or
   `APPROVED WITH RESERVATIONS` verdict
 - **THEN** `sdd-documentation` runs automatically, updates `README.md`,
-  `CHANGELOG.md`, and `ARCHITECTURE.md`/`AGENTS.md`, and stamps
-  `Shipped: <date>` on `intent.md`
+  `CHANGELOG.md`, and `ARCHITECTURE.md`/`AGENTS.md`, stamps
+  `Shipped: <date>` on `intent.md`, hands off to `harny-sync` archive mode →
+  `harny-adr` → `harny-sync` again, and reports completion only after the
+  spec-state family confirms its own feature is no longer shipped-but-unarchived
 
 ### Requirement: PR-6 — Conductor enforces exactly three human gates
 
@@ -158,6 +177,37 @@ The system SHALL give `harny-document` a second, explicitly-scoped invocation pa
 - **WHEN** an approved `audit.md` exists for a named feature
 - **THEN** bootstrap mode is not reached — the normal post-audit hand-off (`PR-5`) applies instead
 
+### Requirement: PR-11 — Conductor verifies the archive before declaring the pipeline complete
+
+The system SHALL have the conductor (both `templates/conductor/sdd-conductor.md` and,
+where present, a live per-tool copy) confirm that `sdd-documentation`'s archive
+hand-off actually landed — by running the readiness runner's spec-state family itself
+— before declaring the pipeline complete for a feature, rather than accepting the
+role's own report that it did. This is an application of the conductor's existing
+"Verify, don't trust" mechanic and its "a role should not be trusted to certify its
+own gate" principle. Where a live, per-tool conductor copy exists on disk (e.g. this
+repo's own untracked `.claude/skills/sdd-conductor/SKILL.md`), a presence-gated parity
+test asserts it names the `sdd-documentation` stage, carries the matching post-audit
+hard rule, lists `auditor → documentation` in its automatic-flow list, and carries
+this same archive-verification duty — skipping (never failing) when that file is
+absent, since it is untracked and therefore absent on a fresh clone and in CI.
+
+**Source:** documentation-role-completion · contract.md § Behavior Guarantees RC-14, RC-15, RC-16; intent.md SC6, SC7, SC8
+
+#### Scenario: The documentation role reports completion
+- **WHEN** `sdd-documentation` reports its completion
+- **THEN** the conductor runs the spec-state check itself before declaring the
+  pipeline done for that feature, rather than trusting the role's report
+
+#### Scenario: A live, per-tool conductor copy is present but has drifted
+- **WHEN** a live conductor copy on disk is missing the documentation stage, the
+  matching hard rule, the automatic-flow entry, or the archive-verification duty
+- **THEN** the presence-gated parity test fails, naming the missing element
+
+#### Scenario: No live conductor copy exists on disk
+- **WHEN** the live, per-tool conductor file does not exist (e.g. a fresh clone or CI)
+- **THEN** the parity test skips, observably, and the suite still passes
+
 ## Invariants
 
 1. `cost_tier` and `capabilities` stay abstract vocabulary — a per-tool generator maps them to that tool's real model ids and permission names; no canonical role file may hardcode a tool-specific value as its only source of truth (breaking this reopens `canonical-role-templates` AL-9's regression class).
@@ -170,6 +220,10 @@ The system SHALL give `harny-document` a second, explicitly-scoped invocation pa
 |---|---|---|---|
 | AL-7 | Scoped write access (e.g. the auditor's `write-files (audit.md only)`) is expressed as a free-text parenthetical inside an otherwise pure capability token list, rather than a structured field a strict parser could rely on | LOW | canonical-role-templates · audit.md AL-7 |
 | ask-human-token | The `capabilities` vocabulary has no token backing the conductor's most important behavior — pausing for a human at the three gates — while `docs-lookup` does have a token for its own concern | LOW | canonical-role-templates · audit.md Final Verdict "Recommendations" |
+| RC-R1 | **The residual tail-drop risk is not closed.** `PR-11`'s check's judgment is deterministic, but its invocation is still an agent instruction; an agent that drops the archive hand-off can equally drop the verification step immediately after it. The unchanged backstop is `harny-doctor`'s next session-start/pre-spec-work run. This feature does not guarantee the archive always happens — it guarantees that when the check is run, the answer is computed rather than asserted. Deliberate, not accidental. | MEDIUM (design, deliberate) | documentation-role-completion · contract.md RC-13; audit.md RC-R1 |
+| RC-R4 | **The live, per-tool conductor copy remains untracked.** `PR-11`'s parity guard detects drift only where that file exists on a given machine; its own repair during this feature's ship is covered by no commit, since `.claude/skills/sdd-conductor/` is gitignored. | LOW (design, deliberate) | documentation-role-completion · audit.md RC-R4, AL-8 |
+| RC-AL2 | The acceptance-substring tests pinning `PR-5`'s completion-precondition text (e.g. `['only after', 'spec-state']`) are looser than the guarantee itself — a future prose edit could satisfy the pins while losing the intent. Verified to hold today only by independent auditor re-derivation in context. | LOW | documentation-role-completion · audit.md AL-2 |
+| RC-AL3 | The per-generator propagation test for `PR-5`'s completion-precondition text pins a single anchor substring rather than the full element list, weaker than the "verbatim" guarantee it stands for. Verified to hold today only by independent auditor re-derivation across all five scaffolded artifacts. | LOW | documentation-role-completion · audit.md AL-3 |
 
 ## Contributing features
 
@@ -180,12 +234,13 @@ The system SHALL give `harny-document` a second, explicitly-scoped invocation pa
 | templates-skill-library-parity | 2026-09-13 | Decision to keep `templates/roles/sdd-*.md` as full-body role files (not thinned) in the portable layer; reconciliation of the live pipeline and `templates/` on archive lifecycle for scaffolded repos |
 | ai-sdlc-readiness | 2026-09-15 | PR-10: `harny-document`'s bounded bootstrap mode — a second invocation path for a repo with no harny spec history, mutually unreachable from the post-audit path, output always marked draft |
 | dogfood-quick-fixes | 2026-09-22 | Added § Hard-rule inventory: `sdd-documentation` is the only role in the five-role set that carries an explicit hard rule forbidding `git commit` and `git push` (the other four deliberately do not carry this rule). This rule is stated in `templates/roles/sdd-documentation.md` § "Step 5: Hard Rules" and is wired into the canonical role body so it reaches all five tools' generated artifacts. |
+| documentation-role-completion | 2026-09-23 | Amended PR-2 (`cheapest` → `mid` for `sdd-documentation`; other four roles unchanged; `cheapest` unoccupied, not removed) and PR-5 (archive verification now a completion precondition, not just a duty). Added PR-11 (conductor verifies the archive itself before declaring the pipeline complete, plus a presence-gated parity guard for the live per-tool conductor copy). Restored role-template↔skill parity for the hand-off tail (the role template previously named `harny-adr` zero times). Renumbered the role template's steps: hard rules are now Step 7 and the change summary is Step 8 (was Step 5/6). |
 
 ## Hard-rule inventory
 
 | Rule | Role | Scope |
 |---|---|---|
-| Never commit or push | `sdd-documentation` | Forbids `git commit`, `git push`, and `--no-verify` flags. Directs the role to leave changes in the working tree and report them in the role's Step 6 summary. Carves out `git mv` (permitted during archive moves). |
+| Never commit or push | `sdd-documentation` | Forbids `git commit`, `git push`, and `--no-verify` flags. Directs the role to leave changes in the working tree and report them in the role's Step 8 change summary. Carves out `git mv` (permitted during archive moves). |
 
 ## Related ADRs
 
@@ -193,3 +248,5 @@ The system SHALL give `harny-document` a second, explicitly-scoped invocation pa
 |---|---|---|
 | 0006 | Coding standards — single source of truth in AGENTS.md | Accepted |
 | 0013 | Template roles remain full-body, not thinned; no thin pointer layer in `templates/` | Accepted |
+| 0036 | Raise `sdd-documentation` to `mid`; leave `cheapest` unoccupied rather than reassigning another role to it | Accepted |
+| 0037 | Guard the untracked live conductor with a presence-gated parity test rather than tracking the file or leaving it unguarded | Accepted |

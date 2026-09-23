@@ -193,7 +193,22 @@ npx harny doctor /path/to/target-repo --stack python
 
 # Equivalent direct invocation (what CI or a hook would run):
 node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
+
+# Direct invocation only: scope to a single check family, cheaply
+node /path/to/target-repo/.sdd/doctor/run-doctor.mjs --only spec-state
 ```
+
+The direct runner invocation also accepts an optional `--only <family>` selector —
+one of `environment`, `harness`, `repo-readiness`, `spec-state`, or `tests` — that
+evaluates that single family alone instead of all five, and spawns no command from
+the `tests` family unless `tests` itself is the selected family. An unrecognized
+value or a value-less `--only` is a usage error (exit `1`), never a silently-empty,
+falsely-ready run. This is what makes it cheap enough for the `sdd-documentation`
+role and the conductor to run `--only spec-state` as a precondition on reporting an
+archive hand-off complete, without paying for a full test-suite run every time. Its
+absence reproduces today's five-family output byte for byte. `--only` is **not**
+available on the `npx harny doctor` CLI verb, which always evaluates all five
+families with no selector — `src/doctor.ts` is unchanged.
 
 It evaluates five check families in this fixed order:
 

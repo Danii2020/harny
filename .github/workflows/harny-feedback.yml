@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       # <!-- harny:begin generated project configuration -->
       - name: "Install dependencies (TypeScript / Node)"
         run: "if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install --no-audit --no-fund; else echo 'harny-feedback: no package.json in this checkout; skipping dependency install'; fi"

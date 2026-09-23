@@ -68,6 +68,21 @@
  * feedback/doctor blocks above, since `mcpConfig` is a fixed per-generator
  * fact independent of which templates root is loaded.
  *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: contract.md "Public API — src/init.ts (MODIFIED)" (step 11 resolving
+ * `resolveInstallLocation` and forwarding `placement` to both builders);
+ * Behavior Guarantees CW-9, WR-7, WR-8; intent.md SC10; audit.md Test Coverage
+ * T22, T23.
+ *
+ * `runInit` does not call `resolveInstallLocation` at all yet at red time, so
+ * every describe block below is expected to fail: no placement warning is ever
+ * emitted (`src/repo.js` is not even imported by `src/init.ts` yet), and
+ * `result.planned`/`.written` never carry a `../`-prefixed display path for a
+ * repo-rooted file — every generated file still resolves against `targetDir`
+ * only, which is today's behavior for every file, not a wrong assumption
+ * about the plan's shape.
+ *
  * Spec: specs/dogfood-quick-fixes (item 1, G1)
  * Covers: contract.md MO-3; intent.md SC3; roadmap.md Phase 1 step 3;
  * tasks.md Task 1.4.
@@ -90,6 +105,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fixtureTemplatesRoot, REAL_TEMPLATES_ROOT } from './helpers/paths.js';
+import { assertNoRepoAbove, makeGitRepoDir } from './helpers/git.js';
 
 // Only used by the T5.18a interactive-path block below; every other test in
 // this file drives runInit with interactive: false, so it never touches
@@ -1198,5 +1214,111 @@ describe('runInit — Context7 MCP wiring: --dry-run writes nothing but lists th
       expect(result.planned, `${relativePath} missing from the dry-run plan`).toContain(relativePath);
       await expect(fs.access(path.join(targetDir, relativePath))).rejects.toThrow();
     }
+  });
+});
+
+describe('runInit — ci-workflow-root placement warnings (CW-9) (T22)', () => {
+  it('a subdirectory install warns exactly once, naming the resolved repository root and the workflow\'s destination', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { ciWorkflowPathFor } = await import('../src/repo.js');
+    const repoDir = await makeGitRepoDir();
+    tempDirs.push(repoDir);
+    const targetDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const { io, warnings } = collectingIO();
+    await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    const workflowRelPath = ciWorkflowPathFor('apps/web');
+    const placementWarnings = warnings.filter((w) => w.includes(repoDir) || w.includes(workflowRelPath));
+    expect(placementWarnings).toHaveLength(1);
+  });
+
+  it('a root install inside a repository emits no placement warning at all', async () => {
+    const { runInit } = await import('../src/init.js');
+    const repoDir = await makeGitRepoDir();
+    tempDirs.push(repoDir);
+
+    const { io, warnings } = collectingIO();
+    await runInit({
+      targetDir: repoDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    const gitRelatedWarnings = warnings.filter((w) => /git|repository root/i.test(w));
+    expect(gitRelatedWarnings).toEqual([]);
+  });
+
+  it('an install with no repository above it warns exactly once, and writes the workflow inside the install directory (SC3)', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const targetDir = await makeTempDir();
+    await assertNoRepoAbove(targetDir);
+
+    const { io, warnings } = collectingIO();
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    const notInRepoWarnings = warnings.filter((w) => /not.*(inside|in a).*(git )?repository/i.test(w));
+    expect(notInRepoWarnings).toHaveLength(1);
+
+    // Exactly today's location — unprefixed, no climb above targetDir.
+    expect(result.planned).toContain(CI_WORKFLOW_PATH);
+  });
+});
+
+describe('runInit — --dry-run for a subdirectory install lists the "../"-prefixed workflow path (WR-7, WR-8, SC10) (T23)', () => {
+  it('writes nothing at either root and lists the repo-rooted workflow using a "../"-prefixed display path', async () => {
+    const { runInit } = await import('../src/init.js');
+    const { ciWorkflowPathFor } = await import('../src/repo.js');
+    const repoDir = await makeGitRepoDir();
+    tempDirs.push(repoDir);
+    const targetDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const { io, logs } = collectingIO();
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    expect(result.dryRun).toBe(true);
+    expect(result.written).toEqual([]);
+
+    const workflowRelPath = ciWorkflowPathFor('apps/web');
+    const expectedDisplayPath = `../../${workflowRelPath}`;
+
+    expect(result.planned).toContain(expectedDisplayPath);
+    expect(result.planned).not.toContain(workflowRelPath);
+    expect(logs.join('\n')).toContain(expectedDisplayPath);
+
+    // Nothing written anywhere: neither inside targetDir nor at the repo root.
+    await expect(fs.access(path.join(targetDir, '.github'))).rejects.toThrow();
+    await expect(fs.access(path.join(repoDir, '.github'))).rejects.toThrow();
   });
 });

@@ -72,39 +72,40 @@ outside the enabled set is a `USAGE` error non-interactively, or an
 ### Requirement: CLI-4 — Determinism, containment, and trailing newline
 
 The system SHALL ensure two runs with the same config, templates, and
-pre-existing contents at the merge-owned paths produce byte-identical output
+pre-existing contents at the merge-owned paths and the same install-directory position within the same repository produce byte-identical output
 (stable ordering, no timestamps, no randomness); every generated path is
-relative and resolves inside `targetDir`; every generated artifact ends in
+relative and resolves inside the root it declares — the install directory by default, or the enclosing repository root for the single artifact that declares it; every generated artifact ends in
 exactly one `\n`.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantees 15, 16, 19; context7-mcp · contract.md Amendment CLI-4
+**Source:** cli-skeleton · contract.md Behavior Guarantees 15, 16, 19; context7-mcp · contract.md Amendment CLI-4; ci-workflow-root · contract.md Amendment CLI-4
 
-#### Scenario: `runInit` is run twice with identical config, templates, and merge-path contents
-- **WHEN** `runInit` is run twice with identical config, templates, and
-  pre-existing contents at the merge-owned MCP config paths
+#### Scenario: `runInit` is run twice with identical config, templates, install position, and merge-path contents
+- **WHEN** `runInit` is run twice with identical config, templates, pre-existing contents at the merge-owned MCP config paths, and the same install-directory position within the same repository
 - **THEN** the two output trees are byte-identical, every path is relative
-  and resolves inside `targetDir`, and every artifact ends in exactly one
+  and resolves inside its declared root, and every artifact ends in exactly one
   `\n`
 
 ### Requirement: CLI-5 — Conflict detection before any write, with merge-path exemption
 
-The system SHALL write nothing when any planned path already exists, unless
+The system SHALL write nothing when any planned path already exists at its resolved root, unless
 `--force`; `--dry-run` writes nothing at all; conflict detection completes
 before the first write; **paths explicitly marked as merge-owned (co-owned
 with the user and other tools) never enter the conflict set**, so a
-pre-existing MCP config file never blocks the entire `init` run.
+pre-existing MCP config file never blocks the entire `init` run; a pre-existing file at the repository root blocks the run exactly as one inside the install directory does.
 
-**Source:** cli-skeleton · contract.md Behavior Guarantees 13, 14; context7-mcp · contract.md Amendment CLI-5
+**Source:** cli-skeleton · contract.md Behavior Guarantees 13, 14; context7-mcp · contract.md Amendment CLI-5; ci-workflow-root · contract.md Amendment CLI-5
 
 #### Scenario: A planned write path already exists without `--force`
-- **WHEN** a planned write path already exists and `--force` is not set
-- **THEN** nothing is written, and conflict detection completes before any
+- **WHEN** a planned write path already exists at its resolved root and `--force` is not set
+- **THEN** nothing is written at either root, and conflict detection completes before any
   write is attempted
 - **WHEN** a merge-marked path already exists (e.g. an MCP config file)
 - **THEN** it is never added to the conflict set, so its presence does not
   block the run
+- **WHEN** a file at the repository root (e.g., a CI workflow from a previous install) already exists
+- **THEN** it enters the conflict set and blocks the run exactly as a file inside the install directory does
 - **WHEN** `--dry-run` is set
-- **THEN** nothing is written regardless of conflicts
+- **THEN** nothing is written at either root regardless of conflicts
 
 ### Requirement: CLI-6 — Conductor artifact always emitted
 
@@ -194,6 +195,7 @@ of `import type` erasure.
 1. No code path in `src/` writes to, renames, or deletes anything under `templates/` or `.claude/` (`templates/` is a read-only canonical source).
 2. Only `bin/harness.js` sets `process.exitCode`; every function in `src/` returns an `ExitCode` rather than calling `process.exit`.
 3. Adding a runtime or dev dependency requires an explicit line in that feature's `contract.md`; today's set (`commander@15.0.0`, `@clack/prompts@1.7.0` runtime; `typescript@7.0.2`, `vitest@4.1.10`, `@types/node@26.1.2` dev) is exhaustive.
+4. A new module `src/repo.ts` sits between `engine.ts` and `feedback.ts` in the downward import order; nothing imports it back (CLI-11 invariant preserved).
 
 ## Open reservations
 
@@ -209,6 +211,7 @@ of `import type` erasure.
 | cli-skeleton | 2026-07-30 | The entire CLI: `src/{cli,config,prompts,init,writer,errors,engine,templates,vocabulary}.ts`, the `Generator` interface, the Claude Code generator, packaging |
 | context7-mcp | 2026-09-15 | CLI-1/CLI-4/CLI-5/CLI-10: default Context7 MCP server wiring via merge-write to each tool's native config; exempts merge-marked paths from conflict detection; adds `templates/mcp/README.md` to packaged count |
 | dogfood-quick-fixes | 2026-09-22 | CLI-4/CLI-5/CLI-10: Context7 endpoint value changed from `/mcp` to `/mcp/oauth` in the generated MCP server entries. Determinism and merge-marked path invariants hold at the new value. Packaged template count remains thirty-one. |
+| ci-workflow-root | 2026-09-23 | CLI-1/CLI-4/CLI-5: added `src/repo.ts` for git-root detection (CLI-1 step 11 also resolves install location), widened CLI-4's determinism input set, expanded CLI-5 to cover repository-root conflicts. ADRs 0031, 0033 record the declared write-root and repository-detection strategy decisions. |
 
 ## Related ADRs
 

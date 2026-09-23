@@ -13,9 +13,10 @@ import process from 'node:process';
 import { EXIT, HarnessError } from './errors.js';
 import { validateConfig } from './config.js';
 import type { HarnessConfig } from './config.js';
-import { HARNESS_CONFIG_PATH, SHARED_PROBES_PATH, SPEC_SCHEMA_DIR, skillRootsFor } from './engine.js';
-import type { HarnessPayload } from './engine.js';
-import { CI_WORKFLOW_PATH, FEEDBACK_RUNNER_PATH, resolveStackProfile } from './feedback.js';
+import { HARNESS_CONFIG_PATH, ROOT_PLACEMENT, SHARED_PROBES_PATH, SPEC_SCHEMA_DIR, skillRootsFor } from './engine.js';
+import type { CiPlacement, HarnessPayload } from './engine.js';
+import { ciWorkflowPathFromInstallDir, resolveInstallLocation } from './repo.js';
+import { FEEDBACK_RUNNER_PATH, resolveStackProfile } from './feedback.js';
 import type { ReadinessCommand, ToolProbe } from './feedback.js';
 import { SPEC_SCHEMA_NAMES } from './templates.js';
 import { CORE_SKILL_IDS } from './vocabulary.js';
@@ -162,10 +163,15 @@ export function buildRepoReadinessChecks(generators: readonly Generator[]): read
   return entries;
 }
 
-/** Pure: same config + same resolved generators ⇒ byte-identical result (CLI-4). */
+/** Pure: same config + same resolved generators ⇒ byte-identical result (CLI-4).
+ *
+ *  **(MODIFIED — ci-workflow-root.)** Gains a third parameter, defaulted, so the
+ *  `ci-workflow` entry can name the workflow's real location. Every other check
+ *  in every family is unchanged and untouched by `placement`. */
 export function buildDoctorChecks(
   config: HarnessConfig,
   generators: readonly Generator[],
+  placement: CiPlacement = ROOT_PLACEMENT,
 ): DoctorChecksFile {
   const require: DoctorCheck[] = [];
 
@@ -202,11 +208,12 @@ export function buildDoctorChecks(
     requires: HARNESS_GATE,
   });
 
+  const ciWorkflowCheckPath = ciWorkflowPathFromInstallDir(placement.prefix);
   require.push({
     id: 'ci-workflow',
-    description: `${CI_WORKFLOW_PATH} is scaffolded`,
-    anyOf: [CI_WORKFLOW_PATH],
-    remediation: `run npx harny init and commit ${CI_WORKFLOW_PATH}`,
+    description: `${ciWorkflowCheckPath} is scaffolded`,
+    anyOf: [ciWorkflowCheckPath],
+    remediation: `run npx harny init and commit ${ciWorkflowCheckPath}`,
     requires: HARNESS_GATE,
   });
 
@@ -266,12 +273,13 @@ export function buildDoctorChecks(
 export function buildDoctorFiles(
   payload: HarnessPayload,
   generators: readonly Generator[],
+  placement: CiPlacement = ROOT_PLACEMENT,
 ): readonly GeneratedFile[] {
   if (!payload.doctorRunner) {
     return [];
   }
 
-  const checks = buildDoctorChecks(payload.config, generators);
+  const checks = buildDoctorChecks(payload.config, generators, placement);
 
   return [
     { path: DOCTOR_RUNNER_PATH, contents: payload.doctorRunner.contents },
@@ -384,7 +392,10 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
     ? { ...persistedConfig, stack: options.stack ?? persistedConfig.stack }
     : fallbackConfig(options.stack);
 
-  const checks = buildDoctorChecks(config, generators);
+  // (NEW — ci-workflow-root, DR-3.) Re-derive placement so the verb and the
+  // generated checks.json agree on the ci-workflow entry's location (RD-7).
+  const location = await resolveInstallLocation(targetDir);
+  const checks = buildDoctorChecks(config, generators, { prefix: location.prefix });
   const checksJson = JSON.stringify(checks);
 
   const result = spawnSync(process.execPath, [runnerAbsolutePath, '--checks', checksJson], {

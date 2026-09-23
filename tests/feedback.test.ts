@@ -87,6 +87,22 @@
  * `tsconfig.json` does not type-check `tests/`, so it is not, and cannot be,
  * asserted by a test in this file (per `high-value-tests`, a compiler-enforced
  * invariant is not re-verified at runtime by a change-detector).
+ *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: contract.md Behavior Guarantee WR-5 ("Exactly one site in src/ may
+ * write above the install directory... asserted by a test by grep, in the same
+ * style as agent-feedback-controls BG-7's command-literal gate"); intent.md
+ * SC6; audit.md Test Coverage T30. A single, global structural guard (per
+ * `high-value-tests`'s allowance), modeled directly on the BG-7 gate above.
+ *
+ * `root: 'repo'` does not appear anywhere in `src/` yet at red time (neither
+ * `src/generators/types.ts`'s `root?: 'repo'` type declaration — which this
+ * gate's regex deliberately does not match, since a `?:` narrowing is not an
+ * assignment — nor `src/engine.ts`'s workflow entry, which does not exist
+ * yet), so the new test below is expected to fail: it finds zero occurrences
+ * where it expects exactly one, not a wrong assumption about which file
+ * should carry it.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -519,5 +535,30 @@ describe('leak gate — no readiness command id reaches a generated hook config 
     for (const id of readinessIds) {
       expect(combined, `readiness command id "${id}" leaked into generated hook/CI output`).not.toContain(id);
     }
+  });
+});
+
+describe('ci-workflow-root — exactly one root: \'repo\' assignment across src/ (WR-5, SC6) (T30)', () => {
+  it('finds exactly one occurrence of the assignment `root: \'repo\'` in all of src/, and it is in src/engine.ts', async () => {
+    // Deliberately matches an ASSIGNMENT (`root: 'repo'`), not the `root?: 'repo'`
+    // type narrowing on `GeneratedFile` (a `?` before the colon) and not a
+    // comparison (`file.root === 'repo'`, which uses `===`, never a bare `:`).
+    const ROOT_REPO_ASSIGNMENT = /\broot:\s*'repo'/g;
+    const srcRoot = path.join(REPO_ROOT, 'src');
+    const files = (await collectFiles(srcRoot)).filter((f) => f.endsWith('.ts'));
+
+    const hits: Array<{ file: string; count: number }> = [];
+    for (const file of files) {
+      const contents = await fs.readFile(file, 'utf8');
+      const matches = contents.match(ROOT_REPO_ASSIGNMENT);
+      if (matches && matches.length > 0) {
+        hits.push({ file: path.relative(REPO_ROOT, file), count: matches.length });
+      }
+    }
+
+    const totalCount = hits.reduce((sum, h) => sum + h.count, 0);
+    expect(totalCount, `expected exactly one root: 'repo' assignment in src/, found: ${JSON.stringify(hits)}`).toBe(1);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].file).toBe('src/engine.ts');
   });
 });

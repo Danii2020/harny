@@ -82,13 +82,13 @@ The system SHALL guarantee the readiness check never writes, never mutates the t
 
 ### Requirement: RD-7 — Verb and direct invocation agreement
 
-The system SHALL ensure `npx harny doctor` and `node <path>/.sdd/doctor/run-doctor.mjs` evaluate the same checks and report the same ready/not-ready for the same repo state, sharing one `buildDoctorChecks` implementation.
+The system SHALL ensure `npx harny doctor` and `node <path>/.sdd/doctor/run-doctor.mjs` evaluate the same checks and report the same ready/not-ready for the same repo state, sharing one `buildDoctorChecks` implementation. The verb re-derives the install location before building checks, which is what keeps the agreement true for a subdirectory install (ci-workflow-root feature).
 
-**Source:** readiness-doctor · intent.md § G8, contract.md § BG-7
+**Source:** readiness-doctor · intent.md § G8, contract.md § BG-7; ci-workflow-root · contract.md Amendment RD-7
 
 #### Scenario: verb and direct invocation agree
-- **WHEN** running `npx harny doctor` and the direct runner invocation against the same repo
-- **THEN** both evaluate identical checks and exit with the same code
+- **WHEN** running `npx harny doctor` and the direct runner invocation against the same repo (root install or subdirectory install)
+- **THEN** both evaluate identical checks (including the correctly-placed `ci-workflow` check) and exit with the same code
 
 ### Requirement: RD-8 — Two priority tiers, a `warn` outcome, and a must-have gap is a red run
 
@@ -161,6 +161,7 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 | RD-R7 | `harny-document`'s bootstrap-mode `SKILL.md` prose is contracted (AR-19) and present, but its test assertion (`tests/skills-fidelity.test.ts`) is weak: 4 of the 5 required substrings (`draft`, `CHANGELOG.md`, `harny-sync`, `harny-adr`) already occurred in the pre-existing post-audit section before this feature, so the assertion would still pass even if every bootstrap refusal clause were deleted. | MEDIUM | ai-sdlc-readiness · audit.md F4 |
 | RD-R8 | AR-16/RD-7 ("verb and direct invocation agree") now holds only up to `DOCTOR_RUNNER_MAX_BUFFER` (64 MiB); above that the verb abstains with a diagnosable `HarnessError('USAGE')` rather than reaching a ready/not-ready conclusion. This bound is real and deliberate (see RD-8/RD-9 gate design) but is not yet stated in `contract.md`. | LOW | ai-sdlc-readiness · audit.md F12 |
 | RD-R9 | `'CLAUDE.md'` is a literal in both `src/doctor.ts` (inside the deliberately-untouched `conventions-doc` entry) and `src/generators/claude-code.ts` (its `guidancePath` declaration) — an accepted, contracted exception to the "derive every per-tool fact, never re-literal it" rule, since moving or removing `conventions-doc`'s literal was explicitly out of scope (see RD-1's amendment note). | LOW | ai-sdlc-readiness · audit.md F5 |
+| RD-R10 | A generated `checks.json`'s `ci-workflow` entry records an install-relative path that goes stale if the install directory is moved to a different depth; `npx harny doctor` re-derives and is never stale; remediation is to re-run `npx harny init`. The relative path is data produced during init, and persisting it would create a second source of truth that can diverge from the filesystem. | LOW | ci-workflow-root · contract.md § Behavior Guarantees (DR-5) |
 
 ## Contributing features
 
@@ -168,6 +169,7 @@ The system SHALL have `harny-doctor` report the specific document and the specif
 |---|---|---|
 | readiness-doctor | 2026-09-14 | RD-1–RD-7: four-family readiness check, probe-skip determinism, spec-state coherence detection, verb + direct invocation agreement, no mutations, distinct not-ready exit code. |
 | ai-sdlc-readiness | 2026-09-15 | RD-8–RD-11: fifth `repo readiness` family (README must-have; architecture + per-tool agent-guidance recommended); two-tier model and `warn` outcome; presence-vs-coherence layering (runner checks presence only, `harny-doctor` judges coherence); ask-before-delegating hand-off to `harny-document`'s new bootstrap mode. Amended RD-1/I3 (four families → five) and I2 (ready/not-ready now admits `warn`). |
+| ci-workflow-root | 2026-09-23 | Amended RD-7: the verb re-derives install location before building checks, which keeps agreement true for subdirectory installs. Added RD-R10: generated `checks.json`'s `ci-workflow` entry records install-relative path that goes stale after a directory move; verb is never stale. |
 
 ## Related ADRs
 

@@ -806,6 +806,12 @@ module, no new template file:
   is ignored"; it is corrected to describe the runner invocation, the install step, and
   the red-on-exit-2 rule (BG-19). The canonical structure outside the markers otherwise
   stays as shipped, including `actions/checkout@v4`.
+
+  > **Text correction (2026-09-22, `ci-workflow-root`).** The pin named above,
+  > `actions/checkout@v4`, moved to `actions/checkout@v5` on 2026-09-22
+  > (`dogfood-quick-fixes`). The sentence above predates that move and is left
+  > byte-unchanged; this note records that it now describes a superseded pin. This is a
+  > text correction only: no guarantee, no behavior, and no audit finding changes.
 - **`.agents/skills/harny-audit/SKILL.md` (+ its `templates/skills/` twin, BG-16)** —
   the CI half of its verification step gains BG-17's A1 clause: read the run log's
   `N of M command(s) ran` summary, not only the check's conclusion.

@@ -51,6 +51,25 @@
  * silently inverting a correctly-run red result into an apparently broken runner.
  * Covers the fix: a generous `maxBuffer` plus explicit `result.error` handling that
  * throws `HarnessError('USAGE')`, never the generic fallthrough `Error`.
+ *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: contract.md "Public API — src/doctor.ts (MODIFIED)" (`buildDoctorChecks`
+ * and `buildDoctorFiles`'s defaulted `placement` parameter, the `ci-workflow`
+ * entry's placement-derived `anyOf`/`description`/`remediation`); Behavior
+ * Guarantees DR-1, DR-2, DR-3; intent.md SC11, SC12; audit.md Test Coverage
+ * T20, T21.
+ *
+ * `buildDoctorChecks` does not accept a third `placement` argument yet at red
+ * time, so every test below that imports `src/repo.js` for its expected value
+ * (`ciWorkflowPathFromInstallDir`) is expected to fail on module resolution.
+ * The root-placement byte-identity test, the `buildDoctorFiles`-forwards test,
+ * and the "every other family is unaffected" test are declared exceptions,
+ * following this file's own established convention for such cases: with the
+ * third argument currently ignored, calling with or without a placement
+ * produces identical output today, so these three pass already at red time
+ * and become live regression guards once `placement` actually varies the
+ * `ci-workflow` entry.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -630,5 +649,78 @@ describe('buildDoctorChecks — the new family travels alongside the untouched r
     const second = buildRepoReadinessChecks(generators);
 
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+});
+
+describe('ci-workflow-root — buildDoctorChecks\' ci-workflow entry follows placement (DR-1, DR-2) (T20)', () => {
+  it('root placement (no placement argument, and an explicit { prefix: "" }) is byte-identical to today\'s entry', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+    const config = fakeConfig({ stack: 'typescript' });
+
+    const withoutPlacement = buildDoctorChecks(config as any, generators);
+    const withRootPlacement = buildDoctorChecks(config as any, generators, { prefix: '' } as any);
+
+    const entryWithout = withoutPlacement.require.find((c) => c.id === 'ci-workflow');
+    const entryWithRoot = withRootPlacement.require.find((c) => c.id === 'ci-workflow');
+
+    expect(entryWithout).toBeDefined();
+    expect(entryWithRoot).toEqual(entryWithout);
+    expect(entryWithout?.anyOf).toEqual([CI_WORKFLOW_PATH]);
+  });
+
+  it('a subdirectory placement names the install-relative workflow path in anyOf, description, and remediation', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const { ciWorkflowPathFromInstallDir } = await import('../src/repo.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+
+    const checks = buildDoctorChecks(fakeConfig({ stack: 'typescript' }) as any, generators, {
+      prefix: 'apps/web',
+    } as any);
+    const entry = checks.require.find((c) => c.id === 'ci-workflow')!;
+    const expectedPath = ciWorkflowPathFromInstallDir('apps/web');
+
+    expect(expectedPath).not.toBe('.github/workflows/harny-feedback.yml');
+    expect(entry.anyOf).toEqual([expectedPath]);
+    expect(entry.description).toContain(expectedPath);
+    expect(entry.remediation).toContain(expectedPath);
+  });
+
+  it('buildDoctorFiles forwards its placement argument into the checks.json it writes', async () => {
+    const { buildDoctorFiles, buildDoctorChecks, DOCTOR_CHECKS_PATH } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+    const config = fakeConfig({ stack: 'typescript' });
+    const payload = {
+      config,
+      doctorRunner: { name: 'run-doctor.mjs', contents: '#!/usr/bin/env node\nRUNNER\n', sourcePath: 'doctor/run-doctor.mjs' },
+    } as any;
+
+    const files = buildDoctorFiles(payload, generators, { prefix: 'apps/web' } as any);
+    const checksFile = files.find((f) => f.path === DOCTOR_CHECKS_PATH)!;
+    const expectedChecks = buildDoctorChecks(config as any, generators, { prefix: 'apps/web' } as any);
+
+    expect(checksFile.contents).toBe(`${JSON.stringify(expectedChecks, null, 2)}\n`);
+  });
+});
+
+describe('ci-workflow-root — every other check family and entry is unaffected by placement (T21)', () => {
+  it('only the ci-workflow entry differs between a root and a subdirectory placement', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+    const config = fakeConfig({ stack: 'typescript' });
+
+    const root = buildDoctorChecks(config as any, generators);
+    const subdir = buildDoctorChecks(config as any, generators, { prefix: 'apps/web' } as any);
+
+    const rootRequireWithoutCi = root.require.filter((c) => c.id !== 'ci-workflow');
+    const subdirRequireWithoutCi = subdir.require.filter((c) => c.id !== 'ci-workflow');
+    expect(subdirRequireWithoutCi).toEqual(rootRequireWithoutCi);
+
+    expect(subdir.repoReadiness).toEqual(root.repoReadiness);
+    expect(subdir.repoReadinessLabel).toEqual(root.repoReadinessLabel);
+    expect(subdir.commands).toEqual(root.commands);
+    expect(subdir.specs).toEqual(root.specs);
+    expect(subdir.version).toEqual(root.version);
   });
 });

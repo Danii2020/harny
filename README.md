@@ -106,7 +106,23 @@ output from `dist/`. If you make changes to `src/`, re-run `npm run build` befor
 ## Using harny to scaffold a new project
 
 The `npx harny init` CLI scaffolds the SDD pipeline into any target repository,
-interactively or non-interactively:
+interactively or non-interactively. For monorepo installs (a subdirectory rather
+than the repository root), the generated CI workflow is placed at the repository
+root where GitHub Actions reads it, while all other artifacts stay in the install
+directory:
+
+```sh
+# Install at a subdirectory in a monorepo
+npx harny init apps/web --yes --stack typescript
+
+# Result:
+# - `.github/workflows/harny-feedback-apps-web.yml` written to the repository root
+# - `apps/web/.sdd/` and `apps/web/.claude/` written to the install directory
+# - No harny artifacts written into other directories
+# - The CI workflow runs its checks scoped to the `apps/web` component
+```
+
+### Basic usage examples
 
 ```sh
 # Interactive mode — asks five questions: which tool(s), which roles,
@@ -118,6 +134,9 @@ npx harny init /path/to/target-repo --yes
 
 # Non-interactive with per-tool generator selection:
 npx harny init /path/to/target-repo --yes --tools claude-code
+
+# Monorepo: install in a subdirectory, CI workflow auto-placed at the root:
+npx harny init /path/to/repo/apps/web --yes --stack typescript
 
 # Deselect specific roles (generates only the auditor agent):
 npx harny init /path/to/target-repo --yes --roles sdd-auditor

@@ -118,6 +118,36 @@
  * either, so this passes today and simply stays green once the `on:` block
  * gains its push trigger — proving the new trigger lands in the canonical
  * region, never inside the generated markers.
+ *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: contract.md "Public API — src/engine.ts (MODIFIED)" (`CiPlacement`,
+ * `ROOT_PLACEMENT`, `buildFeedbackFiles`'s defaulted `placement` parameter,
+ * `renderCiWorkflow`'s fourth parameter, the private `renameCanonicalWorkflow`,
+ * the workflow entry's `root: 'repo'`); Behavior Guarantees CR-1 through CR-9,
+ * CW-7, CW-8, WR-1, WR-5; intent.md SC2, SC7; audit.md Test Coverage
+ * T13-T19.
+ *
+ * `buildFeedbackFiles` and `renderCiWorkflow` do not accept a `placement`
+ * argument yet at red time, and `src/repo.ts` (the module several tests below
+ * import for `ciWorkflowPathFor`, the fixture-agnostic way to locate the
+ * workflow file regardless of placement) does not exist yet either. Every
+ * subdirectory-placement test below is therefore expected to fail one of two
+ * genuine ways: on module resolution ("Cannot find module '../src/repo.js'")
+ * for the tests that import it, or on a behavioral mismatch for the ones that
+ * don't — the second `placement` argument is silently ignored by the current
+ * one/three-argument functions, so no `working-directory` line is ever
+ * emitted, the `name:` line is never rewritten, and `renameCanonicalWorkflow`
+ * does not exist to throw `HarnessError('TEMPLATE')`. Neither failure reason
+ * reflects a wrong assumption about the rendered YAML shape. The
+ * root-placement golden test (T13) is the declared exception: it is expected
+ * to PASS already at red time, exactly like the BG-7 "single source of
+ * command strings" gate in `tests/feedback.test.ts` documents for itself —
+ * nothing has changed the root-placement rendering path yet, so today's
+ * actual output already equals the golden captured from it, and this test
+ * becomes the live regression guard the moment Phase 2/3 change that path
+ * (roadmap.md's own "byte-identical... proven by a golden test" framing for
+ * this exact case).
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -993,4 +1023,332 @@ describe('CI workflow — python profile end-to-end through the real runner: "."
       }
     },
   );
+});
+
+describe('ci-workflow-root — placement-aware rendering (contract.md § "Rendering and the canonical CI region")', () => {
+  /** Everything between the generated-block markers, exclusive — a module-local
+   *  copy of the sibling describe block's own `generatedBlockOf` above (kept
+   *  local rather than lifted to module scope, per that block's own precedent
+   *  for not lifting a helper as an unrelated refactor). */
+  function generatedBlockOf(contents: string): string {
+    const lines = contents.split('\n');
+    const beginIndex = lines.findIndex((line) => line.includes('harny:begin generated project configuration'));
+    const endIndex = lines.findIndex((line) => line.includes('harny:end generated project configuration'));
+    expect(beginIndex, 'generated-block begin marker not found').toBeGreaterThanOrEqual(0);
+    expect(endIndex, 'generated-block end marker not found').toBeGreaterThan(beginIndex);
+    return lines.slice(beginIndex + 1, endIndex).join('\n');
+  }
+
+  /** Pairs each `- name: …` / `run: …` step with an optional following
+   *  `working-directory: …` line (CR-2's exact three-line shape). */
+  function parseStepsWithWorkingDir(
+    block: string,
+  ): Array<{ name: string; run: string; workingDirectory: string | undefined }> {
+    const steps: Array<{ name: string; run: string; workingDirectory: string | undefined }> = [];
+    const regex = /-\s*name:\s*(.+)\n\s*run:\s*(.+)(?:\n\s*working-directory:\s*(.+))?/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(block))) {
+      steps.push({ name: match[1], run: match[2], workingDirectory: match[3] });
+    }
+    return steps;
+  }
+
+  /** Locates the first line whose non-generated-block content is canonical vs.
+   *  the raw template, per CR-3: everything outside the markers must match
+   *  line-for-line, except the `name:` line for a non-empty prefix. */
+  function outsideMarkerLines(contents: string): { lines: string[]; beginIndex: number; endIndex: number } {
+    const lines = contents.split('\n');
+    const beginIndex = lines.findIndex((line) => line.includes('harny:begin generated project configuration'));
+    const endIndex = lines.findIndex((line) => line.includes('harny:end generated project configuration'));
+    return { lines, beginIndex, endIndex };
+  }
+
+  /** Everything from the first `name:`-onward line to EOF — the "non-header"
+   *  region SC2 compares, tolerating the header-comment revision CR-7 makes. */
+  function nonHeaderRegionOf(contents: string): string {
+    const lines = contents.split('\n');
+    const nameIndex = lines.findIndex((line) => /^name:/.test(line));
+    expect(nameIndex, 'no name: line found').toBeGreaterThanOrEqual(0);
+    return lines.slice(nameIndex).join('\n');
+  }
+
+  describe('root placement is byte-identical to a golden captured before this feature, outside the header (SC2, CR-1) (T13)', () => {
+    it('the non-header region of a root-placement workflow matches the pre-change golden exactly', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      // Deliberately the one-argument call every pre-existing caller uses —
+      // proves the default placement path is untouched, not merely that a
+      // ROOT_PLACEMENT literal happens to also work.
+      const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+
+      const golden = await fs.readFile(
+        path.join(TESTS_DIR, 'fixtures', 'golden', 'ci-workflow-root', 'root-workflow-non-header.yml'),
+        'utf8',
+      );
+      expect(nonHeaderRegionOf(workflow!.contents)).toBe(golden);
+    });
+  });
+
+  describe('a non-empty prefix adds working-directory to every generated step (CR-2) (T14)', () => {
+    it('the typescript profile: both the install step and the runner step carry working-directory', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { yamlQuote } = await import('../src/generators/markdown-yaml.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix: 'apps/web' }).find(
+        (f) => f.path === ciWorkflowPathFor('apps/web'),
+      )!;
+      const steps = parseStepsWithWorkingDir(generatedBlockOf(workflow.contents));
+
+      expect(steps.length).toBeGreaterThan(0);
+      for (const step of steps) {
+        expect(step.workingDirectory, `step "${step.name}" has no working-directory`).toBe(yamlQuote('apps/web'));
+      }
+    });
+
+    it('the python profile (no install step): the sole runner step still carries working-directory', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { yamlQuote } = await import('../src/generators/markdown-yaml.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(feedbackTestConfig({ tools: ['claude-code'], stack: 'python' }) as any, templates);
+      const workflow = buildFeedbackFiles(payload, { prefix: 'services/api' }).find(
+        (f) => f.path === ciWorkflowPathFor('services/api'),
+      )!;
+      const steps = parseStepsWithWorkingDir(generatedBlockOf(workflow.contents));
+
+      expect(steps).toHaveLength(1);
+      expect(steps[0].workingDirectory).toBe(yamlQuote('services/api'));
+    });
+
+    it('an unresolved stack: the notice step still carries working-directory (FC-2 row of the Error Handling Contract)', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { yamlQuote } = await import('../src/generators/markdown-yaml.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'some-unrecognized-stack-xyz' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix: 'apps/web' }).find(
+        (f) => f.path === ciWorkflowPathFor('apps/web'),
+      )!;
+      const steps = parseStepsWithWorkingDir(generatedBlockOf(workflow.contents));
+
+      expect(steps).toHaveLength(1);
+      expect(steps[0].workingDirectory).toBe(yamlQuote('apps/web'));
+    });
+
+    it('the root placement (empty prefix) never emits a working-directory line at all', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix: '' }).find((f) => f.path === CI_WORKFLOW_PATH)!;
+
+      expect(workflow.contents).not.toContain('working-directory');
+    });
+  });
+
+  describe('scoping never prefixes the runner path or any gate file — working-directory is the only mechanism (CR-2, C6) (T15)', () => {
+    it('the runner path, install gate files, and probe gate files stay unprefixed in a subdirectory placement', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { FEEDBACK_RUNNER_PATH } = await import('../src/feedback.js');
+      const { SHARED_PROBES_PATH } = await import('../src/engine.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix: 'apps/web' }).find(
+        (f) => f.path === ciWorkflowPathFor('apps/web'),
+      )!;
+
+      // Present, unprefixed.
+      expect(workflow.contents).toContain(FEEDBACK_RUNNER_PATH);
+      expect(workflow.contents).toContain(SHARED_PROBES_PATH);
+      expect(workflow.contents).toContain('package-lock.json');
+      expect(workflow.contents).toContain('package.json');
+
+      // Never double-prefixed with the component path.
+      expect(workflow.contents).not.toContain(`apps/web/${FEEDBACK_RUNNER_PATH}`);
+      expect(workflow.contents).not.toContain(`apps/web/${SHARED_PROBES_PATH}`);
+      expect(workflow.contents).not.toContain('apps/web/package-lock.json');
+      expect(workflow.contents).not.toContain('apps/web/package.json');
+    });
+  });
+
+  describe('the canonical region is byte-equal to the template in both placements; name: is the sole exception (CR-3, CR-7) (T16)', () => {
+    it.each([
+      ['root placement', ''],
+      ['subdirectory placement', 'apps/web'],
+    ])('%s: every line outside the markers matches the template, except name: for a non-empty prefix', async (_label, prefix) => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const rawTemplate = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, 'ci', 'harny-feedback.yml'), 'utf8');
+      const raw = outsideMarkerLines(rawTemplate);
+      expect(raw.beginIndex).toBeGreaterThanOrEqual(0);
+      expect(raw.endIndex).toBeGreaterThan(raw.beginIndex);
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix }).find((f) => f.path === ciWorkflowPathFor(prefix))!;
+      const rendered = outsideMarkerLines(workflow.contents);
+
+      // Same canonical line count outside the generated block in both placements.
+      const rawOutsideCount = raw.beginIndex + 1 + (raw.lines.length - raw.endIndex);
+      const renderedOutsideCount = rendered.beginIndex + 1 + (rendered.lines.length - rendered.endIndex);
+      expect(renderedOutsideCount).toBe(rawOutsideCount);
+
+      for (let i = 0; i <= raw.beginIndex; i++) {
+        if (/^name:\s/.test(raw.lines[i])) {
+          if (prefix === '') {
+            expect(rendered.lines[i]).toBe(raw.lines[i]);
+          } else {
+            expect(rendered.lines[i]).not.toBe(raw.lines[i]);
+            expect(rendered.lines[i]).toBe(`name: "harny feedback (${prefix})"`);
+          }
+        } else {
+          expect(rendered.lines[i]).toBe(raw.lines[i]);
+        }
+      }
+
+      // After the end marker: always identical, in both placements.
+      expect(rendered.lines.slice(rendered.endIndex)).toEqual(raw.lines.slice(raw.endIndex));
+    });
+  });
+
+  describe('no on:, push, or defaults: ever leaks into the generated block, in either placement (CR-5, CR-6)', () => {
+    it.each([
+      ['root placement', ''],
+      ['subdirectory placement', 'apps/web'],
+    ])('%s: the generated block carries no on:, push, or defaults: token', async (_label, prefix) => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { ciWorkflowPathFor } = await import('../src/repo.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const workflow = buildFeedbackFiles(payload, { prefix }).find((f) => f.path === ciWorkflowPathFor(prefix))!;
+      const block = generatedBlockOf(workflow.contents);
+
+      expect(block).not.toContain('push');
+      expect(block).not.toContain('on:');
+      expect(block).not.toContain('defaults:');
+
+      // CR-5: no defaults: anywhere in the whole file either, not merely inside
+      // the generated block.
+      expect(workflow.contents).not.toContain('defaults:');
+    });
+  });
+
+  describe('renameCanonicalWorkflow — a template with no name: line is a packaging error (CR-8) (T18)', () => {
+    it('throws HarnessError(TEMPLATE) naming the file when the prefix is non-empty and the template has no name: line', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { isHarnessError } = await import('../src/errors.js');
+      const templates = await loadRealTemplates();
+
+      const mutatedContents = templates.ciWorkflowTemplate!.contents.replace(/^name:.*$/m, 'notname: harny feedback');
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        { ...templates, ciWorkflowTemplate: { ...templates.ciWorkflowTemplate!, contents: mutatedContents } },
+      );
+
+      try {
+        buildFeedbackFiles(payload, { prefix: 'apps/web' });
+        expect.unreachable('expected buildFeedbackFiles to throw');
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('TEMPLATE');
+        expect((err as Error).message).toContain('harny-feedback.yml');
+      }
+    });
+
+    it('does NOT throw for a root placement (empty prefix) even when the template has no name: line — the rename never runs', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const templates = await loadRealTemplates();
+
+      const mutatedContents = templates.ciWorkflowTemplate!.contents.replace(/^name:.*$/m, 'notname: harny feedback');
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        { ...templates, ciWorkflowTemplate: { ...templates.ciWorkflowTemplate!, contents: mutatedContents } },
+      );
+
+      expect(() => buildFeedbackFiles(payload, { prefix: '' })).not.toThrow();
+    });
+
+    it('still throws HarnessError(TEMPLATE) for a template missing its generated-block markers, unchanged by this feature', async () => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { isHarnessError } = await import('../src/errors.js');
+      const templates = await loadRealTemplates();
+
+      const mutatedContents = templates.ciWorkflowTemplate!.contents
+        .replace('<!-- harny:begin generated project configuration -->', '')
+        .replace('<!-- harny:end generated project configuration -->', '');
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        { ...templates, ciWorkflowTemplate: { ...templates.ciWorkflowTemplate!, contents: mutatedContents } },
+      );
+
+      try {
+        buildFeedbackFiles(payload);
+        expect.unreachable('expected buildFeedbackFiles to throw');
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('TEMPLATE');
+        expect((err as Error).message).toContain('generated-block markers');
+      }
+    });
+  });
+
+  describe('the workflow entry carries root: "repo" unconditionally, and no other file does (WR-1, WR-5, CW-8) (T19)', () => {
+    it.each([
+      ['root placement', ''],
+      ['subdirectory placement', 'apps/web'],
+    ])('%s: only the workflow file carries root: "repo"', async (_label, prefix) => {
+      const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+      const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+      const templates = await loadRealTemplates();
+
+      const payload = buildPayload(
+        feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+        templates,
+      );
+      const files = buildFeedbackFiles(payload, { prefix });
+
+      const workflow = files.find((f) => f.path === CI_WORKFLOW_PATH || f.path.includes('harny-feedback-'));
+      expect(workflow).toBeDefined();
+      expect((workflow as { root?: string }).root).toBe('repo');
+
+      for (const file of files) {
+        if (file === workflow) continue;
+        expect((file as { root?: string }).root, `${file.path} unexpectedly carries a declared root`).toBeUndefined();
+      }
+    });
+  });
 });

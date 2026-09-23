@@ -22,11 +22,12 @@ import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
-import { applyWrites, planWrites } from './writer.js';
+import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
+import { applyWrites, displayPath, planWrites } from './writer.js';
 import { confirmWrite, runInitPrompts } from './prompts.js';
 import { GATE_IDS } from './vocabulary.js';
 import type { ToolId } from './vocabulary.js';
-import { STACK_PROFILE_IDS } from './feedback.js';
+import { CI_WORKFLOW_PATH, STACK_PROFILE_IDS } from './feedback.js';
 
 export interface InitIO {
   readonly log: (message: string) => void;
@@ -213,6 +214,30 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   //     shared files exactly once, and selected skill files once per unique skill
   //     root among the resolved generators (S3 — a widening of this step, not a
   //     fourteenth step).
+  // (NEW — ci-workflow-root.) Resolve where this install sits inside its
+  // enclosing git repository once, up front, exactly as context7-mcp folded its
+  // own targetDir-reading work into this same step rather than adding a
+  // fourteenth (CW-10, C9). A write above the install directory is never
+  // silent (CW-9): a subdirectory install warns naming the resolved repository
+  // root and the workflow's destination; an install with no repository above it
+  // warns that the workflow was written inside the install directory instead. A
+  // root install inside a repository warns for neither — it is the ordinary
+  // case, not a condition.
+  const location = await resolveInstallLocation(targetDir);
+  if (location.insideRepo && location.prefix !== '') {
+    io.warn(
+      `${targetDir} is a subdirectory of the git repository at ${location.repoRoot}. ` +
+        'GitHub only reads .github/workflows/ at a repository root, so the CI workflow ' +
+        `will be written there as ${ciWorkflowPathFor(location.prefix)} instead of inside this directory.`,
+    );
+  } else if (!location.insideRepo) {
+    io.warn(
+      `${targetDir} is not inside a git repository. The CI workflow was written inside it as ` +
+        `${CI_WORKFLOW_PATH}; GitHub will only read it from there if this directory is itself ` +
+        'the repository root of whatever repository it is later added to.',
+    );
+  }
+
   const files: GeneratedFile[] = [];
   for (const generator of resolvedGenerators) {
     for (const rolePayload of payload.roles) {
@@ -243,7 +268,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
         files.push(hookFile);
       }
     }
-    files.push(...buildFeedbackFiles(payload));
+    files.push(...buildFeedbackFiles(payload, { prefix: location.prefix }));
   }
 
   // (NEW — readiness-doctor.) The readiness runner + generated checks.json,
@@ -251,7 +276,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // never a fourteenth step (CLI-1). Gated on the loaded templates root
   // actually carrying `templates/doctor/run-doctor.mjs`; the real, packaged
   // templates root always does.
-  files.push(...buildDoctorFiles(payload, resolvedGenerators));
+  files.push(...buildDoctorFiles(payload, resolvedGenerators, { prefix: location.prefix }));
   // (NEW — readiness-doctor.) The shared probe module both the feedback runner
   // and the doctor runner import — tool-neutral, written exactly once per run
   // from this single call site, never from `buildFeedbackFiles`/
@@ -271,8 +296,8 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
 
   // 12. Plan writes.
-  const plan = await planWrites(files, targetDir);
-  const planned = plan.files.map((file) => file.path);
+  const plan = await planWrites(files, targetDir, location.repoRoot);
+  const planned = plan.files.map((file) => displayPath(file, targetDir, plan.repoRoot));
 
   // 13. Dry-run stops here; otherwise confirm (if interactive) and write.
   if (options.dryRun) {

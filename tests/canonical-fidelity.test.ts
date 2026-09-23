@@ -45,6 +45,23 @@
  * `isContractedEntry` above already allowlists
  * `templates/roles/sdd-documentation.md` by exact match (XC-4); this feature
  * adds no allowlist entry.
+ *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: contract.md Behavior Guarantee DR-4 ("No runner changes...
+ * `templates/doctor/run-doctor.mjs`, `templates/shared/probes.mjs`, and
+ * `templates/hooks/run-feedback.mjs` are byte-unchanged by this feature");
+ * intent.md SC13; audit.md Test Coverage T31. The golden copies under
+ * `tests/fixtures/golden/ci-workflow-root/` were captured from this
+ * repository's committed `templates/` tree before this feature's own
+ * implementation phase, so this is a real regression guard, not a
+ * self-referential comparison against the very file it protects.
+ *
+ * This describe block is expected to PASS already at red time — nothing has
+ * touched these three files yet — and stays the live regression guard through
+ * every later phase of this feature, the same documented posture the BG-7
+ * gate in `tests/feedback.test.ts` and this file's own T13/T14/T16 blocks
+ * above already use for their "declared regression guard" assertions.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -604,3 +621,20 @@ describe('the "never commit or push" hard rule reaches sdd-documentation only, n
  * `.agents/skills/` / `templates/skills/` divergence fidelity
  * (`tests/skills-fidelity.test.ts`).
  */
+
+describe('ci-workflow-root — the three generated-entry-point runner templates are byte-unchanged by this feature (DR-4) (T31)', () => {
+  const RUNNER_TEMPLATES = [
+    ['templates/doctor/run-doctor.mjs', 'run-doctor.mjs'],
+    ['templates/shared/probes.mjs', 'probes.mjs'],
+    ['templates/hooks/run-feedback.mjs', 'run-feedback.mjs'],
+  ] as const;
+
+  it.each(RUNNER_TEMPLATES)('%s is byte-identical to the golden captured before this feature', async (relativePath, goldenName) => {
+    const live = await fs.readFile(path.join(REPO_ROOT, relativePath), 'utf8');
+    const golden = await fs.readFile(
+      path.join(REPO_ROOT, 'tests', 'fixtures', 'golden', 'ci-workflow-root', goldenName),
+      'utf8',
+    );
+    expect(live).toBe(golden);
+  });
+});

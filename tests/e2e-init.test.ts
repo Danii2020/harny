@@ -74,14 +74,38 @@
  * amendment is consequential test maintenance for a declared `TG-10`/`CLI-10`
  * amendment, not part of context7-mcp's own approved 55-test red phase — see
  * the executor's final report for why it was made here rather than left red.
+ *
+ * ---
+ * Spec: specs/ci-workflow-root
+ * Covers: intent.md SC1, SC3, SC8, SC9, SC11; contract.md Behavior Guarantees
+ * CW-6, CW-7, WR-6, WR-9, DR-1; audit.md Test Coverage T24-T29. These describe
+ * blocks spawn the real, built CLI against a real temporary git repository (a
+ * `.git` directory created by `git init`), the shape every downstream
+ * subdirectory install actually runs in.
+ *
+ * At red time, `dist/cli.js` still writes the CI workflow to
+ * `<installDir>/.github/workflows/harny-feedback.yml` unconditionally (no
+ * git-root discovery exists in `src/` at all yet, per contract.md C3) — every
+ * test below is expected to fail because the workflow never appears at the
+ * repository root, and a file named `harny-feedback.yml` appears inside the
+ * install directory instead, not because of a wrong assumption about the CLI's
+ * exit codes or output shape.
+ *
+ * The final describe block below (`npx harny doctor` and the direct runner
+ * agree...) additionally covers Behavior Guarantee DR-3 and intent.md SC12
+ * (RD-7 preserved for a subdirectory install) beyond `audit.md`'s own
+ * Test Coverage table, which does not enumerate a dedicated id for the
+ * verb-vs-direct-runner agreement specifically — added because both are
+ * mechanically testable and cheap given the fixtures T29 already needed.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { REAL_TEMPLATES_ROOT, REPO_ROOT } from './helpers/paths.js';
+import { assertNoRepoAbove } from './helpers/git.js';
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(REPO_ROOT, 'bin', 'harness.js');
@@ -738,4 +762,202 @@ describe('determinism for the three new tools (Gu 13) (T26)', () => {
       }
     },
   );
+});
+
+/** Runs `node <scriptPath>` and never rejects — a non-zero exit becomes part of
+ *  the resolved value, mirroring `runCli`'s own convention above. Used for the
+ *  direct `run-doctor.mjs` invocation (T29), which legitimately exits 2 on a
+ *  red readiness result. */
+async function runNodeScript(
+  scriptPath: string,
+  cwd: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('node', [scriptPath], { cwd });
+    return { code: 0, stdout, stderr };
+  } catch (err: any) {
+    return { code: typeof err.code === 'number' ? err.code : 1, stdout: err.stdout ?? '', stderr: err.stderr ?? '' };
+  }
+}
+
+describe('ci-workflow-root — a subdirectory install lands the workflow at the repository root (SC1, CW-6) (T24)', () => {
+  it('writes .github/workflows/harny-feedback-apps-web.yml at the repo root and nothing named harny-feedback*.yml under apps/web', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(installDir, { recursive: true });
+
+    const { code } = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(code).toBe(0);
+
+    const rootWorkflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-apps-web.yml');
+    await expect(fs.access(rootWorkflowPath)).resolves.toBeUndefined();
+
+    const installFiles = await listFilesRecursively(installDir);
+    expect(installFiles.some((f) => /harny-feedback.*\.yml$/.test(f))).toBe(false);
+  });
+});
+
+describe('ci-workflow-root — every non-workflow artifact path is unaffected by placement (CW-7) (T25)', () => {
+  it('a subdirectory install\'s file set, minus the workflow, equals a root install\'s file set, minus the workflow', async () => {
+    const rootTarget = await makeTempDir();
+    const rootRun = await runCli(['init', rootTarget, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(rootRun.code).toBe(0);
+    const rootFiles = (await listFilesRecursively(rootTarget)).filter((f) => !/harny-feedback.*\.yml$/.test(f));
+
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(installDir, { recursive: true });
+    const subRun = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(subRun.code).toBe(0);
+    const subFiles = (await listFilesRecursively(installDir)).filter((f) => !/harny-feedback.*\.yml$/.test(f));
+
+    expect(subFiles.length).toBeGreaterThan(0);
+    expect(subFiles.sort()).toEqual(rootFiles.sort());
+  });
+});
+
+describe('ci-workflow-root — two installs at two different subdirectories never collide (SC8) (T26)', () => {
+  it('produces two differently-named workflows at the repo root and leaves the first byte-unchanged', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const webDir = path.join(repoDir, 'apps', 'web');
+    const apiDir = path.join(repoDir, 'services', 'api');
+    await fs.mkdir(webDir, { recursive: true });
+    await fs.mkdir(apiDir, { recursive: true });
+
+    const first = await runCli(['init', webDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(first.code).toBe(0);
+    const webWorkflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-apps-web.yml');
+    const webWorkflowBefore = await fs.readFile(webWorkflowPath, 'utf8');
+
+    const second = await runCli(['init', apiDir, '--yes', '--tools', 'claude-code', '--stack', 'python']);
+    expect(second.code).toBe(0);
+    const apiWorkflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-services-api.yml');
+    await expect(fs.access(apiWorkflowPath)).resolves.toBeUndefined();
+
+    const webWorkflowAfter = await fs.readFile(webWorkflowPath, 'utf8');
+    expect(webWorkflowAfter).toBe(webWorkflowBefore);
+  });
+});
+
+describe('ci-workflow-root — a name collision refuses loudly rather than overwriting silently (SC9, WR-6, WR-9) (T27)', () => {
+  it('a second install at the same subdirectory exits 3 naming the workflow, writing nothing at either root; --force overwrites', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(installDir, { recursive: true });
+
+    const first = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(first.code).toBe(0);
+
+    const workflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-apps-web.yml');
+    const workflowBefore = await fs.readFile(workflowPath, 'utf8');
+    const installFilesBefore = (await listFilesRecursively(installDir)).sort();
+
+    const second = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(second.code).toBe(3);
+    const combinedOutput = second.stdout + second.stderr;
+    expect(combinedOutput).toContain('harny-feedback-apps-web.yml');
+
+    // Nothing changed at either root.
+    expect(await fs.readFile(workflowPath, 'utf8')).toBe(workflowBefore);
+    expect((await listFilesRecursively(installDir)).sort()).toEqual(installFilesBefore);
+
+    const third = await runCli([
+      'init',
+      installDir,
+      '--yes',
+      '--tools',
+      'claude-code',
+      '--stack',
+      'typescript',
+      '--force',
+    ]);
+    expect(third.code).toBe(0);
+  });
+});
+
+describe('ci-workflow-root — an install with no repository above it behaves like today\'s, plus a warning (SC3, CW-3, CW-9) (T28)', () => {
+  it('writes the workflow inside the install directory, exits 0, and warns', async () => {
+    const targetDir = await makeTempDir();
+    await assertNoRepoAbove(targetDir);
+
+    const { code, stdout, stderr } = await runCli([
+      'init',
+      targetDir,
+      '--yes',
+      '--tools',
+      'claude-code',
+      '--stack',
+      'typescript',
+    ]);
+    expect(code).toBe(0);
+
+    const workflowPath = path.join(targetDir, '.github', 'workflows', 'harny-feedback.yml');
+    await expect(fs.access(workflowPath)).resolves.toBeUndefined();
+
+    const combined = stdout + stderr;
+    expect(/not.*(inside|in a).*(git )?repository/i.test(combined)).toBe(true);
+  });
+});
+
+describe('ci-workflow-root — the direct readiness runner agrees with the workflow\'s real location (SC11, DR-1) (T29)', () => {
+  it('node run-doctor.mjs reports OK for ci-workflow when the root file exists, and FAIL once it is removed', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(installDir, { recursive: true });
+
+    const initResult = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(initResult.code).toBe(0);
+
+    const runnerPath = path.join(installDir, '.sdd', 'doctor', 'run-doctor.mjs');
+    const workflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-apps-web.yml');
+
+    // Scoped to the single `ci-workflow` report line, deliberately NOT the
+    // runner's overall exit code: a bare scaffold has other, unrelated
+    // must-have gaps (no README.md, no AGENTS.md) that make the WHOLE run
+    // report not-ready regardless of this feature — asserting the overall
+    // exit code here would fail for that unrelated reason, not for anything
+    // this feature is responsible for (contract.md DR-1 is about this one
+    // check's report, not the aggregate verdict).
+    const before = await runNodeScript(runnerPath, installDir);
+    expect(before.stdout).toContain('OK ci-workflow');
+    expect(before.stdout).not.toContain('FAIL ci-workflow');
+
+    await fs.rm(workflowPath);
+
+    const after = await runNodeScript(runnerPath, installDir);
+    expect(after.stdout).toContain('FAIL ci-workflow');
+    expect(after.stdout).not.toContain('OK ci-workflow');
+  });
+});
+
+describe('ci-workflow-root — npx harny doctor and the direct runner agree for a subdirectory install (RD-7, SC12, DR-3)', () => {
+  it('the doctor verb and node run-doctor.mjs give the same ci-workflow answer, both before and after removing the root workflow', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(installDir, { recursive: true });
+
+    const initResult = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(initResult.code).toBe(0);
+
+    const runnerPath = path.join(installDir, '.sdd', 'doctor', 'run-doctor.mjs');
+    const workflowPath = path.join(repoDir, '.github', 'workflows', 'harny-feedback-apps-web.yml');
+
+    const directBefore = await runNodeScript(runnerPath, installDir);
+    const verbBefore = await runCli(['doctor', installDir]);
+    expect(directBefore.stdout).toContain('OK ci-workflow');
+    expect(verbBefore.stdout + verbBefore.stderr).not.toContain('FAIL ci-workflow');
+
+    await fs.rm(workflowPath);
+
+    const directAfter = await runNodeScript(runnerPath, installDir);
+    const verbAfter = await runCli(['doctor', installDir]);
+    expect(directAfter.stdout).toContain('FAIL ci-workflow');
+    expect(verbAfter.stdout + verbAfter.stderr).toContain('FAIL ci-workflow');
+  });
 });

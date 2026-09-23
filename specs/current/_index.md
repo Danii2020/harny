@@ -10,10 +10,10 @@
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/) |
 
 ## Keyword lookup
 
@@ -27,6 +27,10 @@
 | docs-lookup / Context7 / MCP | pipeline-roles, cli-init |
 | OAuth / mcp/oauth | cli-init |
 | merge-write / merge-marked | cli-init |
+| git root / repository root | cli-init, feedback-controls |
+| monorepo / subdirectory install | feedback-controls, cli-init |
+| write root | cli-init |
+| workflow file name | feedback-controls |
 | human gate / verdict | pipeline-roles |
 | spec-schema | spec-workflow |
 | traceability | spec-workflow |
@@ -129,6 +133,10 @@
 | 0028 | Path filtering lives only in the per-turn code path; the `.` sentinel bypasses it by construction | Accepted | feedback-controls | `specs/archived/feedback-path-hygiene/decisions/0028-path-filtering-in-turn-based-code-path-only.md` |
 | 0029 | Context7 `/mcp/oauth` for all five tools, no per-tool fallback | Accepted | cli-init | `specs/archived/dogfood-quick-fixes/decisions/0029-context7-oauth-endpoint.md` |
 | 0030 | Hardcode `main` in the canonical CI push trigger rather than deriving the default branch | Accepted | feedback-controls | `specs/archived/dogfood-quick-fixes/decisions/0030-hardcode-main-ci-trigger.md` |
+| 0031 | A declared write root on `GeneratedFile`, never a weakened `assertContained` | Accepted | cli-init | `specs/archived/ci-workflow-root/decisions/0031-declared-write-root.md` |
+| 0032 | Scope a subdirectory install with step-level `working-directory`, no `paths:` filter | Accepted | feedback-controls | `specs/archived/ci-workflow-root/decisions/0032-step-scoping-no-paths-filter.md` |
+| 0033 | Detect the repository root by walking for a `.git` entry, not by shelling out to `git rev-parse` | Accepted | cli-init | `specs/archived/ci-workflow-root/decisions/0033-walk-git-dont-shell.md` |
+| 0034 | Derive the workflow file name from the install prefix; surface a name collision as `CONFLICT` rather than resolving it | Accepted | feedback-controls | `specs/archived/ci-workflow-root/decisions/0034-slug-collision-conflict.md` |
 
 ## Open reservations
 
@@ -167,6 +175,13 @@
 | RD-R7 | `harny-document` bootstrap mode's test assertion is weak — 4 of 5 required substrings pre-existed the feature | MEDIUM | `specs/archived/ai-sdlc-readiness/audit.md` F4 | readiness-checks |
 | RD-R8 | AR-16/RD-7 agreement now bounded at 64 MiB (`DOCTOR_RUNNER_MAX_BUFFER`); undocumented in `contract.md` | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F12 | readiness-checks |
 | RD-R9 | `'CLAUDE.md'` remains a literal in `src/doctor.ts` (`conventions-doc`) and `src/generators/claude-code.ts`, an accepted exception since moving `conventions-doc` was out of scope | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F5 | readiness-checks |
+| AL-2 | `assertRepoRootPermitted`'s doc comment overstates what it bounds; it constrains the declared *root*, not the destination path, though narrowness of destination rests on ADR 0031's single declaration site (WR-5) | LOW | `specs/archived/ci-workflow-root/audit.md` AL-2 | cli-init |
+| AL-3 | The WR-5 grep gate matches only single quotes; a `root: "repo"` assignment in double quotes would pass undetected (theoretical today, repo style is single quotes throughout) | LOW | `specs/archived/ci-workflow-root/audit.md` AL-3 | cli-init |
+| AL-4 | The no-repository warning uses past tense ("was written") but fires before any write and under `--dry-run`; prefer future tense ("will be written") | LOW | `specs/archived/ci-workflow-root/audit.md` AL-4 | cli-init |
+| AL-5 | The CLI's post-write report (`src/cli.ts:145`) lists no paths, so a subdirectory install's single out-of-target write is indistinguishable; `InitResult.written` correctly carries `../`-prefixed paths, but the CLI's human-facing message does not | LOW | `specs/archived/ci-workflow-root/audit.md` AL-5 | cli-init |
+| AL-6 | Same-slug collision across distinct directories (e.g., `apps/web` and `apps-web`) has no automated test; verified by hand and behaves correctly, but ADR 0034's rule needs a regression guard | LOW | `specs/archived/ci-workflow-root/audit.md` AL-6 | feedback-controls |
+| AL-8 | `AGENTS.md` S6 forbids contract ids in test names; the suite already violates this systematically, and this feature follows that observed convention; reconciliation is repo-wide, not this feature's to fix | LOW | `specs/archived/ci-workflow-root/audit.md` AL-8 | cli-init |
+| RD-R10 | A generated `checks.json`'s `ci-workflow` entry records an install-relative path that goes stale if the install directory is moved to a different depth; `npx harny doctor` re-derives and is never stale; remediation is to re-run `npx harny init` | LOW | `specs/archived/ci-workflow-root/contract.md` § Behavior Guarantees (DR-5) | readiness-checks |
 | R-Cursor | MCP support in some Cursor installs may sit behind a settings toggle that defaults off; the generated `.cursor/mcp.json` would be correct but inert until toggled in Cursor settings | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Cursor | tool-generators |
 | R-Codex | Codex Desktop may ignore project-scope `.codex/config.toml` MCP servers per `openai/codex#13025`, loading only user-global config; the generated file is correct for Codex CLI surface | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Codex | tool-generators |
 | R-OAuth | `/mcp/oauth` is documented as gated on a client implementing the MCP OAuth specification and was never loaded into a live install of any of the five tools. Same AL-30 / CG-1 class: vendor-side facts verified through documentation rather than live-install testing. | MEDIUM (human-gated) | `specs/archived/dogfood-quick-fixes/audit.md` R-OAuth | cli-init |

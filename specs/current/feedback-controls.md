@@ -94,17 +94,17 @@ The system SHALL guarantee that canonical batching and deduplication semantics (
 
 ### Requirement: FC-7 — CI gate produces exactly one workflow
 
-The system SHALL generate exactly one `.github/workflows/harny-feedback.yml` regardless of how many tools are selected, triggering on `pull_request` and on `push` to `main`, and running the resolved profile's lint/type-check commands via the shared runner.
+The system SHALL generate exactly one workflow per install at the enclosing **git repository root**, named `harny-feedback.yml` for a root install and `harny-feedback-<slug>.yml` for a subdirectory install, regardless of how many tools are selected, triggering on `pull_request` and on `push` to `main`, and running the resolved profile's lint/type-check commands via the shared runner.
 
-**Source:** agent-feedback-controls · intent.md § G3, contract.md § SC7, SC8
+**Source:** agent-feedback-controls · intent.md § G3, contract.md § SC7, SC8; ci-workflow-root · contract.md § Proposed amendments
 
-#### Scenario: one workflow for all tool selections
-- **WHEN** generating for 1, 3, or 5 tools
-- **THEN** exactly one workflow file is written, byte-identical across all selections
+#### Scenario: one workflow per install at the repository root
+- **WHEN** generating for a root install or a subdirectory install with 1, 3, or 5 tools
+- **THEN** exactly one workflow file is written at the repository root, byte-identical across all tool selections for a root install; a subdirectory install's workflow is named `harny-feedback-<slug>.yml` (e.g., `harny-feedback-apps-web.yml`), and no workflow file is written inside the install directory
 
 #### Scenario: workflow contains only install and runner steps
 - **WHEN** generating with `--stack typescript`
-- **THEN** the workflow declares both a `pull_request` trigger and a `push` trigger filtered to `main`, and contains exactly two step kinds: one install step (`npm ci`) and one runner invocation (`node .sdd/feedback/run-feedback.mjs run --whole-project`)
+- **THEN** the workflow declares both a `pull_request` trigger and a `push` trigger filtered to `main`, and contains exactly two step kinds: one install step (`npm ci`) and one runner invocation (`node .sdd/feedback/run-feedback.mjs run --whole-project`); for a subdirectory install, each generated step additionally carries `working-directory: <component>`
 
 ### Requirement: FC-8 — CI gate honors probe requirements
 
@@ -162,13 +162,13 @@ The system SHALL specify that `harny-audit` Step 6 verifies the per-turn hook fi
 
 ### Requirement: FC-13 — Dogfood artifacts derive from canonical templates
 
-The system SHALL ensure this repo's own `.claude/settings.json`, `.github/workflows/harny-feedback.yml`, `.sdd/feedback/run-feedback.mjs`, `.sdd/shared/probes.mjs`, `.sdd/doctor/run-doctor.mjs`, `.sdd/doctor/checks.json`, `.sdd/harness.json`, and `.sdd/spec-schema/*.md` are byte-identical to what `npx harny init --tools claude-code --stack typescript` produces for a downstream repo.
+The system SHALL ensure this repo's own `.claude/settings.json`, `.github/workflows/harny-feedback.yml`, `.sdd/feedback/run-feedback.mjs`, `.sdd/shared/probes.mjs`, `.sdd/doctor/run-doctor.mjs`, `.sdd/doctor/checks.json`, `.sdd/harness.json`, and `.sdd/spec-schema/*.md` are byte-identical to what `npx harny init --tools claude-code --stack typescript` produces for a downstream repo. The git-root install case is the byte-identity-preserving path through the new placement logic (`ci-workflow-root` feature); this feature regenerated the workflow's header comment.
 
-**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC14; readiness-doctor · contract.md § State Changes, Post-implementation dogfood extension
+**Source:** agent-feedback-controls · intent.md § G5, contract.md § SC14; readiness-doctor · contract.md § State Changes, Post-implementation dogfood extension; ci-workflow-root · contract.md § Proposed amendments
 
 #### Scenario: no dogfood divergence
 - **WHEN** running `npx harny init` against a scratch target with matching configuration
-- **THEN** all feedback and readiness artifacts, plus configuration and spec-schema, are byte-identical to this repo's committed versions
+- **THEN** all feedback and readiness artifacts, plus configuration and spec-schema, are byte-identical to this repo's committed versions; seven of eight paths remain unchanged from before the `ci-workflow-root` feature, with only the workflow's header comment revised per CR-7
 
 ### Requirement: FC-14 — Feedback-controls capability created from template
 
@@ -306,6 +306,8 @@ The system SHALL ensure that `run --whole-project`, which passes the special `.`
 
 **I6 — Loop safety via re-entry guard.** The runner checks `stop_hook_active` (where present) and suppresses blocking responses on re-entry, so it cannot drive runaway agent loops.
 
+**I7 — The CI workflow belongs to the repository, every other artifact belongs to the install.** Exactly one generated artifact resolves against the repository root; every other resolves against the install directory. The CI workflow's placement and naming are derived from the install directory's position within the repository (`ci-workflow-root` feature).
+
 ## Open reservations
 
 | ID | Reservation | Severity | Source |
@@ -324,6 +326,7 @@ The system SHALL ensure that `run --whole-project`, which passes the special `.`
 | agent-feedback-controls | 2026-09-14 | FC-1–FC-21: per-turn hooks (all five tools), CI workflow, harny-feedback core skill, stack→commands mapping, probe-skip behavior, turn-boundary batching, findings delivery channels, CI gate feedback, dogfood fidelity. Post-A1: `ciInstall`, `--whole-project` flag, CI whole-project step, Python probe-skip-only profile. |
 | feedback-path-hygiene | 2026-09-22 | FC-22–FC-24: vanished-path drop, per-command optional `extensions` gate (case-sensitive suffix match), empty filtered set skip, `.` sentinel bypass for CI. Amended FC-6 scenario and FC-4 wording. Post-A1: no-valid-entry `extensions` means no filter (guard against silent linter disable). |
 | dogfood-quick-fixes | 2026-09-22 | Amended FC-7: workflow now triggers on both `pull_request` and `push` to `main` (push-to-main CI feedback). Aligned AL-11 `extensions` wording across three sites (item 3). |
+| ci-workflow-root | 2026-09-23 | Amended FC-7, FC-13: repository-root placement, install-scoped workflow name (`harny-feedback-<slug>.yml` for subdirectory installs), step-level component scoping via `working-directory`, no `paths:` filter. Added I7 (CI workflow as repository artifact). ADRs 0032, 0034 record the placement and naming strategy decisions. |
 
 ## Related ADRs
 

@@ -17,13 +17,13 @@ import type {
 } from './templates.js';
 import type { GeneratedFile, Generator } from './generators/types.js';
 import {
-  CI_WORKFLOW_PATH,
   FEEDBACK_RUNNER_PATH,
   STACK_PROFILE_IDS,
   TOUCHED_FILES_DIR,
   resolveStackProfile,
 } from './feedback.js';
 import type { FeedbackInstall, StackProfile } from './feedback.js';
+import { ciWorkflowPathFor } from './repo.js';
 import { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END, yamlQuote } from './generators/markdown-yaml.js';
 import { wrapPosixShellArg } from './generators/json.js';
 
@@ -200,6 +200,20 @@ function noBuiltinProfileNotice(stack: string | undefined): string {
   );
 }
 
+/** **(NEW — ci-workflow-root.)** Where an install sits inside the repository that will
+ *  run its CI, reduced to the only fact the renderer needs. A struct rather than a
+ *  bare string so `monorepo-mode` can add fields (a component list) without changing
+ *  any signature here (XC-6). */
+export interface CiPlacement {
+  /** POSIX path from the repository root to the install directory. `''` means the
+   *  install directory IS the repository root — today's only case. */
+  readonly prefix: string;
+}
+
+/** The placement every pre-existing caller gets by default: the install directory is
+ *  the repository root, which is exactly harny's own case (XC-1). */
+export const ROOT_PLACEMENT: CiPlacement = { prefix: '' };
+
 /** Splices generated lines between the canonical template's
  * `GENERATED_BLOCK_BEGIN`/`END` marker lines, indenting each to match the begin
  * marker's own indentation — the CI workflow's counterpart to
@@ -261,6 +275,25 @@ function renderRunnerInvocation(commands: unknown): string {
   );
 }
 
+/** **(NEW — ci-workflow-root.)** Rewrites the canonical `name:` line — the single
+ *  canonical-region value this feature ever touches (CR-3), and only when
+ *  `workflowName` is given. Replaces the first line matching `/^name:\s/`; throws
+ *  `HarnessError('TEMPLATE')` when there is none, mirroring
+ *  `spliceGeneratedYamlBlock`'s missing-marker guard (CR-8). Uses the existing
+ *  shared `yamlQuote`; no YAML library (CR-9, ADR 0015). */
+function renameCanonicalWorkflow(template: string, workflowName: string): string {
+  const lines = template.split('\n');
+  const nameIndex = lines.findIndex((line) => /^name:\s/.test(line));
+  if (nameIndex === -1) {
+    throw new HarnessError(
+      'TEMPLATE',
+      'templates/ci/harny-feedback.yml has no name: line. This is a packaging bug, not your configuration.',
+    );
+  }
+  lines[nameIndex] = `name: ${yamlQuote(workflowName)}`;
+  return lines.join('\n');
+}
+
 /** Renders `templates/ci/harny-feedback.yml`'s generated block (BG-10, rewritten
  *  by A1): at most one dependency-install step, emitted only when the resolved
  *  profile declares `ciInstall`, followed by exactly one runner-invocation step
@@ -269,21 +302,46 @@ function renderRunnerInvocation(commands: unknown): string {
  *  finding F1). The escape-hatch case (no resolved profile) is unchanged: a
  *  single notice step, no install step (BG-8). Interpolated strings are quoted
  *  with the existing shared `yamlQuote` (`src/generators/markdown-yaml.ts`) — no
- *  YAML dependency (§ YAML). */
-function renderCiWorkflow(template: string, profile: StackProfile | undefined, stack: string | undefined): string {
+ *  YAML dependency (§ YAML).
+ *
+ *  **(MODIFIED — ci-workflow-root.)** Gains `placement`. For `placement.prefix ===
+ *  ''` the returned string is what today's three-argument version returns,
+ *  byte-for-byte (CR-1). For a non-empty prefix, every generated step gains a
+ *  `working-directory: <yamlQuote(prefix)>` line immediately after its `run:`
+ *  line (CR-2), and the canonical `name:` line is rewritten via
+ *  `renameCanonicalWorkflow` (CR-3). */
+function renderCiWorkflow(
+  template: string,
+  profile: StackProfile | undefined,
+  stack: string | undefined,
+  placement: CiPlacement,
+): string {
   const bodyLines: string[] = [];
   if (profile) {
     if (profile.ciInstall && profile.ciInstall.length > 0) {
       bodyLines.push(`- name: ${yamlQuote(`Install dependencies (${profile.displayName})`)}`);
       bodyLines.push(`  run: ${yamlQuote(renderInstallGateChain(profile.ciInstall))}`);
+      if (placement.prefix !== '') {
+        bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
+      }
     }
     bodyLines.push(`- name: ${yamlQuote(`harny feedback (${profile.displayName})`)}`);
     bodyLines.push(`  run: ${yamlQuote(renderRunnerInvocation(profile.commands))}`);
+    if (placement.prefix !== '') {
+      bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
+    }
   } else {
     bodyLines.push(`- name: ${yamlQuote('harny-feedback notice')}`);
     bodyLines.push(`  run: ${yamlQuote(`echo ${JSON.stringify(noBuiltinProfileNotice(stack))}`)}`);
+    if (placement.prefix !== '') {
+      bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
+    }
   }
-  return spliceGeneratedYamlBlock(template, bodyLines);
+  const spliced = spliceGeneratedYamlBlock(template, bodyLines);
+  if (placement.prefix === '') {
+    return spliced;
+  }
+  return renameCanonicalWorkflow(spliced, `harny feedback (${placement.prefix})`);
 }
 
 /** Path of the `.gitignore` scoped to the accumulator scratch directory itself
@@ -300,8 +358,18 @@ const TOUCHED_FILES_GITIGNORE_PATH = `${TOUCHED_FILES_DIR}/.gitignore`;
  *  the same rule `buildSharedFiles` already applies to `.sdd/spec-schema/*` under
  *  `cli-init.md` CLI-8 (BG-10, SC7). Returns an empty array when the loaded
  *  templates root does not carry the feedback subsystem's canonical resources
- *  (lean test fixtures) — never for the real, packaged templates root. */
-export function buildFeedbackFiles(payload: HarnessPayload): readonly GeneratedFile[] {
+ *  (lean test fixtures) — never for the real, packaged templates root.
+ *
+ *  **(MODIFIED — ci-workflow-root.)** `placement` defaults to `ROOT_PLACEMENT`, so
+ *  every existing caller and test keeps its exact behavior — and its exact bytes —
+ *  without edit. The workflow entry is the one place in `src/` that declares the
+ *  non-default write root (WR-5), assigned unconditionally (CW-8): the workflow's
+ *  root is always the repository, and for a root install `repoRoot === targetDir`
+ *  makes that identical to today's destination. */
+export function buildFeedbackFiles(
+  payload: HarnessPayload,
+  placement: CiPlacement = ROOT_PLACEMENT,
+): readonly GeneratedFile[] {
   if (!payload.hookRunner || !payload.ciWorkflowTemplate) {
     return [];
   }
@@ -311,7 +379,11 @@ export function buildFeedbackFiles(payload: HarnessPayload): readonly GeneratedF
 
   return [
     { path: FEEDBACK_RUNNER_PATH, contents: payload.hookRunner.contents },
-    { path: CI_WORKFLOW_PATH, contents: renderCiWorkflow(payload.ciWorkflowTemplate.contents, profile, stack) },
+    {
+      path: ciWorkflowPathFor(placement.prefix),
+      contents: renderCiWorkflow(payload.ciWorkflowTemplate.contents, profile, stack, placement),
+      root: 'repo',
+    },
     { path: TOUCHED_FILES_GITIGNORE_PATH, contents: '*\n!.gitignore\n' },
   ];
 }

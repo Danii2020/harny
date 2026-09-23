@@ -54,6 +54,18 @@ export interface GeneratedFile {
    *  for every artifact written before this feature, and no call site has to opt
    *  out. */
   readonly merge?: true;
+  /** **(NEW — ci-workflow-root.)** Which root `path` is relative to. Absent — the
+   *  default for every artifact written before this feature and for every
+   *  artifact except one — means the install directory (`targetDir`). The other
+   *  member means the enclosing git repository's root, which may be `targetDir`
+   *  itself or an ancestor of it, and never anything else (WR-4).
+   *
+   *  Deliberately a one-member union with `undefined` rather than a two-member
+   *  enum with a default, for the same reason `merge` is `true | undefined`
+   *  (context7-mcp, MC-7): no existing call site has to opt out, and the
+   *  non-default capability is a single greppable token. Exactly one expression
+   *  in all of `src/` assigns it (WR-5). */
+  readonly root?: 'repo';
 }
 
 export interface CapabilityMapping {

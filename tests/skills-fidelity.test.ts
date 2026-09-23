@@ -102,6 +102,24 @@
  * contract: the only way to verify a `SKILL.md`'s prose commitments is to read
  * the file, so a targeted substring check plays the role a behavioral test
  * plays for executable code.
+ *
+ * Spec: specs/dogfood-quick-fixes (item 2, G2)
+ * Covers: contract.md GR-6; intent.md SC7; roadmap.md Phase 2 step 3;
+ * tasks.md Task 2.3.
+ *
+ * Neither `.agents/skills/harny-document/SKILL.md` nor
+ * `templates/skills/harny-document/SKILL.md` carries the "never commit or
+ * push" guardrail yet at red time (verified absent from both, repo-wide,
+ * before writing this test), so both `it.each` cases below fail on a genuine
+ * missing substring. This is a targeted, distinctive-substring check, the
+ * same convention the `harny-doctor`/`harny-document` bootstrap-mode blocks
+ * above already use for prose commitments — the only way to verify a
+ * `SKILL.md`'s wording is to read the file. `DIVERGENCE_TABLE`'s
+ * `'harny-document'` entry is not edited by this test (GR-9): the new bullet
+ * is identical in both copies, so the declared additive divergence
+ * (`requiredInTemplate: ['rather than assuming any prior history exists']`)
+ * is untouched and the exhaustive sweep above stays green once the bullet
+ * lands.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -506,5 +524,17 @@ describe('harny-document documents its bounded bootstrap entry point (AR-19, SC1
     // still be present and untouched — bootstrap mode is an addition, never a
     // replacement of this refusal.
     expect(source).toContain('REJECTED');
+  });
+});
+
+describe('the "never commit or push" hard rule is present in both harny-document skill roots (GR-6) (dogfood-quick-fixes)', () => {
+  it.each([
+    ['.agents/skills/harny-document/SKILL.md', path.join(AGENTS_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+    ['templates/skills/harny-document/SKILL.md', path.join(TEMPLATES_SKILLS_ROOT, 'harny-document', 'SKILL.md')],
+  ])('%s carries the "never commit or push" guardrail', (_label, filePath) => {
+    const source = readIfExists(filePath);
+    expect(source, `${filePath} does not exist`).toBeDefined();
+
+    expect(source).toContain('Never commit or push.');
   });
 });

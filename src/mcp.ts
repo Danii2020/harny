@@ -8,10 +8,11 @@
  * *resolved* generators it is handed, never from a hard-coded tool list.
  *
  * Facts verified 2026-09-15 against first-party documentation — see
- * `contract.md` § "Verified per-tool MCP facts". This module owns every literal
- * occurrence of the server's identity and endpoint: every other site, including
- * every generator, imports the two constants below rather than re-typing them
- * (`MC-13`).
+ * `contract.md` § "Verified per-tool MCP facts". Endpoint re-verified 2026-09-22
+ * (`dogfood-quick-fixes`, ADR 0029) against Context7's own OAuth documentation. This
+ * module owns every literal occurrence of the server's identity and endpoint: every
+ * other site, including every generator, imports the two constants below rather than
+ * re-typing them (`MC-13`).
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -25,11 +26,20 @@ import type { Generator, GeneratedFile, McpConfig } from './generators/types.js'
  *  exactly once in `src/` (`SC15`). */
 export const MCP_SERVER_NAME = 'context7';
 
-/** Context7's hosted, unauthenticated streamable-HTTP endpoint. Literalled exactly
- *  once in `src/` (`SC15`). Verified 2026-09-15 — see `contract.md` § "Verified
- *  per-tool MCP facts". No credential, credential placeholder, or env-var reference
- *  is ever written alongside it (`G9`, `SC11`). */
-export const CONTEXT7_MCP_URL = 'https://mcp.context7.com/mcp';
+/** Context7's hosted streamable-HTTP endpoint, OAuth variant. Literalled exactly once
+ *  in `src/` (`SC15`). Context7 serves the same MCP server at two paths: `/mcp`, which
+ *  accepts anonymous requests at a shared rate limit or an `Authorization: Bearer
+ *  <key>` header, and `/mcp/oauth`, which negotiates OAuth 2.0 with clients
+ *  implementing the MCP authorization specification. harny writes `/mcp/oauth` for
+ *  every tool — a deliberate departure from Context7's own per-client examples, which
+ *  still show `/mcp`, taken because `/mcp` was observed not to work correctly in
+ *  practice (see `intent.md` and ADR 0029). Endpoint re-verified 2026-09-22 against
+ *  `/upstash/context7` `docs/howto/oauth.mdx` and `docs/resources/all-clients.mdx`.
+ *  harny still writes no credential, credential placeholder, or env-var reference
+ *  alongside it (`G9`, `SC11`) — the OAuth handshake, if a client performs one, is
+ *  entirely between that client and Context7, and harny neither stores nor mediates
+ *  any token. */
+export const CONTEXT7_MCP_URL = 'https://mcp.context7.com/mcp/oauth';
 
 /** The result of reconciling one tool's desired server entry with whatever was
  *  already on disk at that tool's MCP config path. Exhaustive and closed: every

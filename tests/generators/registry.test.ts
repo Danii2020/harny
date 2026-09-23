@@ -62,6 +62,17 @@
  * assertion in the new "mcpConfig" describe block below reads `undefined`
  * where the table expects a real value, not a wrong assumption about the
  * per-tool facts themselves.
+ *
+ * Spec: specs/dogfood-quick-fixes (item 1, G1)
+ * Covers: contract.md MO-3; intent.md SC3; roadmap.md Phase 1 step 3;
+ * tasks.md Task 1.5.
+ *
+ * The "mcpConfig — every generator declares the required member" `it.each`
+ * block's five expected `entry.url` values now name the new
+ * `https://mcp.context7.com/mcp/oauth` endpoint. Each generator's real
+ * `mcpConfig.entry` still carries the pre-departure value (imported straight
+ * from `src/mcp.ts`'s still-unchanged `CONTEXT7_MCP_URL`), so all five
+ * `it.each` cases fail on a genuine value mismatch, not a missing member.
  */
 import { describe, expect, it } from 'vitest';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
@@ -313,14 +324,14 @@ describe('mcpConfig — every generator declares the required member, matching t
       path: '.mcp.json',
       format: 'json',
       rootKey: 'mcpServers',
-      entry: { type: 'http', url: 'https://mcp.context7.com/mcp' },
+      entry: { type: 'http', url: 'https://mcp.context7.com/mcp/oauth' },
     },
     {
       id: 'cursor',
       path: '.cursor/mcp.json',
       format: 'json',
       rootKey: 'mcpServers',
-      entry: { url: 'https://mcp.context7.com/mcp' },
+      entry: { url: 'https://mcp.context7.com/mcp/oauth' },
     },
     {
       // The single highest-value row: GitHub Copilot's .vscode/mcp.json is
@@ -329,21 +340,21 @@ describe('mcpConfig — every generator declares the required member, matching t
       path: '.vscode/mcp.json',
       format: 'json',
       rootKey: 'servers',
-      entry: { type: 'http', url: 'https://mcp.context7.com/mcp' },
+      entry: { type: 'http', url: 'https://mcp.context7.com/mcp/oauth' },
     },
     {
       id: 'kiro',
       path: '.kiro/settings/mcp.json',
       format: 'json',
       rootKey: 'mcpServers',
-      entry: { url: 'https://mcp.context7.com/mcp' },
+      entry: { url: 'https://mcp.context7.com/mcp/oauth' },
     },
     {
       id: 'codex',
       path: '.codex/config.toml',
       format: 'toml',
       rootKey: 'mcp_servers',
-      entry: { url: 'https://mcp.context7.com/mcp' },
+      entry: { url: 'https://mcp.context7.com/mcp/oauth' },
     },
   ] as const;
 

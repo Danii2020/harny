@@ -67,6 +67,23 @@
  * per-tool contents. Driven against `REAL_TEMPLATES_ROOT`, same as the
  * feedback/doctor blocks above, since `mcpConfig` is a fixed per-generator
  * fact independent of which templates root is loaded.
+ *
+ * Spec: specs/dogfood-quick-fixes (item 1, G1)
+ * Covers: contract.md MO-3; intent.md SC3; roadmap.md Phase 1 step 3;
+ * tasks.md Task 1.4.
+ *
+ * The "fresh five-file write", "a pre-existing .vscode/mcp.json with unrelated
+ * servers keeps everything", and "a pre-existing .codex/config.toml keeps its
+ * bytes as an exact prefix" tests below now expect the new
+ * `https://mcp.context7.com/mcp/oauth` endpoint. `runInit` still writes the
+ * pre-departure value (`src/mcp.ts` is unchanged by this feature so far), so
+ * those three assertions fail on the real, generated file contents — a
+ * genuine value mismatch, not a missing artifact. `seedAllFiveMcpFiles`'s
+ * pre-existing-entry fixture is updated alongside for the same reason
+ * `tests/generators/toml.test.ts`'s sample URL is (consequential maintenance,
+ * no stale endpoint left behind): the "unchanged" assertions it feeds only
+ * check that a warning names the path, never the seeded URL's value, so this
+ * update alone does not change their outcome.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -834,21 +851,21 @@ describe('runInit — Context7 MCP wiring: fresh five-file write in an empty rep
     }
 
     const claudeJson = JSON.parse(await fs.readFile(path.join(targetDir, '.mcp.json'), 'utf8'));
-    expect(claudeJson.mcpServers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+    expect(claudeJson.mcpServers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp/oauth' });
 
     const cursorJson = JSON.parse(await fs.readFile(path.join(targetDir, '.cursor', 'mcp.json'), 'utf8'));
-    expect(cursorJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp' });
+    expect(cursorJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp/oauth' });
 
     const copilotJson = JSON.parse(await fs.readFile(path.join(targetDir, '.vscode', 'mcp.json'), 'utf8'));
-    expect(copilotJson.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+    expect(copilotJson.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp/oauth' });
     expect(copilotJson.mcpServers).toBeUndefined();
 
     const kiroJson = JSON.parse(await fs.readFile(path.join(targetDir, '.kiro', 'settings', 'mcp.json'), 'utf8'));
-    expect(kiroJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp' });
+    expect(kiroJson.mcpServers.context7).toEqual({ url: 'https://mcp.context7.com/mcp/oauth' });
 
     const codexToml = await fs.readFile(path.join(targetDir, '.codex', 'config.toml'), 'utf8');
     expect(codexToml).toContain('[mcp_servers.context7]');
-    expect(codexToml).toContain('url = "https://mcp.context7.com/mcp"');
+    expect(codexToml).toContain('url = "https://mcp.context7.com/mcp/oauth"');
   });
 
   it('every written MCP artifact is relative, resolves inside targetDir, and ends in exactly one newline', async () => {
@@ -932,7 +949,7 @@ describe('runInit — Context7 MCP wiring: a pre-existing .vscode/mcp.json with 
     expect(parsed['$schema']).toBe('https://example.com/schema.json');
     expect(parsed.servers['existing-a']).toEqual({ url: 'https://a.example/mcp' });
     expect(parsed.servers['existing-b']).toEqual({ type: 'http', url: 'https://b.example/mcp' });
-    expect(parsed.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp' });
+    expect(parsed.servers.context7).toEqual({ type: 'http', url: 'https://mcp.context7.com/mcp/oauth' });
     expect(Object.keys(parsed)).toEqual(['$schema', 'servers']);
     expect(Object.keys(parsed.servers)).toEqual(['existing-a', 'existing-b', 'context7']);
   });
@@ -962,7 +979,7 @@ describe('runInit — Context7 MCP wiring: a pre-existing .codex/config.toml kee
     const contents = await fs.readFile(path.join(targetDir, '.codex', 'config.toml'), 'utf8');
     expect(contents.startsWith(preExisting)).toBe(true);
     expect(contents).toContain('[mcp_servers.context7]');
-    expect(contents).toContain('url = "https://mcp.context7.com/mcp"');
+    expect(contents).toContain('url = "https://mcp.context7.com/mcp/oauth"');
     expect(contents.endsWith('\n')).toBe(true);
     expect(contents.endsWith('\n\n')).toBe(false);
   });
@@ -1079,27 +1096,27 @@ describe('runInit — Context7 MCP wiring: all five MCP files pre-existing still
 
     await fs.writeFile(
       path.join(targetDir, '.mcp.json'),
-      '{"mcpServers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp"}}}\n',
+      '{"mcpServers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp/oauth"}}}\n',
       'utf8',
     );
     await fs.writeFile(
       path.join(targetDir, '.cursor', 'mcp.json'),
-      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp"}}}\n',
+      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp/oauth"}}}\n',
       'utf8',
     );
     await fs.writeFile(
       path.join(targetDir, '.vscode', 'mcp.json'),
-      '{"servers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp"}}}\n',
+      '{"servers":{"context7":{"type":"http","url":"https://mcp.context7.com/mcp/oauth"}}}\n',
       'utf8',
     );
     await fs.writeFile(
       path.join(targetDir, '.kiro', 'settings', 'mcp.json'),
-      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp"}}}\n',
+      '{"mcpServers":{"context7":{"url":"https://mcp.context7.com/mcp/oauth"}}}\n',
       'utf8',
     );
     await fs.writeFile(
       path.join(targetDir, '.codex', 'config.toml'),
-      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n',
+      '[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp/oauth"\n',
       'utf8',
     );
   }

@@ -77,7 +77,7 @@ templates/
 │   ├── README.md                 # Hook mechanism, per-tool wiring notes
 │   └── run-feedback.mjs          # The turn-boundary feedback runner (batches to one call per turn)
 ├── ci/
-│   └── harny-feedback.yml        # GitHub Actions PR-gate workflow
+│   └── harny-feedback.yml        # GitHub Actions workflow (PR and push-to-main feedback gates)
 ├── doctor/
 │   ├── README.md                 # Readiness-check mechanism, the five check families and two tiers
 │   └── run-doctor.mjs            # The session-start/pre-spec-work readiness runner
@@ -217,7 +217,7 @@ every control it ships into one quadrant:
 
 | | Feedforward (before the agent acts) | Feedback (after the agent acts) |
 |---|---|---|
-| **Computational** | The readiness check (`templates/doctor/run-doctor.mjs`, the `harny-doctor` skill), run at session start and before new spec work: evaluates five check families in fixed order (environment, harness-file manifest, **repo readiness**, spec-state sanity, full test suite) once at session start and again before new spec work begins; reports two tiers (must-have makes the repo not ready; recommended warns but never changes exit code); and assesses coherence of present guidance documents (purpose, components, validation commands), exiting ready/not-ready without re-running the per-turn lint/type-check commands owned by `harny-feedback` | Native per-tool hooks (`templates/hooks/run-feedback.mjs`), firing every turn, pre-integration; the GitHub Actions workflow (`templates/ci/harny-feedback.yml`), firing per PR, post-integration |
+| **Computational** | The readiness check (`templates/doctor/run-doctor.mjs`, the `harny-doctor` skill), run at session start and before new spec work: evaluates five check families in fixed order (environment, harness-file manifest, **repo readiness**, spec-state sanity, full test suite) once at session start and again before new spec work begins; reports two tiers (must-have makes the repo not ready; recommended warns but never changes exit code); and assesses coherence of present guidance documents (purpose, components, validation commands), exiting ready/not-ready without re-running the per-turn lint/type-check commands owned by `harny-feedback` | Native per-tool hooks (`templates/hooks/run-feedback.mjs`), firing every turn, pre-integration; the GitHub Actions workflow (`templates/ci/harny-feedback.yml`), firing on both PR and push to `main`, post-integration |
 | **Inferential** | The five canonical role prompts (`templates/roles/sdd-*.md`); this file's conventions, especially § Coding standards; `harny-standards`; the three human gates (post-specs, post-red-tests, post-audit) | *(deliberately empty)* |
 
 Read across the rows:

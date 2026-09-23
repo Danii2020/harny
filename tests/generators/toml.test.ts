@@ -20,6 +20,18 @@
  * `renderTomlTable` does not exist yet at red time either — the new describe
  * block below fails on a missing export, not a wrong assumption about its
  * shape.
+ *
+ * Spec: specs/dogfood-quick-fixes (item 1, G1)
+ * Covers: roadmap.md Phase 1 step 7; tasks.md Task 1.9.
+ *
+ * `renderTomlTable`'s own describe block below uses the Context7 endpoint only
+ * as a representative sample value for a generic table-rendering assertion —
+ * it does not read `CONTEXT7_MCP_URL`, so it says nothing about item 1's real
+ * per-tool output. Updated to the new `/mcp/oauth` endpoint here purely as
+ * consequential maintenance (no stale endpoint left lying around anywhere in
+ * `tests/`), same as the executor's own precedent for
+ * `tests/canonical-fidelity.test.ts` in `context7-mcp`. This assertion passes
+ * before and after this feature; it is not part of the approved red phase.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -276,10 +288,10 @@ describe('renderTomlTable', () => {
     const { renderTomlTable } = await import('../../src/generators/toml.js');
 
     const rendered = renderTomlTable('mcp_servers.context7', [
-      { key: 'url', value: '"https://mcp.context7.com/mcp"' },
+      { key: 'url', value: '"https://mcp.context7.com/mcp/oauth"' },
     ]);
 
-    expect(rendered).toBe('[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp"\n');
+    expect(rendered).toBe('[mcp_servers.context7]\nurl = "https://mcp.context7.com/mcp/oauth"\n');
   });
 
   it('renders every field under a single header, preserving field order', async () => {

@@ -208,6 +208,7 @@ of `import type` erasure.
 |---|---|---|
 | cli-skeleton | 2026-07-30 | The entire CLI: `src/{cli,config,prompts,init,writer,errors,engine,templates,vocabulary}.ts`, the `Generator` interface, the Claude Code generator, packaging |
 | context7-mcp | 2026-09-15 | CLI-1/CLI-4/CLI-5/CLI-10: default Context7 MCP server wiring via merge-write to each tool's native config; exempts merge-marked paths from conflict detection; adds `templates/mcp/README.md` to packaged count |
+| dogfood-quick-fixes | 2026-09-22 | CLI-4/CLI-5/CLI-10: Context7 endpoint value changed from `/mcp` to `/mcp/oauth` in the generated MCP server entries. Determinism and merge-marked path invariants hold at the new value. Packaged template count remains thirty-one. |
 
 ## Related ADRs
 

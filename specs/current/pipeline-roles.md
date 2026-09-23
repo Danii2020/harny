@@ -179,6 +179,13 @@ The system SHALL give `harny-document` a second, explicitly-scoped invocation pa
 | sdd-skill-library | 2026-09-09 | Extraction of each role's instructions into a `harny-*` skill; the thinned agent-file shape |
 | templates-skill-library-parity | 2026-09-13 | Decision to keep `templates/roles/sdd-*.md` as full-body role files (not thinned) in the portable layer; reconciliation of the live pipeline and `templates/` on archive lifecycle for scaffolded repos |
 | ai-sdlc-readiness | 2026-09-15 | PR-10: `harny-document`'s bounded bootstrap mode — a second invocation path for a repo with no harny spec history, mutually unreachable from the post-audit path, output always marked draft |
+| dogfood-quick-fixes | 2026-09-22 | Added § Hard-rule inventory: `sdd-documentation` is the only role in the five-role set that carries an explicit hard rule forbidding `git commit` and `git push` (the other four deliberately do not carry this rule). This rule is stated in `templates/roles/sdd-documentation.md` § "Step 5: Hard Rules" and is wired into the canonical role body so it reaches all five tools' generated artifacts. |
+
+## Hard-rule inventory
+
+| Rule | Role | Scope |
+|---|---|---|
+| Never commit or push | `sdd-documentation` | Forbids `git commit`, `git push`, and `--no-verify` flags. Directs the role to leave changes in the working tree and report them in the role's Step 6 summary. Carves out `git mv` (permitted during archive moves). |
 
 ## Related ADRs
 

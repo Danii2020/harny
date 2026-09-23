@@ -31,6 +31,20 @@
  * rationale as every prior class above — consequential test maintenance, not
  * part of context7-mcp's own approved 55-test red phase; see the executor's
  * final report.
+ *
+ * Spec: specs/dogfood-quick-fixes (item 2, G2)
+ * Covers: contract.md GR-4, GR-5; intent.md SC8, SC9; roadmap.md Phase 2
+ * steps 1-2; tasks.md Tasks 2.1, 2.2.
+ *
+ * `templates/roles/sdd-documentation.md` does not carry the "never commit or
+ * push" bullet yet at red time (verified absent, repo-wide, before writing
+ * these tests), so the two describe blocks below fail on a genuine missing
+ * substring, not a wrong assumption about `renderRole`'s canonical-body
+ * mechanism (already proven by the T40/Task-4.1 blocks above — no generator
+ * change is needed for GR-5 to hold once the bullet lands in the template).
+ * `isContractedEntry` above already allowlists
+ * `templates/roles/sdd-documentation.md` by exact match (XC-4); this feature
+ * adds no allowlist entry.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -502,6 +516,63 @@ describe('the AL-5 spec-schema pointer block reaches all 5 x 5 role artifacts (g
         expect(block, `${generator.id}/${roleId} pointer block does not name SPEC_SCHEMA_DIR`).toContain(
           SPEC_SCHEMA_DIR,
         );
+      }
+    }
+  });
+});
+
+const NEVER_COMMIT_OR_PUSH = 'Never commit or push.';
+
+describe('the "never commit or push" hard rule reaches all five generators\' sdd-documentation artifact, verbatim, with no generator change (GR-5) (dogfood-quick-fixes)', () => {
+  it('is present in the generated sdd-documentation artifact for every one of the five generators', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+    const template = templates.roles.get('sdd-documentation')!;
+
+    for (const generator of generators) {
+      const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+      expect(
+        generated.contents,
+        `${generator.id}'s generated sdd-documentation artifact is missing the "never commit or push" rule`,
+      ).toContain(NEVER_COMMIT_OR_PUSH);
+    }
+  });
+
+  it('is present inside Codex\'s decoded developer_instructions string specifically, not merely somewhere in the raw .toml text', async () => {
+    const { codexGenerator } = await import('../src/generators/codex.js');
+    const { decodeToml } = await import('./helpers/toml-decode.js');
+    const templates = await loadRealTemplates();
+    const template = templates.roles.get('sdd-documentation')!;
+
+    const generated = codexGenerator.renderRole({ template, tier: template.metadata.costTier });
+    const decoded = decodeToml(generated.contents);
+
+    expect(decoded.developer_instructions).toContain(NEVER_COMMIT_OR_PUSH);
+  });
+});
+
+describe('the "never commit or push" hard rule reaches sdd-documentation only, never the other four roles (GR-4) (dogfood-quick-fixes)', () => {
+  const OTHER_ROLE_IDS = ['sdd-architect', 'sdd-test-writer', 'sdd-executor', 'sdd-auditor'] as const;
+
+  it('for every generator, the rule is present in the sdd-documentation artifact and absent from every other role\'s artifact', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      const docTemplate = templates.roles.get('sdd-documentation')!;
+      const docGenerated = generator.renderRole({ template: docTemplate, tier: docTemplate.metadata.costTier });
+      expect(
+        docGenerated.contents,
+        `${generator.id}'s sdd-documentation artifact is missing the "never commit or push" rule`,
+      ).toContain(NEVER_COMMIT_OR_PUSH);
+
+      for (const roleId of OTHER_ROLE_IDS) {
+        const template = templates.roles.get(roleId)!;
+        const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+        expect(
+          generated.contents,
+          `${generator.id}'s ${roleId} artifact unexpectedly carries the sdd-documentation-only rule`,
+        ).not.toContain(NEVER_COMMIT_OR_PUSH);
       }
     }
   });

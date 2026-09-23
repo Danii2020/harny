@@ -50,13 +50,15 @@ is ever written to a project.
    tool, that tool's own native first-use prompt is what a human sees and answers —
    exactly as if the human had configured the server by hand. harny narrows nothing
    and widens nothing (`AGENTS.md` TG-8).
-6. **No credential is ever written.** The configuration harny writes connects to
-   Context7's hosted endpoint anonymously; it works out of the box, at Context7's
-   shared anonymous rate limit, with no signup and no key. harny never reads an
+6. **No credential is ever written.** The configuration harny writes points at
+   Context7's OAuth-variant endpoint, which negotiates OAuth 2.0 with clients that
+   implement the MCP authorization specification; harny itself never reads an
    API-key environment variable and never writes one — not the key itself, not a
    placeholder, and not an environment-variable reference — into a file that gets
-   committed to the repository. See "Using an API key" below for the upgrade path,
-   which stays entirely the human's own manual step.
+   committed to the repository. If a client performs the OAuth handshake, that
+   exchange is entirely between the client and Context7 — harny neither stores nor
+   mediates any token. See "Using an API key" below for the non-OAuth endpoint's own
+   upgrade path, which stays entirely the human's own manual step.
 
 ## The five files
 
@@ -74,15 +76,23 @@ install, and carried forward as an open reservation where that gap matters (see
 | Kiro | `.kiro/settings/mcp.json` (workspace; the user file at `~/.kiro/settings/mcp.json` is never written) | `mcpServers` | Per-tool-call approval, because harny does not write `autoApprove`. Workspace config takes precedence over the user file. |
 | Codex CLI | `.codex/config.toml` (project; the user file at `~/.codex/config.toml` is never written) | `mcp_servers` | Codex's own project-trust decision — project `.codex/` layers load only once the user has trusted that project, and then take precedence over the user file. |
 
-Every entry points at Context7's hosted, unauthenticated streamable-HTTP endpoint,
-`https://mcp.context7.com/mcp`.
+Every entry points at Context7's hosted streamable-HTTP endpoint, OAuth variant:
+`https://mcp.context7.com/mcp/oauth`. harny writes this endpoint for every tool — a
+deliberate departure from Context7's own per-client examples, most of which still
+show the non-OAuth endpoint — because the non-OAuth endpoint was observed not to
+work correctly in practice.
 
 ## Using an API key
 
-Context7's endpoint works fully anonymously — no signup, no key, shared anonymous
-rate limits. If a higher rate limit is needed, Context7 supports an optional API
-key, sent as an `Authorization: Bearer <key>` header. harny does not automate this:
-add the header to the relevant tool's MCP entry by hand, following that tool's own
+The endpoint harny writes handles authentication through its own OAuth 2.0
+handshake, negotiated by a client that implements the MCP authorization
+specification — there is no API key to configure on that path. A client that does
+not implement that specification, or a user who prefers the older anonymous flow,
+can instead point the tool's own MCP entry at the non-OAuth endpoint by hand: that
+endpoint works fully anonymously — no signup, no key, shared anonymous rate limits —
+and also accepts an optional API key, sent as an `Authorization: Bearer <key>`
+header, for a higher rate limit. harny does not automate either the switch or the
+header: add it to the relevant tool's MCP entry by hand, following that tool's own
 documentation for supplying a header value (most tools support sourcing it from an
 environment variable rather than a literal in a committed file). This is a
 deliberate v1 boundary, not an oversight — an unset environment-variable reference

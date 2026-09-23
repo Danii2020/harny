@@ -94,7 +94,7 @@ The system SHALL guarantee that canonical batching and deduplication semantics (
 
 ### Requirement: FC-7 — CI gate produces exactly one workflow
 
-The system SHALL generate exactly one `.github/workflows/harny-feedback.yml` regardless of how many tools are selected, triggering on `pull_request` and running the resolved profile's lint/type-check commands via the shared runner.
+The system SHALL generate exactly one `.github/workflows/harny-feedback.yml` regardless of how many tools are selected, triggering on `pull_request` and on `push` to `main`, and running the resolved profile's lint/type-check commands via the shared runner.
 
 **Source:** agent-feedback-controls · intent.md § G3, contract.md § SC7, SC8
 
@@ -104,7 +104,7 @@ The system SHALL generate exactly one `.github/workflows/harny-feedback.yml` reg
 
 #### Scenario: workflow contains only install and runner steps
 - **WHEN** generating with `--stack typescript`
-- **THEN** the workflow declares `on: pull_request` and contains exactly two step kinds: one install step (`npm ci`) and one runner invocation (`node .sdd/feedback/run-feedback.mjs run --whole-project`)
+- **THEN** the workflow declares both a `pull_request` trigger and a `push` trigger filtered to `main`, and contains exactly two step kinds: one install step (`npm ci`) and one runner invocation (`node .sdd/feedback/run-feedback.mjs run --whole-project`)
 
 ### Requirement: FC-8 — CI gate honors probe requirements
 
@@ -323,6 +323,7 @@ The system SHALL ensure that `run --whole-project`, which passes the special `.`
 |---|---|---|
 | agent-feedback-controls | 2026-09-14 | FC-1–FC-21: per-turn hooks (all five tools), CI workflow, harny-feedback core skill, stack→commands mapping, probe-skip behavior, turn-boundary batching, findings delivery channels, CI gate feedback, dogfood fidelity. Post-A1: `ciInstall`, `--whole-project` flag, CI whole-project step, Python probe-skip-only profile. |
 | feedback-path-hygiene | 2026-09-22 | FC-22–FC-24: vanished-path drop, per-command optional `extensions` gate (case-sensitive suffix match), empty filtered set skip, `.` sentinel bypass for CI. Amended FC-6 scenario and FC-4 wording. Post-A1: no-valid-entry `extensions` means no filter (guard against silent linter disable). |
+| dogfood-quick-fixes | 2026-09-22 | Amended FC-7: workflow now triggers on both `pull_request` and `push` to `main` (push-to-main CI feedback). Aligned AL-11 `extensions` wording across three sites (item 3). |
 
 ## Related ADRs
 

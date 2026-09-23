@@ -92,6 +92,32 @@
  * that CI's own argv, and therefore its behavior, is unchanged by this
  * feature, verified through a real generated artifact rather than by reading
  * `runWholeProject`'s source.
+ *
+ * ---
+ * Spec: specs/dogfood-quick-fixes (item 4, G4)
+ * Covers: contract.md CI-1, CI-4; intent.md SC13, SC14; roadmap.md Phase 4
+ * steps 1-2; tasks.md Tasks 4.1, 4.2.
+ *
+ * `templates/ci/harny-feedback.yml`'s `on:` block still declares only
+ * `pull_request:` at red time, so the new "declares both triggers" describe
+ * block below fails on a genuinely missing `push:`/`branches:`/`- main`
+ * shape, for both a resolved (`typescript`) and an unresolved stack profile —
+ * proving the triggers are canonical, not profile-derived (CI-1).
+ *
+ * The CI-4 assertion (the region between the `harny:begin`/`harny:end
+ * generated project configuration` markers carries neither `push` nor `on:`)
+ * is added as an additional `it` nested inside the existing
+ * "renderCiWorkflow (A1)" describe block below, so it can reuse that block's
+ * own `generatedBlockOf` helper (a nested function, not reachable from a
+ * sibling describe — per roadmap.md Phase 4 step 2's own note, nesting here
+ * avoids lifting that helper to module scope as an unrelated refactor).
+ * Per tasks.md Task 4.2's own instruction, this assertion is a **declared
+ * regression guard**, not new red-phase coverage: the generated block's two
+ * steps (the install gate chain and the `run --whole-project` invocation)
+ * never contained the literal words "push" or "on:" before this feature
+ * either, so this passes today and simply stays green once the `on:` block
+ * gains its push trigger — proving the new trigger lands in the canonical
+ * region, never inside the generated markers.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -774,6 +800,64 @@ describe('buildFeedbackFiles — renderCiWorkflow (A1): at most one install step
     expect(RUNNER_INVOCATION.test(steps[0].run)).toBe(false);
     expect(block).not.toContain('package-lock.json');
     expect(block).not.toContain('package.json');
+  });
+
+  // Declared regression guard (CI-4, dogfood-quick-fixes; tasks.md Task 4.2):
+  // already passes today, before the push trigger exists — the generated
+  // block's two step kinds (the install gate chain, the runner invocation)
+  // never mention "push" or declare an "on:" key. Nested here, rather than in
+  // a new sibling describe, to reuse this block's own generatedBlockOf.
+  it('the generated block itself carries neither a "push" trigger nor an "on:" key — the new push trigger lives in the canonical region, never inside the generated markers', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const block = generatedBlockOf(workflow!.contents);
+
+    expect(block).not.toContain('push');
+    expect(block).not.toContain('on:');
+  });
+});
+
+describe('buildFeedbackFiles — the CI workflow also declares a push trigger scoped to main, alongside pull_request (CI-1) (dogfood-quick-fixes)', () => {
+  // The full shape from contract.md § CI-1: pull_request unfiltered, then push
+  // with a branches list of exactly one entry, "main", immediately followed by
+  // "jobs:" — proving the branch list has no second entry.
+  const PUSH_TRIGGER = /pull_request:\r?\n {2}push:\r?\n {4}branches:\r?\n {6}-\s*main\r?\njobs:/;
+
+  it('the resolved typescript profile: on: declares both pull_request and a push trigger filtered to exactly main', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+
+    expect(workflow?.contents).toMatch(/pull_request/);
+    expect(workflow?.contents).toMatch(PUSH_TRIGGER);
+  });
+
+  it('an unresolved stack still declares both triggers — canonical content, not derived from the resolved profile', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      feedbackTestConfig({ tools: ['claude-code'], stack: 'some-unrecognized-stack-xyz' }) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+
+    expect(workflow?.contents).toMatch(/pull_request/);
+    expect(workflow?.contents).toMatch(PUSH_TRIGGER);
   });
 });
 

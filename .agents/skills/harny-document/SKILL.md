@@ -136,3 +136,11 @@ repository with no harny spec history at all — no `specs/<feature-name>/`, no
   repo-level document(s), marks them as drafts, and refuses source, any `specs/`
   path, `CHANGELOG.md`, and the `harny-sync`/`harny-adr` hand-off — it is not a way to
   ship or archive a feature without an audit.
+- **Never commit or push.** Do not run `git commit`, `git push`, or any equivalent that
+  records or publishes history — not for the documentation changes this skill just made,
+  not for the `Shipped:` stamp, not for the `harny-sync` archive move, and never with a
+  verification-skipping flag such as `--no-verify`. Leave every change in the working
+  tree, staged or unstaged, exactly as this skill left it, and list the changed files in
+  the step 4 change summary; deciding what gets committed, and when, is the human's
+  call, including after the pipeline has finished. (`harny-sync`'s own `git mv` during
+  the archive move is a move, not a commit, and stays allowed.)

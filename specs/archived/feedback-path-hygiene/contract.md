@@ -14,6 +14,13 @@ Contract item ids in this file use the feature-local prefix `PH-`. Every item ci
 > the audit and have **not** been re-audited; the rest of this document is as audited.
 > See § "Post-audit amendment A1" at the end.
 
+> **Text correction (2026-09-22, `dogfood-quick-fixes`).** A1's own note above lists the
+> four sites it rewrote; § Interfaces' inline copy of the `CommandSpec.extensions` doc
+> comment was not among them and still stated only the pre-A1 rule. That sentence is now
+> brought in line with **PH-6** as amended below. This is a text alignment only: no
+> guarantee, no behavior, and no audit finding changes, and A1's own record above is
+> left exactly as written. Closes `audit.md` finding **AL-11**.
+
 ## Interfaces
 
 ### Public API — `src/feedback.ts` (MODIFIED) — G2, G4
@@ -36,7 +43,12 @@ export interface CommandSpec<K extends string> {
    *  each including its leading dot (e.g. `'.py'`). Consulted ONLY by the runner's
    *  turn-based `run` mode, and only for `per-file` commands: a touched path is
    *  passed to this command iff it ends with one of these suffixes (case-sensitive).
-   *  Absent, or an empty array, means no extension filtering. Ignored by
+   *  **(A1.)** A valid entry is a non-empty string. Absent, not an array, empty
+   *  (`[]`), or an array with no valid entry (e.g. `[null, '']`, `[5]`) all mean no
+   *  extension filtering; when at least one valid entry is present, only the valid
+   *  entries are matched and invalid ones are ignored (`[null, '', 5, '.py']` behaves
+   *  as `['.py']`). An unusable list means "no filter", never "match nothing", so a
+   *  misconfigured list can never silently disable a linter. Ignored by
    *  `whole-project` commands, by `run --whole-project` (whose `.` sentinel bypasses
    *  every path filter), and by the readiness runner. */
   readonly extensions?: readonly string[];

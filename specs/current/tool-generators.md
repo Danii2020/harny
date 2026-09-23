@@ -234,6 +234,7 @@ The system SHALL declare, on every `Generator`, a `guidancePath: string | undefi
 | templates-skill-library-parity | 2026-09-13 | Extended the `Generator` interface with `skillsDir` (per-tool skill-discovery root); narrowed TG-1's "no amendment" claim to role/conductor artifacts; extended TG-6 with Kiro's skill-discovery paths (workspace-priority, folder-name-equals-name rule) |
 | ai-sdlc-readiness | 2026-09-15 | TG-12: extended the `Generator` interface with `guidancePath` (per-tool root instruction-file path, required-but-possibly-`undefined`), consumed by the readiness-checks capability's new `repo readiness` family |
 | context7-mcp | 2026-09-15 | TG-1/TG-10: extended the `Generator` interface with `mcpConfig` (per-tool MCP server configuration path and shape, required-but-possibly-`undefined`); emits one MCP config artifact per resolved generator with default Context7 wiring |
+| dogfood-quick-fixes | 2026-09-22 | TG-1/TG-10: Context7 endpoint value changed from `/mcp` to `/mcp/oauth` across all five tools via constant update in `src/mcp.ts`. No generator interface or artifact count change. |
 
 ## Related ADRs
 

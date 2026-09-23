@@ -8,11 +8,11 @@
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/) |
-| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
 | readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/) |
 
 ## Keyword lookup
@@ -23,7 +23,9 @@
 |---|---|
 | cost_tier | pipeline-roles |
 | capabilities (vocabulary) | pipeline-roles |
+| git commit / push (role safety) | pipeline-roles |
 | docs-lookup / Context7 / MCP | pipeline-roles, cli-init |
+| OAuth / mcp/oauth | cli-init |
 | merge-write / merge-marked | cli-init |
 | human gate / verdict | pipeline-roles |
 | spec-schema | spec-workflow |
@@ -63,6 +65,7 @@
 | hook | feedback-controls |
 | lint / type-check | feedback-controls |
 | CI / GitHub Actions | feedback-controls |
+| push trigger / main branch | feedback-controls |
 | stack (project) | feedback-controls |
 | feedback | feedback-controls |
 | doctor | readiness-checks |
@@ -90,6 +93,7 @@
 | ai-sdlc-readiness | [specs/archived/ai-sdlc-readiness/](../archived/ai-sdlc-readiness/) | [readiness-checks.md](./readiness-checks.md), [tool-generators.md](./tool-generators.md), [pipeline-roles.md](./pipeline-roles.md) |
 | context7-mcp | [specs/archived/context7-mcp/](../archived/context7-mcp/) | [tool-generators.md](./tool-generators.md), [cli-init.md](./cli-init.md) |
 | feedback-path-hygiene | [specs/archived/feedback-path-hygiene/](../archived/feedback-path-hygiene/) | [feedback-controls.md](./feedback-controls.md), [readiness-checks.md](./readiness-checks.md) |
+| dogfood-quick-fixes | [specs/archived/dogfood-quick-fixes/](../archived/dogfood-quick-fixes/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 
 ## Decisions (ADR registry)
 
@@ -123,6 +127,8 @@
 | 0026 | Merge-write, never whole-file, for co-owned MCP config | Accepted | cli-init | `specs/archived/context7-mcp/decisions/0026-merge-write-for-mcp-config.md` |
 | 0027 | mcpConfig as a declarative Generator member (continuing ADR 0011/0025) | Accepted | tool-generators | `specs/archived/context7-mcp/decisions/0027-declarative-mcpconfig-generator-member.md` |
 | 0028 | Path filtering lives only in the per-turn code path; the `.` sentinel bypasses it by construction | Accepted | feedback-controls | `specs/archived/feedback-path-hygiene/decisions/0028-path-filtering-in-turn-based-code-path-only.md` |
+| 0029 | Context7 `/mcp/oauth` for all five tools, no per-tool fallback | Accepted | cli-init | `specs/archived/dogfood-quick-fixes/decisions/0029-context7-oauth-endpoint.md` |
+| 0030 | Hardcode `main` in the canonical CI push trigger rather than deriving the default branch | Accepted | feedback-controls | `specs/archived/dogfood-quick-fixes/decisions/0030-hardcode-main-ci-trigger.md` |
 
 ## Open reservations
 
@@ -132,6 +138,7 @@
 |---|---|---|---|---|
 | AL-19 | Stale test field name: a test's title can overstate its coverage after a refactor removes the field it exercised | MEDIUM | `specs/archived/cli-skeleton/audit.md` AL-19 | cli-init |
 | AL-20 | The e2e suite validates built `dist/`, not `src/` — `npm test` alone can false-green a `src/`-only regression | MEDIUM | `specs/archived/cli-skeleton/audit.md` AL-20 | cli-init |
+| DQ-3 | A non-reproducing `tests/e2e-init.test.ts` parallelism failure observed during full-suite audit. `bin/harness.js` spawns from `dist/`, and a parallel `npm run build` overlapping an e2e run can have the spawned CLI read a partially-written `dist/`. The fix needs a `pretest` build script or `e2e` file serialization (a `package.json` change out of this feature's scope). Same coupling class as AL-20, but in race form rather than staleness form. | LOW (new) | `specs/archived/dogfood-quick-fixes/audit.md` DQ-3 | cli-init |
 | AL-30 | Per-tool facts (Cursor/Kiro/Copilot) were never re-verified against a live tool install | MEDIUM (human-gated) | `specs/archived/cursor-kiro-copilot-generators/audit.md` AL-30 | tool-generators |
 | CG-1 / O4 | Codex facts independently re-confirmed 2026-09-02, but the generated artifact set was never loaded into a live Codex CLI install | MEDIUM (human-gated) | `specs/archived/codex-generator/audit.md` CG-1, O4, CG-12 | tool-generators |
 | AL-S15 | `contract.md` § Amendment A1 still prescribes a before/after differential mechanism not shipped; the delivered form is filtered absolute. Contract, roadmap, and tasks text all describe the superseded mechanism and must be corrected before archival. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S15 | skill-library |
@@ -162,6 +169,7 @@
 | RD-R9 | `'CLAUDE.md'` remains a literal in `src/doctor.ts` (`conventions-doc`) and `src/generators/claude-code.ts`, an accepted exception since moving `conventions-doc` was out of scope | LOW | `specs/archived/ai-sdlc-readiness/audit.md` F5 | readiness-checks |
 | R-Cursor | MCP support in some Cursor installs may sit behind a settings toggle that defaults off; the generated `.cursor/mcp.json` would be correct but inert until toggled in Cursor settings | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Cursor | tool-generators |
 | R-Codex | Codex Desktop may ignore project-scope `.codex/config.toml` MCP servers per `openai/codex#13025`, loading only user-global config; the generated file is correct for Codex CLI surface | MEDIUM (human-gated) | `specs/archived/context7-mcp/audit.md` R-Codex | tool-generators |
+| R-OAuth | `/mcp/oauth` is documented as gated on a client implementing the MCP OAuth specification and was never loaded into a live install of any of the five tools. Same AL-30 / CG-1 class: vendor-side facts verified through documentation rather than live-install testing. | MEDIUM (human-gated) | `specs/archived/dogfood-quick-fixes/audit.md` R-OAuth | cli-init |
 
 ## Notes
 

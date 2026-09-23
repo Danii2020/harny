@@ -6,6 +6,15 @@
 # that block — re-run `harny init` instead; edits there are overwritten on the
 # next run.
 #
+# Two triggers, both canonical: `pull_request` checks a change before integration, and
+# `push` to `main` checks it after — a change merged or pushed straight to the default
+# branch would otherwise never be checked at all. `main` is written literally because
+# `harny init` cannot know a repository's default branch; if yours is named something
+# else (`master`, `trunk`, `develop`), change it here — this is the one value in this
+# file harny expects a project to adjust by hand. A pull-request branch never
+# double-runs: `push` is filtered to `main`, so the two triggers never match the same
+# commit on a topic branch.
+#
 # The generated block invokes the same shared runner as the Stop hook
 # (templates/hooks/README.md), `.sdd/feedback/run-feedback.mjs`, in its
 # `run --whole-project` mode — never a raw per-command step. At most one
@@ -19,6 +28,9 @@
 name: harny feedback
 on:
   pull_request:
+  push:
+    branches:
+      - main
 jobs:
   feedback:
     runs-on: ubuntu-latest

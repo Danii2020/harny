@@ -48,7 +48,12 @@ export interface CommandSpec<K extends string> {
    *  each including its leading dot (e.g. `'.py'`). Consulted ONLY by the runner's
    *  turn-based `run` mode, and only for `per-file` commands: a touched path is
    *  passed to this command iff it ends with one of these suffixes (case-sensitive).
-   *  Absent, or an empty array, means no extension filtering. Ignored by
+   *  **(A1.)** A valid entry is a non-empty string. Absent, not an array, empty
+   *  (`[]`), or an array with no valid entry (e.g. `[null, '']`, `[5]`) all mean no
+   *  extension filtering; when at least one valid entry is present, only the valid
+   *  entries are matched and invalid ones are ignored (`[null, '', 5, '.py']` behaves
+   *  as `['.py']`). An unusable list means "no filter", never "match nothing", so a
+   *  misconfigured list can never silently disable a linter. Ignored by
    *  `whole-project` commands, by `run --whole-project` (whose `.` sentinel bypasses
    *  every path filter), and by the readiness runner. */
   readonly extensions?: readonly string[];

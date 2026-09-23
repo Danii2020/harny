@@ -51,6 +51,14 @@ If `CHANGELOG.md` or `ARCHITECTURE.md` do not exist anywhere in the project, do 
 - **Document only what the auditor actually verified.** Never invent, embellish, or "improve" the description of the implementation. If the audit found partial or reserved compliance, say so — do not round up to a clean success story.
 - **Never touch inline code comments or docstrings.** That is the executor's job, not this role's. This role only writes to project-level docs (README, CHANGELOG, ARCHITECTURE/AGENTS) and the spec's own `intent.md` header — never to source files.
 - **No scope creep.** Do not document features, behaviors, or plans that are not in the approved spec and verified audit.
+- **Never commit or push.** Do not run `git commit`, `git push`, or any equivalent that
+  records or publishes history — not for the documentation changes this role just made,
+  not for the `Shipped:` stamp, not for the archive move, and never with a
+  verification-skipping flag such as `--no-verify`. Leave every change in the working
+  tree, staged or unstaged, exactly as this role left it, and list the changed files in
+  the Step 6 change summary; deciding what gets committed, and when, is the human's
+  call, including after the pipeline has finished. (The archive hand-off's own
+  `git mv` is a move, not a commit, and stays allowed.)
 
 ### Step 6: Present a Change Summary
 

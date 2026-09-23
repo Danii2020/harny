@@ -200,6 +200,7 @@ can see.
 |---|---|---|
 | sdd-skill-library | 2026-09-09 | The entire `harny-*` skill library (eight skills), the shape contract, the symlink bridge, `harny-sync` (lookup/archive modes), `harny-adr` (global monotonic numbering, no backfill), `harny-standards` (pointer to AGENTS.md), and the `specs/current`/`specs/archived` knowledge base this file itself lives in; Amendment A2 (track all of specs/) |
 | templates-skill-library-parity | 2026-09-13 | Scaffolded skill library parity: the same eight `harny-*` skills now write as real files to each tool's native skill-discovery root (`.claude/skills/`, `.kiro/skills/`, `.agents/skills/` shared by three tools), with six core skills always scaffolded and two optional (selectable via `--skills` flag); closed the `templates-parity` reservation that diverged the live pipeline from `templates/` |
+| dogfood-quick-fixes | 2026-09-22 | `harny-document`'s § Guardrails now carries an explicit hard rule forbidding `git commit` and `git push` (matching the identical rule in the canonical role body). This is the layer thinned live agents actually execute (SL-5's degradation mode made concrete): when the live agent is a thin pointer delegating to the skill, the rule enters the execution context here, not in the agent body. |
 
 ## Related ADRs
 

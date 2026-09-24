@@ -290,6 +290,12 @@ export const claudeCodeGenerator: Generator = {
     rootKey: 'mcpServers',
     entry: { type: 'http', url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Claude Code reads a nested AGENTS.md only when no
+  // CLAUDE.md exists at or above the working directory; a subdirectory CLAUDE.md
+  // loads on demand and `@AGENTS.md` imports its sibling, resolved relative to the
+  // importing file (code.claude.com/docs/en/memory § AGENTS.md, § Share one file,
+  // verified 2026-09-24).
+  nestedGuidance: { path: '{dir}/CLAUDE.md', contents: '@AGENTS.md\n', marker: '@AGENTS.md' },
   roleFileName,
   mapModel,
   mapCapabilities,

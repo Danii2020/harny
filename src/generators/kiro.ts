@@ -276,6 +276,18 @@ export const kiroGenerator: Generator = {
     rootKey: 'mcpServers',
     entry: { url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Kiro reads AGENTS.md at the workspace root only;
+  // directory scoping is a steering file with `inclusion: fileMatch`, and
+  // `#[[file:…]]` includes a workspace-relative file (kiro.dev/docs/steering, via
+  // search 2026-09-24; site egress-blocked — see the audit's reservation).
+  nestedGuidance: {
+    path: '.kiro/steering/agents-{slug}.md',
+    contents: `${renderFrontmatter([
+      { key: 'inclusion', value: 'fileMatch', raw: true },
+      { key: 'fileMatchPattern', value: '{dir}/**' },
+    ])}\n#[[file:{dir}/AGENTS.md]]\n`,
+    marker: '#[[file:{dir}/AGENTS.md]]',
+  },
   roleFileName,
   mapModel,
   mapCapabilities,

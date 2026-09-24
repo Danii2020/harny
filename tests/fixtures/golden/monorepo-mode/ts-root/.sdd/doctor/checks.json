@@ -380,6 +380,52 @@
     }
   ],
   "securityLabel": "security",
+  "componentDocs": {
+    "discovery": {
+      "manifests": [
+        "package.json",
+        "pyproject.toml",
+        "go.mod",
+        "Cargo.toml",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "Gemfile",
+        "composer.json"
+      ],
+      "sourceRoots": [
+        "src",
+        "lib",
+        "app"
+      ],
+      "ignore": [
+        "node_modules",
+        "dist",
+        "build",
+        "out",
+        "coverage",
+        "vendor",
+        "target",
+        "venv",
+        "__pycache__",
+        "fixtures"
+      ],
+      "maxDepth": 3,
+      "minFiles": 3,
+      "declared": [
+        "."
+      ]
+    },
+    "docName": "AGENTS.md",
+    "bridges": [
+      {
+        "tool": "claude-code",
+        "path": "{dir}/CLAUDE.md",
+        "contents": "@AGENTS.md\n",
+        "marker": "@AGENTS.md"
+      }
+    ]
+  },
   "commands": [
     {
       "id": "npm-test",

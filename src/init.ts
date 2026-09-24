@@ -24,6 +24,7 @@ import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
 import { buildPermissionsFiles, parsePermissionPolicy } from './permissions.js';
 import { activateGitHooks, buildGitHooksFiles } from './git-hooks.js';
+import { COMPONENT_DISCOVERY, buildNestedGuidanceBridgeFiles, loadDiscovery } from './component-docs.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
@@ -349,6 +350,21 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   files.push(...mcp.files);
   for (const warning of mcp.warnings) {
     io.warn(warning);
+  }
+
+  // (NEW — component-level-docs, CL-5.) Bridges for tools that do not read a nested
+  // AGENTS.md, for components that already have one. Like the MCP step it reads
+  // targetDir, and like it it never produces a conflict: an existing bridge path is
+  // left alone (warned about when it lacks the include).
+  if (payload.sharedComponents) {
+    const discovery = await loadDiscovery(templates.root);
+    const declared = payload.conductor.project.components.map((component) => component.path);
+    const components = discovery.discoverComponents(targetDir, { ...COMPONENT_DISCOVERY, declared });
+    const bridges = await buildNestedGuidanceBridgeFiles(targetDir, components, resolvedGenerators, discovery);
+    files.push(...bridges.files);
+    for (const warning of bridges.warnings) {
+      io.warn(warning);
+    }
   }
 
   // 12. Plan writes.

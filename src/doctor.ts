@@ -31,6 +31,9 @@ import { CORE_SKILL_IDS } from './vocabulary.js';
 import { getGenerator } from './generators/index.js';
 import { CI_SECRET_SCAN_STEP_NAME, GIT_HOOKS_DIR } from './git-hooks.js';
 import { PERMISSIONS_GUARD_PATH, PERMISSIONS_POLICY_PATH } from './permissions.js';
+import { COMPONENT_DISCOVERY, COMPONENT_DOC_NAME } from './component-docs.js';
+import type { ComponentDiscoveryOptions } from './component-docs.js';
+import type { NestedGuidanceBridge } from './generators/types.js';
 import type { Generator, GeneratedFile } from './generators/types.js';
 import type { InitIO } from './init.js';
 
@@ -156,6 +159,14 @@ export interface DoctorChecksFile {
    *  both ignored by an older runner (DS-8); `version` stays 1. */
   readonly security: readonly DoctorCheck[];
   readonly securityLabel: string;
+  /** **(NEW — component-level-docs, CL-3.)** What the runner needs to discover
+   *  components at run time and check each one's doc and bridges. Ignored by an
+   *  older runner (CL-4). */
+  readonly componentDocs: {
+    readonly discovery: ComponentDiscoveryOptions;
+    readonly docName: string;
+    readonly bridges: readonly (NestedGuidanceBridge & { readonly tool: string })[];
+  };
   /** **(WIDENED — specs/monorepo-mode.)** Entries may now carry `dir`. Field
    *  ADDED to the element type; no field of `DoctorChecksFile` itself is added,
    *  renamed or removed, and `version` stays `1` (MC-21). */
@@ -429,6 +440,16 @@ export function buildDoctorChecks(
     repoReadinessLabel: REPO_READINESS_FAMILY_LABEL,
     security: buildSecurityChecks(generators, placement),
     securityLabel: SECURITY_FAMILY_LABEL,
+    componentDocs: {
+      discovery: {
+        ...COMPONENT_DISCOVERY,
+        declared: resolveComponents(config).map((component) => component.path),
+      },
+      docName: COMPONENT_DOC_NAME,
+      bridges: generators.flatMap((generator) =>
+        generator.nestedGuidance ? [{ tool: generator.id, ...generator.nestedGuidance }] : [],
+      ),
+    },
     commands,
   };
 }

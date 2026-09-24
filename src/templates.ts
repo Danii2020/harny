@@ -133,6 +133,9 @@ export interface CanonicalTemplates {
   readonly gitHooksPreCommit?: SkillResource;
   readonly gitHooksPrePush?: SkillResource;
   readonly gitHooksRunner?: SkillResource;
+  /** **(NEW — component-level-docs.)** `templates/shared/components.mjs`, read
+   *  byte-for-byte (CL-1). Tolerated absent for the same reason as `hookRunner`. */
+  readonly sharedComponents?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -404,6 +407,7 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
   const gitHooksPreCommit = await loadOptionalResource(templatesRoot, 'git-hooks/pre-commit', 'pre-commit');
   const gitHooksPrePush = await loadOptionalResource(templatesRoot, 'git-hooks/pre-push', 'pre-push');
   const gitHooksRunner = await loadOptionalResource(templatesRoot, 'git-hooks/run-git-hook.mjs', 'run-git-hook.mjs');
+  const sharedComponents = await loadOptionalResource(templatesRoot, 'shared/components.mjs', 'components.mjs');
 
   return {
     root: templatesRoot,
@@ -422,6 +426,7 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     gitHooksPreCommit,
     gitHooksPrePush,
     gitHooksRunner,
+    sharedComponents,
   };
 }
 

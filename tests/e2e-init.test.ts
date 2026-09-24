@@ -358,6 +358,8 @@ const SHARED_DOCTOR_PATHS = [
   '.sdd/doctor/run-doctor.mjs',
   '.sdd/doctor/checks.json',
   '.sdd/shared/probes.mjs',
+  // (component-level-docs, CL-1.) The discovery module the doctor runner imports.
+  '.sdd/shared/components.mjs',
 ];
 
 /** **(NEW — permissions-baseline.)** The tool-neutral permissions guard and its
@@ -413,7 +415,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(37);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -544,7 +546,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(37);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -584,7 +586,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(37);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -624,7 +626,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(37);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -665,7 +667,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(37);
+    expect(files).toHaveLength(38);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -755,10 +757,10 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
-    expect(files).toHaveLength(91);
+    expect(files).toHaveLength(92);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
-    expect(sharedFiles).toHaveLength(17);
+    expect(sharedFiles).toHaveLength(18);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(33);
@@ -878,7 +880,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 86.
-    expect(files).toHaveLength(97);
+    expect(files).toHaveLength(98);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(39);
@@ -909,7 +911,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 77.
-    expect(files).toHaveLength(88);
+    expect(files).toHaveLength(89);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(30);

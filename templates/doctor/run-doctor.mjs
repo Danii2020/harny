@@ -85,6 +85,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { probeSatisfied as requirementMet } from '../shared/probes.mjs';
 
+/** The shared component-discovery module (component-level-docs CL-1), imported
+ *  dynamically so an install that predates it still runs every other family (CL-4). */
+const componentsModule = await import(new URL('../shared/components.mjs', import.meta.url).href).catch(() => undefined);
+
 /** The runner's own default location for its checks data, relative to `cwd`. Not a
  *  value this script receives via `--checks` — a hard-coded convention of the
  *  runner's own invocation, the same way `run-feedback.mjs` hard-codes its own
@@ -299,6 +303,38 @@ function main() {
     }
     for (const entry of checks.repoReadiness ?? []) {
       evaluateEntry(entry, cwd);
+    }
+    // (component-level-docs, CL-3.) One doc entry per discovered component, then one
+    // entry per bridged tool once the doc exists — all recommended.
+    const componentDocs = checks.componentDocs;
+    if (componentDocs && componentsModule) {
+      const { discoverComponents, fillComponentTemplate } = componentsModule;
+      for (const dir of discoverComponents(cwd, componentDocs.discovery ?? {})) {
+        const docPath = `${dir}/${componentDocs.docName}`;
+        if (!fs.existsSync(path.join(cwd, docPath))) {
+          emit(
+            `repo-readiness:component-doc:${dir}`,
+            'warn',
+            `add ${docPath} describing this component's purpose, key files, local commands and conventions`,
+          );
+          continue;
+        }
+        emit(`repo-readiness:component-doc:${dir}`, 'ok');
+        for (const bridge of componentDocs.bridges ?? []) {
+          const bridgePath = fillComponentTemplate(bridge.path, dir);
+          const marker = fillComponentTemplate(bridge.marker, dir);
+          const contents = safeRead(path.join(cwd, bridgePath));
+          if (contents !== undefined && contents.includes(marker)) {
+            emit(`repo-readiness:component-bridge:${bridge.tool}:${dir}`, 'ok');
+          } else {
+            const fix =
+              contents === undefined
+                ? `create ${bridgePath} (it must include "${marker}") containing exactly: ${JSON.stringify(fillComponentTemplate(bridge.contents, dir))}`
+                : `add "${marker}" to ${bridgePath}`;
+            emit(`repo-readiness:component-bridge:${bridge.tool}:${dir}`, 'warn', `${fix} (or run npx harny init)`);
+          }
+        }
+      }
     }
   }
 

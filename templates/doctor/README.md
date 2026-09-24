@@ -25,7 +25,12 @@ all, unlike the feedback hook (`AGENTS.md` S7).
    separate family from harness manifest, not more entries in it, because the two
    ask different questions: harness manifest asks whether harny's own artifacts are
    installed; repo readiness asks whether the repository itself carries the baseline
-   documentation an agent needs to work here safely. Every security check is
+   documentation an agent needs to work here safely. Repo readiness also discovers the
+   repository's components (directories with their own package manifest, declared
+   components, and domain directories under `src/`, `lib/` or `app/`) and warns, per
+   component, when it has no `AGENTS.md`, and per selected tool that does not read a
+   nested `AGENTS.md` on its own, when the file that points that tool at it is missing.
+   Each warning gives the exact file and content to add. Every security check is
    **recommended**: it warns with its remediation and never changes the exit code,
    because a repository can have legitimate reasons, such as a hook manager or another
    secret scanner, to do it differently. Security checks ask the real question rather

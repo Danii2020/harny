@@ -540,8 +540,10 @@ describe('buildRuntimeSharedFiles — the shared probe module is written exactly
     const payload = buildPayload(feedbackTestConfig({ tools, stack: 'typescript' }) as any, templates);
     const files = buildRuntimeSharedFiles(payload);
 
-    expect(files).toHaveLength(1);
-    expect(files[0].path).toBe(SHARED_PROBES_PATH);
+    // (component-level-docs.) `.sdd/shared/components.mjs` now sits beside it, also
+    // exactly once; the guard is still "one probes.mjs whatever the tool count".
+    expect(files.filter((f) => f.path === SHARED_PROBES_PATH)).toHaveLength(1);
+    expect(files.filter((f) => f.path === '.sdd/shared/components.mjs')).toHaveLength(1);
   });
 
   it('is byte-for-byte identical to templates/shared/probes.mjs (BG-11)', async () => {

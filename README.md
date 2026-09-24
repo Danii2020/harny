@@ -294,6 +294,21 @@ node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
 node /path/to/target-repo/.sdd/doctor/run-doctor.mjs --only spec-state
 ```
 
+The **repo readiness** family also checks **component-level docs**. It discovers the
+repository's components (directories with their own package manifest, declared
+monorepo components, and domain directories under `src/`, `lib/` or `app/`) and
+warns when a component has no `AGENTS.md`. Cursor, GitHub Copilot and Codex read a
+nested `AGENTS.md` on their own. Claude Code and Kiro need a small bridge file, and
+`harny init` writes it for every component that already has an `AGENTS.md`, never over
+an existing file:
+- **Claude Code:** `<dir>/CLAUDE.md` containing `@AGENTS.md`, because Claude Code skips
+  a nested `AGENTS.md` whenever a `CLAUDE.md` exists above it.
+- **Kiro:** a `.kiro/steering/component-<slug>.md` steering file with
+  `inclusion: fileMatch`.
+
+The documentation role writes the component `AGENTS.md` itself for the components a
+feature touched.
+
 The **security** family reports, as warnings only (never a failure, never a changed
 exit code), whether:
 - the permissions baseline is installed and each selected tool's hook config calls its

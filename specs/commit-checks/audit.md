@@ -48,6 +48,7 @@
 | 2026-09-24 | round 2 | **CC-R1 — The CI secret-scan step has not run yet.** Its first live run is this PR's `harny feedback` check. A wrong URL or checksum would fail loudly, never silently pass. | MEDIUM (process) | Confirm green on the PR; the PR description names it. |
 | 2026-09-24 | round 2 | **Non-goals honored.** No whole-project checks at commit, no skip switch, no role-body change, no doctor checks, no licensed action. | INFO | — |
 
+| 2026-09-24 | round 2 (post-PR) | **CC-R1 closed.** PR #5's `harny feedback` run 35955319489: `gitleaks_8.30.1_linux_x64.tar.gz: OK` (checksum), `2 commits scanned` over `eb20139..8af5723` (exactly the PR range), `no leaks found`; step green. | INFO | — |
 
 ## Final Verdict
 
@@ -59,7 +60,7 @@
 - None.
 
 **Warnings** (should fix, not blocking):
-- CC-R1 (MEDIUM): confirm the `harny feedback` check, including "Secret scan (gitleaks)", is green on the PR.
+- None open. CC-R1 was closed by the PR's first CI run (see Audit Log).
 
 **Recommendations** (nice to have):
 - CC-F2: add a `pre-merge-commit` shim so local merges into a protected branch are blocked too.

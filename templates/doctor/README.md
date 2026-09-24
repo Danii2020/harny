@@ -13,18 +13,25 @@ all, unlike the feedback hook (`AGENTS.md` S7).
 
 ## The behavior
 
-1. **Five check families run, in this fixed order, every time.** *Environment* (is
+1. **Six check families run, in this fixed order, every time.** *Environment* (is
    the running Node new enough, and is a test-suite command even configured for this
    stack), *harness manifest* (are the base harness files this repo's `harny init`
    scaffolded still present), *repo readiness* (is the target repository itself
    legible to an AI agent — a README, an architecture/structure document, and each
-   selected tool's own guidance file), *spec state* (is `specs/` internally
+   selected tool's own guidance file), *security* (are the permissions baseline and
+   the commit checks installed, wired and active, is `.env` git-ignored, is a secret
+   scanner available locally and in CI), *spec state* (is `specs/` internally
    coherent), and *tests* (does the full test suite pass). Repo readiness is a
    separate family from harness manifest, not more entries in it, because the two
    ask different questions: harness manifest asks whether harny's own artifacts are
    installed; repo readiness asks whether the repository itself carries the baseline
-   documentation an agent needs to work here safely. Fixed order means two runs of
-   the same repo state produce identical output.
+   documentation an agent needs to work here safely. Every security check is
+   **recommended**: it warns with its remediation and never changes the exit code,
+   because a repository can have legitimate reasons, such as a hook manager or another
+   secret scanner, to do it differently. Security checks ask the real question rather
+   than a proxy: whether git ignores `.env` is asked of git itself, and whether the
+   hooks are active is asked of `core.hooksPath`, not inferred from a file existing.
+   Fixed order means two runs of the same repo state produce identical output.
 2. **The run is all-or-nothing in reporting, never in execution.** A failing check
    never aborts the run: every check in every family is always evaluated, so one
    report shows everything wrong at once, not one thing at a time.
@@ -68,8 +75,9 @@ all, unlike the feedback hook (`AGENTS.md` S7).
 8. **A stale committed runner is not a silent failure.** A repo whose committed
    `.sdd/doctor/run-doctor.mjs` predates the repo-readiness family simply produces no
    family-3 lines — it still runs the four families it knows, including the
-   conventions-document check, unchanged. Re-run `npx harny init` after upgrading
-   harny to pick up the new family.
+   conventions-document check, unchanged. Likewise a runner or `checks.json` that
+   predates the security family produces no security lines. Re-run `npx harny init`
+   after upgrading harny to pick up new families.
 
 ## What this checks, concretely
 
@@ -119,7 +127,7 @@ carries, and vice versa.
 
 ## What lives here
 
-- `run-doctor.mjs` — the shared runner script implementing the four families above.
+- `run-doctor.mjs` — the shared runner script implementing the six families above.
   It is copied **verbatim** into every scaffolded project at
   `.sdd/doctor/run-doctor.mjs`; its bytes never vary by stack or by tool. Every
   value it evaluates arrives via `--checks` (defaulting to

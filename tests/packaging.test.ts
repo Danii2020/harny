@@ -44,6 +44,16 @@
  * count assertion below is expected to fail on thirty vs. the contracted
  * thirty-one, and the membership assertion is expected to fail on the missing
  * path, not on a wrong assumption about `npm pack`'s own output shape.
+ *
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-1, TT-23; intent.md SC1; audit.md Test Coverage T11;
+ * tasks.md Task R.10.
+ *
+ * `EXPECTED_TEMPLATE_FILES` gains `templates/skills/harny-test/high-value-tests.md`
+ * (31 -> 32). It does not exist yet at red time, so the count assertion below
+ * is expected to fail on thirty-one vs. the contracted thirty-two, and the
+ * membership assertion is expected to fail on the missing path, not on a
+ * wrong assumption about `npm pack`'s own output shape.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -88,6 +98,9 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/shared/probes.mjs',
   // (context7-mcp)
   'templates/mcp/README.md',
+  // (test-tiers) the bundled high-value-tests rubric, shipped as a
+  // harny-test resource (TT-1).
+  'templates/skills/harny-test/high-value-tests.md',
 ];
 
 async function packedFilePaths(): Promise<string[]> {
@@ -99,12 +112,12 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all thirty-one templates/** files (Gu 26, S4) (context7-mcp amendment: 30 -> 31)', async () => {
+  it('includes bin/, dist/, and all thirty-two templates/** files (Gu 26, S4) (test-tiers amendment: 31 -> 32)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
-    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(31);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(32);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }

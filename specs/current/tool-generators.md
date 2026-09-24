@@ -223,6 +223,7 @@ The system SHALL declare, on every `Generator`, a `guidancePath: string | undefi
 |---|---|---|---|
 | AL-30 | Per-tool facts (paths, frontmatter keys, model ids) for Cursor, Kiro, and GitHub Copilot were verified once against vendor docs (2026-08-12) but never re-verified by loading generated artifacts into a live install of any of the three tools; a generator writing to a directory a tool never reads fails silently with exit code 0 | MEDIUM (open, human-gated) | cursor-kiro-copilot-generators · audit.md AL-30 |
 | CG-1 / O4 | The Codex facts were independently re-fetched and re-confirmed against first-party URLs on 2026-09-02 (CG-1), but — like AL-30 for the other three tools — the generated Codex artifact set has never been loaded into a running Codex CLI install to confirm it actually discovers the five agents and the `sdd-conductor` skill (O4/CG-12) | MEDIUM (open, human-gated) | codex-generator · audit.md CG-1, O4, CG-12 |
+| TT-R2 | `test-tiers`' tier-proposal, confirmation-checkpoint and tier-aware-audit behavior is delivered and tested for presence on Cursor, Kiro, GitHub Copilot and Codex (protocol tokens present in every generator's rendered artifact), but was walked through at runtime only on Claude Code — same class as AL-30 and CG-1: vendor-side runtime behavior verified through generated content, not a live install | MEDIUM (open, human-gated) | test-tiers · audit.md AL-6, TT-R2 |
 
 ## Contributing features
 

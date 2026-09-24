@@ -15,6 +15,12 @@
  * failure. Once vocabulary lands (Phase 2) but before skill emission exists
  * (Phase 3), the fs-based assertions below fail behaviorally instead (empty
  * or missing directories), never vacuously.
+ *
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-1; intent.md SC1; audit.md Test Coverage T1;
+ * tasks.md Task R.1. See the dedicated, non-vacuous
+ * "harny-test/high-value-tests.md ships to every tool's own skill root"
+ * describe block below.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -350,6 +356,54 @@ describe('bundled resources travel with their skill (Gu 12)', () => {
       expect(fs.existsSync(resource), `${resource} missing alongside its SKILL.md`).toBe(true);
     }
   });
+});
+
+/**
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-1; intent.md SC1; audit.md Test Coverage T1;
+ * tasks.md Task R.1.
+ *
+ * Every describe block above already builds its "expected" path set
+ * dynamically from `templates/skills/<id>/`'s own directory listing
+ * (`skillResourceNames`), so if `high-value-tests.md` does not exist yet,
+ * both the expected set and the actual written set omit it identically and
+ * the comparison passes vacuously — exactly the gap `tasks.md` Task R.1
+ * calls out ("the expected set explicitly names `high-value-tests.md` so it
+ * cannot pass vacuously"). This block hardcodes the path instead of
+ * discovering it, so it fails by a genuine missing file at red time, not by
+ * omission on both sides.
+ */
+describe('harny-test/high-value-tests.md ships to every tool\'s own skill root, non-vacuously (TT-1)', () => {
+  const TOOL_ROOTS: ReadonlyArray<{ tool: string; root: string }> = [
+    { tool: 'claude-code', root: '.claude/skills' },
+    { tool: 'cursor', root: '.agents/skills' },
+    { tool: 'kiro', root: '.kiro/skills' },
+    { tool: 'github-copilot', root: '.agents/skills' },
+    { tool: 'codex', root: '.agents/skills' },
+  ];
+
+  it.each(TOOL_ROOTS)(
+    '$tool alone writes harny-test/high-value-tests.md under $root, byte-equal to templates/skills/harny-test/high-value-tests.md',
+    async ({ tool, root }) => {
+      const { runInit } = await import('../src/init.js');
+      const source = path.join(REAL_TEMPLATES_ROOT, 'skills', 'harny-test', 'high-value-tests.md');
+      expect(fs.existsSync(source), `${source} does not exist yet`).toBe(true);
+
+      const targetDir = await makeTempDir();
+      await runInit({
+        targetDir,
+        overrides: { tools: [tool as 'claude-code' | 'cursor' | 'kiro' | 'github-copilot' | 'codex'] },
+        interactive: false,
+        dryRun: false,
+        force: false,
+        io: collectingIO(),
+      });
+
+      const written = path.join(targetDir, ...root.split('/'), 'harny-test', 'high-value-tests.md');
+      expect(fs.existsSync(written), `${written} was not written`).toBe(true);
+      expect(fs.readFileSync(written, 'utf8')).toBe(fs.readFileSync(source, 'utf8'));
+    },
+  );
 });
 
 describe('the shape contract ships to every root (Gu 13)', () => {

@@ -1,6 +1,6 @@
 # Pipeline Roles Specification
 
-> Last synced: 2026-09-23. Owned artifacts: `templates/roles/*.md`,
+> Last synced: 2026-09-24 by test-tiers. Owned artifacts: `templates/roles/*.md`,
 > `templates/conductor/sdd-conductor.md`, `.claude/agents/sdd-*.md`,
 > `.claude/skills/sdd-conductor/SKILL.md`, the cost-tier and capability
 > vocabularies, the three human gates.
@@ -208,6 +208,54 @@ absent, since it is untracked and therefore absent on a fresh clone and in CI.
 - **WHEN** the live, per-tool conductor file does not exist (e.g. a fresh clone or CI)
 - **THEN** the parity test skips, observably, and the suite still passes
 
+### Requirement: PR-12 — Conditional tier-confirmation checkpoint, not a gate
+
+The system SHALL have `sdd-test-writer` propose tests at the tier (`unit` /
+`integration` / `e2e`) suited to each spec item, with a framework inferred per tier
+from repository evidence, recorded as a `### Test Plan` in `audit.md` § Test
+Coverage. Confirmation is required if and only if the plan contains a tier beyond
+`unit`, or any row's "Setup needed" is not `none` — a unit-only plan that would still
+need setup also asks. A plan that is both unit-only and needs no setup is recorded
+`NOT REQUIRED` and proceeds with no pause. The checkpoint is a conditional step
+inside the test-writer stage, described as an instance of the conductor's existing
+"any decision only the human can make" pause — it is explicitly not a fourth
+`[HUMAN GATE`; PR-6's three-gate count and order are unchanged.
+
+**Source:** test-tiers · contract.md § Behavior Guarantees TT-6 to TT-18; ADR 0046, ADR 0047, ADR 0048.
+
+#### Scenario: The test-writer's plan needs a non-unit tier or any setup
+- **WHEN** the Test Plan contains a tier beyond `unit`, or any row's "Setup needed"
+  is not `none`
+- **THEN** the test-writer stops for confirmation before writing a test or
+  installing anything — a delegated invocation records `PROPOSED` and reports the
+  first line `TEST PLAN AWAITING CONFIRMATION` for the conductor to relay; a direct
+  invocation asks inline and waits
+
+#### Scenario: The plan is unit-only with no setup
+- **WHEN** the Test Plan is unit-only and every row's "Setup needed" is `none`
+- **THEN** it is recorded `NOT REQUIRED (unit-only, no setup)`, tests are written in
+  the same invocation with no pause, and the conductor's diagram shows no additional
+  `[HUMAN GATE` line
+
+### Requirement: PR-13 — Auditor checks tier coverage
+
+The system SHALL have `sdd-auditor` read a `CONFIRMED` or `NOT REQUIRED` Test Plan
+and record a `### Tier Results` table in `audit.md` § Test Coverage, immediately
+below the Test Plan, verifying per tier that tests exist, that every listed spec id
+is covered at that tier, that the setup present matches the plan, and that the tier
+ran or is honestly reported "not run: <reason>". Deviations (an integration/e2e test
+written without a `CONFIRMED` plan, a confirmed tier with no tests, setup the plan
+never named, or a plan still `PROPOSED`) are raised as findings mapped onto the
+auditor's existing CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchanged.
+
+**Source:** test-tiers · contract.md § Behavior Guarantees TT-26 to TT-29; intent.md G7; ADR 0049.
+
+#### Scenario: The auditor audits a feature with a Test Plan
+- **WHEN** `sdd-auditor` audits a feature whose `audit.md` contains a `### Test Plan`
+- **THEN** it writes a `### Tier Results` table below it, checking coverage, setup
+  and run status per tier, and logs any deviation as a finding in the existing
+  severity buckets rather than a new tier-specific scale
+
 ## Invariants
 
 1. `cost_tier` and `capabilities` stay abstract vocabulary — a per-tool generator maps them to that tool's real model ids and permission names; no canonical role file may hardcode a tool-specific value as its only source of truth (breaking this reopens `canonical-role-templates` AL-9's regression class).
@@ -224,6 +272,11 @@ absent, since it is untracked and therefore absent on a fresh clone and in CI.
 | RC-R4 | **The live, per-tool conductor copy remains untracked.** `PR-11`'s parity guard detects drift only where that file exists on a given machine; its own repair during this feature's ship is covered by no commit, since `.claude/skills/sdd-conductor/` is gitignored. | LOW (design, deliberate) | documentation-role-completion · audit.md RC-R4, AL-8 |
 | RC-AL2 | The acceptance-substring tests pinning `PR-5`'s completion-precondition text (e.g. `['only after', 'spec-state']`) are looser than the guarantee itself — a future prose edit could satisfy the pins while losing the intent. Verified to hold today only by independent auditor re-derivation in context. | LOW | documentation-role-completion · audit.md AL-2 |
 | RC-AL3 | The per-generator propagation test for `PR-5`'s completion-precondition text pins a single anchor substring rather than the full element list, weaker than the "verbatim" guarantee it stands for. Verified to hold today only by independent auditor re-derivation across all five scaffolded artifacts. | LOW | documentation-role-completion · audit.md AL-3 |
+| TT-AL1 | **`templates/roles/sdd-test-writer.md`'s Step 5 sends a `NOT REQUIRED` plan to "continue straight to Step 7"; the role's own numbering makes the step that writes the tests Step 6, not Step 7.** As shipped, the literal text tells a unit-only, no-setup plan to skip writing its own tests. Held at runtime in the one observed walkthrough (a delegated sub-agent wrote the tests anyway), but the shipped cross-reference is wrong and reaches all five tools. | HIGH | test-tiers · audit.md AL-1 |
+| TT-AL2 | Four Error Handling Contract rows never made it into the shipped `harny-test`/`harny-audit` prompts: a re-invocation whose confirmed decision has no matching Test Plan on disk; ambiguous framework evidence across two candidates; the auditor being unable to classify a test's tier; and no human being reachable to confirm. | HIGH | test-tiers · audit.md AL-2 |
+| TT-AL3 | The pinned Test Plan shape and its position above the Test Coverage table are not actually shipped; the skill's own pointer ("contract § Data Models") resolves to nothing in a downstream install. Observed at runtime: the Test Plan landed below the table instead of above it. | MEDIUM | test-tiers · audit.md AL-3 |
+| TT-AL4 | The previous spec-to-test mapping instructions (every error-handling row, every constraint, the edge-case list) were dropped from the shipped test-writer without a contract line authorizing the removal; the shipped auditor still expects every contract guarantee to have at least one test. | MEDIUM | test-tiers · audit.md AL-4 |
+| TT-R1 | Tier inference, the confirmation rule, stop/ask behavior, setup scope and per-tier red reporting are prompt instructions no automated test can prove an agent follows; evidence is limited to five manual walkthroughs on Claude Code, three of which are PARTIAL (no e2e proposal seen, no edit relayed, no decline path, no inline continuation, and every "red for the right reason" leg blocked by the sample's own permission rule). | MEDIUM (human-gated) | test-tiers · audit.md AL-5, TT-R1 |
 
 ## Contributing features
 
@@ -235,6 +288,7 @@ absent, since it is untracked and therefore absent on a fresh clone and in CI.
 | ai-sdlc-readiness | 2026-09-15 | PR-10: `harny-document`'s bounded bootstrap mode — a second invocation path for a repo with no harny spec history, mutually unreachable from the post-audit path, output always marked draft |
 | dogfood-quick-fixes | 2026-09-22 | Added § Hard-rule inventory: `sdd-documentation` is the only role in the five-role set that carries an explicit hard rule forbidding `git commit` and `git push` (the other four deliberately do not carry this rule). This rule is stated in `templates/roles/sdd-documentation.md` § "Step 5: Hard Rules" and is wired into the canonical role body so it reaches all five tools' generated artifacts. |
 | documentation-role-completion | 2026-09-23 | Amended PR-2 (`cheapest` → `mid` for `sdd-documentation`; other four roles unchanged; `cheapest` unoccupied, not removed) and PR-5 (archive verification now a completion precondition, not just a duty). Added PR-11 (conductor verifies the archive itself before declaring the pipeline complete, plus a presence-gated parity guard for the live per-tool conductor copy). Restored role-template↔skill parity for the hand-off tail (the role template previously named `harny-adr` zero times). Renumbered the role template's steps: hard rules are now Step 7 and the change summary is Step 8 (was Step 5/6). |
+| test-tiers | 2026-09-24 | Added PR-12 (the shipped test-writer proposes unit/integration/e2e tests with a conditional, non-gate confirmation checkpoint) and PR-13 (the shipped auditor checks tier coverage and records `### Tier Results`). Shipped as the delivery layer only — reaches all five tools, `src/` unchanged; this repository's own dogfood test-writer and auditor intentionally keep the pre-tier flow (reservation TT-R3). Approved with reservations: two HIGH text defects in the shipped prompts (a wrong step cross-reference; four missing Error Handling Contract rows) and partial manual-walkthrough coverage on Claude Code, carried forward rather than blocking. |
 
 ## Hard-rule inventory
 
@@ -250,3 +304,7 @@ absent, since it is untracked and therefore absent on a fresh clone and in CI.
 | 0013 | Template roles remain full-body, not thinned; no thin pointer layer in `templates/` | Accepted |
 | 0036 | Raise `sdd-documentation` to `mid`; leave `cheapest` unoccupied rather than reassigning another role to it | Accepted |
 | 0037 | Guard the untracked live conductor with a presence-gated parity test rather than tracking the file or leaving it unguarded | Accepted |
+| 0046 | Any setup requires confirmation, even for a unit-only plan | Accepted |
+| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Accepted |
+| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Accepted |
+| 0049 | Tier findings map onto the auditor's existing severity buckets | Accepted |

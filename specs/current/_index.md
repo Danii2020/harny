@@ -1,15 +1,15 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-24 by subagent-feedback-hooks (archive mode: feature archived, capability docs updated, ADRs 0043–0045 registered)
+> Last synced: 2026-09-24 by test-tiers (archive mode: feature archived, capability docs updated, ADRs 0046–0050 registered)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
-| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
@@ -92,6 +92,12 @@
 | shipped stamp / marker matching / bolded marker | readiness-checks |
 | SubagentStop / subagentStop / sub-agent feedback | feedback-controls, tool-generators |
 | --keep-turn / at-least-once delivery | feedback-controls |
+| test tier / unit / integration / e2e | pipeline-roles |
+| Test Plan / Plan status | pipeline-roles |
+| TEST PLAN AWAITING CONFIRMATION | pipeline-roles |
+| Tier Results | pipeline-roles |
+| high-value-tests.md | skill-library |
+| tier-confirmation checkpoint | pipeline-roles |
 
 ## Synchronized Changes
 
@@ -112,6 +118,7 @@
 | documentation-role-completion | [specs/archived/documentation-role-completion/](../archived/documentation-role-completion/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [readiness-checks.md](./readiness-checks.md) |
 | monorepo-mode | [specs/archived/monorepo-mode/](../archived/monorepo-mode/) | [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 | subagent-feedback-hooks | [specs/archived/subagent-feedback-hooks/](../archived/subagent-feedback-hooks/) | [feedback-controls.md](./feedback-controls.md), [tool-generators.md](./tool-generators.md) |
+| test-tiers | [specs/archived/test-tiers/](../archived/test-tiers/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [tool-generators.md](./tool-generators.md) |
 
 ## Decisions (ADR registry)
 
@@ -162,6 +169,11 @@
 | 0043 | A sub-agent's stop runs the ordinary runner with `--keep-turn`, giving at-least-once delivery | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0043-keep-turn-flag-at-least-once-delivery.md` |
 | 0044 | Wire a sub-agent completion event only where first-party documentation confirms it | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0044-wire-only-documented-subagent-events.md` |
 | 0045 | Claude Code's wrapper takes the event name as a parameter; Cursor and Codex share one argv-forwarding wrapper | Accepted | tool-generators | `specs/archived/subagent-feedback-hooks/decisions/0045-event-name-is-a-wrapper-parameter.md` |
+| 0046 | Any setup requires confirmation, even for a unit-only plan | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0046-any-setup-requires-confirmation-even-unit-only.md` |
+| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0047-test-plan-lives-only-in-audit-md.md` |
+| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0048-tier-checkpoint-conditional-not-a-fourth-gate.md` |
+| 0049 | Tier findings map onto the auditor's existing severity buckets | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0049-tier-findings-reuse-existing-severity-buckets.md` |
+| 0050 | The test-value rubric ships as a bundled harny-test resource, not a skill | Accepted | skill-library | `specs/archived/test-tiers/decisions/0050-rubric-ships-as-bundled-harny-test-resource.md` |
 
 ## Open reservations
 
@@ -233,6 +245,13 @@
 | SF-R2 | Kiro and GitHub Copilot are not wired for sub-agent completion; Copilot's first-party docs also disagree with harny's shipped hook shape | MEDIUM (human-gated) | `specs/archived/subagent-feedback-hooks/contract.md` § Open questions 3–4 | feedback-controls |
 | SF-F1 | No test executes the Cursor/Codex sub-agent wrapper, so the argv forwarding that carries `--keep-turn` is unguarded | HIGH (coverage) | `specs/archived/subagent-feedback-hooks/audit.md` F1 | feedback-controls |
 | SF-F4 | Two regenerated `.claude/settings.json` goldens are excluded from byte comparison, so a Claude Code hook-config drift would pass | LOW (test quality) | `specs/archived/subagent-feedback-hooks/audit.md` F4 | feedback-controls |
+| TT-AL1 | `templates/roles/sdd-test-writer.md`'s Step 5 sends a `NOT REQUIRED` plan to "continue straight to Step 7"; the step that writes the tests is Step 6, not Step 7 | HIGH | `specs/archived/test-tiers/audit.md` AL-1 | pipeline-roles |
+| TT-AL2 | Four Error Handling Contract rows are missing from the shipped `harny-test`/`harny-audit` prompts (no-plan re-invocation, ambiguous evidence, unclassifiable tier, no human reachable) | HIGH | `specs/archived/test-tiers/audit.md` AL-2 | pipeline-roles |
+| TT-AL3 | The pinned Test Plan shape and position are not shipped; the skill's "(contract § Data Models)" pointer resolves to nothing downstream | MEDIUM | `specs/archived/test-tiers/audit.md` AL-3 | pipeline-roles |
+| TT-AL4 | The prior spec-to-test mapping instructions (error-handling rows, constraints, edge cases) were dropped without contract authority | MEDIUM | `specs/archived/test-tiers/audit.md` AL-4 | pipeline-roles |
+| TT-R1 | Tier inference, confirmation, stop/ask, setup scope and per-tier red reporting are prompt instructions unverifiable by automated tests; 3 of 5 manual Claude Code walkthroughs were only PARTIAL | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-5, TT-R1 | pipeline-roles |
+| TT-R2 | Tier proposal, confirmation and tier-aware audit are delivered and tested for presence on Cursor, Kiro, GitHub Copilot and Codex, but walked through at runtime only on Claude Code | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-6, TT-R2 | tool-generators |
+| TT-R3 | The dogfood `harny-test`/`harny-audit` intentionally lack the tier flow and tier audit; dogfood `harny-test` still points at the dogfood-only `high-value-tests` skill | LOW (design, deliberate) | `specs/archived/test-tiers/audit.md` TT-R3 | skill-library |
 
 ## Notes
 

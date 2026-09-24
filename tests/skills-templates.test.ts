@@ -17,6 +17,13 @@
  * asserted non-empty as its own precondition before any shape assertion
  * runs — exactly `tests/skill-library.test.ts`'s pattern — so an empty tree
  * shows up as a failing precondition, never a vacuous pass.
+ *
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-3; intent.md SC3; audit.md Test Coverage T7;
+ * tasks.md Task R.7. Adds a `NEUTRALITY_CHECKS` entry for
+ * `harny-test/high-value-tests.md`, the dogfood domain-specific residue list
+ * TT-3 pins. At red time the file does not exist yet, so this entry fails on
+ * the `fs.existsSync` precondition, not a wrong assumption about its content.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -272,6 +279,25 @@ const NEUTRALITY_CHECKS: ReadonlyArray<{ relativePath: string; forbidden: readon
   {
     relativePath: 'README.md',
     forbidden: ['ln -s ../../.agents/skills'],
+  },
+  // specs/test-tiers TT-3: the shipped rubric is a generalized extract of the
+  // dogfood `.claude/skills/high-value-tests/SKILL.md`, and must carry none
+  // of that file's domain-specific residue.
+  {
+    relativePath: 'harny-test/high-value-tests.md',
+    forbidden: [
+      'IVA',
+      'es-EC',
+      'shadcn',
+      'Radix',
+      'Supabase',
+      'RLS',
+      'security definer',
+      '.live.test.ts',
+      'Postgres',
+      'receipt',
+      'finance auto-feed',
+    ],
   },
 ];
 

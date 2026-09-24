@@ -87,8 +87,10 @@ templates/
     ├── README.md                    # Shape contract and extension guide
     ├── harny-propose/               # Architect's spec-drafting protocol
     │   └── SKILL.md
-    ├── harny-test/                  # Test-writer's red-phase rules
-    │   └── SKILL.md
+    ├── harny-test/                  # Test-writer's tier proposal, confirmation and
+    │   │                             # red-phase rules
+    │   ├── SKILL.md
+    │   └── high-value-tests.md       # Bundled test-value rubric (test-tiers)
     ├── harny-implement/             # Executor's phase and contract rules
     │   └── SKILL.md
     ├── harny-audit/                 # Auditor's 7-step audit process
@@ -171,9 +173,28 @@ symlinks at `.claude/skills/harny-*/`:
 
 - `harny-propose` — architect's exploration and spec-drafting protocol; reads
   `specs/current/` via `harny-sync` lookup
-- `harny-test` — test-plan derivation and red-phase rules
+- `harny-test` — since `test-tiers`, the shipped `templates/skills/harny-test/SKILL.md`
+  and `sdd-test-writer.md` propose tests at the `unit` / `integration` / `e2e` tier
+  best suited to each spec item, infer a framework per tier from repository evidence
+  (never a hard-coded table), and record the proposal as a Test Plan in `audit.md`.
+  A plan that needs any tier beyond `unit`, or any setup at all, stops for a human
+  confirmation checkpoint (routed through the conductor when delegated, asked inline
+  when invoked directly) before writing a test or installing anything; a unit-only
+  plan with no setup proceeds without a pause. The rubric that grounds "is this test
+  worth writing" ships as the bundled `harny-test/high-value-tests.md` resource,
+  closing the previous dangling reference to an unshipped `high-value-tests` skill.
+  **This is the shipped delivery layer only** — this repository's own dogfood
+  `.claude/skills/harny-test/` (via `.agents/skills/harny-test/`) intentionally
+  diverges: it keeps the pre-tier flow and its own `high-value-tests` skill, and this
+  repo's pipeline does not itself produce a Test Plan while building a feature
+  (declared in `tests/skills-fidelity.test.ts` `DIVERGENCE_TABLE`, reservation TT-R3)
 - `harny-implement` — phase execution, contract-is-law, adherence rules
-- `harny-audit` — 7-step audit process, severity ratings, verdict enum
+- `harny-audit` — 7-step audit process, severity ratings, verdict enum. Since
+  `test-tiers`, the shipped `harny-audit` skill and `sdd-auditor.md` also read a
+  feature's Test Plan and record a `### Tier Results` table in `audit.md` § Test
+  Coverage, raising CRITICAL/HIGH/MEDIUM/LOW findings for an unconfirmed non-unit
+  test, a confirmed tier with no tests, unnamed setup, or a plan left `PROPOSED` — the
+  same dogfood-diverges caveat above applies (the dogfood auditor has no tier flow)
 - `harny-document` — documentation trigger check, README/CHANGELOG/AGENTS update,
   `Shipped:` stamp, a three-sub-step archive hand-off (`harny-sync` archive mode →
   `harny-adr` → `harny-sync` again for the capability docs and `_index.md`), and —

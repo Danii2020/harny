@@ -46,9 +46,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       # <!-- harny:begin generated project configuration -->
       - name: "Install dependencies (TypeScript / Node)"
         run: "if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install --no-audit --no-fund; else echo 'harny-feedback: no package.json in this checkout; skipping dependency install'; fi"
       - name: "harny feedback (TypeScript / Node)"
         run: "test -f .sdd/feedback/run-feedback.mjs -a -f .sdd/shared/probes.mjs || { echo 'harny-feedback: .sdd/feedback/run-feedback.mjs or .sdd/shared/probes.mjs is missing from this checkout; run npx harny init and commit both'; exit 1; }; node .sdd/feedback/run-feedback.mjs run --whole-project --commands '[{\"id\":\"eslint\",\"kind\":\"lint\",\"argv\":[\"npx\",\"eslint\"],\"pathMode\":\"per-file\",\"extensions\":[\".ts\",\".tsx\",\".js\",\".jsx\",\".mjs\",\".cjs\",\".mts\",\".cts\"],\"requires\":{\"anyFile\":[\"eslint.config.js\",\"eslint.config.mjs\",\".eslintrc.json\",\".eslintrc.cjs\"]}},{\"id\":\"tsc\",\"kind\":\"typecheck\",\"argv\":[\"npx\",\"tsc\",\"--noEmit\"],\"pathMode\":\"whole-project\",\"requires\":{\"anyFile\":[\"tsconfig.json\"]}}]'"
       # <!-- harny:end generated project configuration -->
+      - name: Secret scan (gitleaks)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          RANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RANGE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          release="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" "$release/$archive"
+          curl -sSfL -o "$RUNNER_TEMP/checksums.txt" "$release/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          (cd "$RUNNER_TEMP" && grep " $archive\$" checksums.txt | sha256sum -c -)
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          if [ -n "$RANGE_BASE" ] && [ -n "$(printf '%s' "$RANGE_BASE" | tr -d 0)" ]; then
+            log_opts="$RANGE_BASE..$RANGE_HEAD"
+          else
+            log_opts="-1 $RANGE_HEAD"
+          fi
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-opts="$log_opts" .

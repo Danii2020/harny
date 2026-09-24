@@ -23,11 +23,12 @@ import type { HookPayload } from './engine.js';
 import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
 import { buildPermissionsFiles, parsePermissionPolicy } from './permissions.js';
+import { activateGitHooks, buildGitHooksFiles } from './git-hooks.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
 import { applyWrites, displayPath, planWrites } from './writer.js';
-import { confirmWrite, runInitPrompts } from './prompts.js';
+import { confirmGitHooks, confirmWrite, runInitPrompts } from './prompts.js';
 import { GATE_IDS } from './vocabulary.js';
 import type { ToolId } from './vocabulary.js';
 import { CI_WORKFLOW_PATH, STACK_PROFILE_IDS } from './feedback.js';
@@ -49,6 +50,10 @@ export interface InitOptions {
   readonly interactive: boolean;
   readonly dryRun: boolean;
   readonly force: boolean;
+  /** **(NEW — commit-checks.)** `false` (`--no-git-hooks`) never activates the git
+   *  hooks. Otherwise they are activated after a successful write — after a
+   *  confirmation when `interactive` (CC-6). */
+  readonly gitHooks?: boolean;
   readonly io: InitIO;
 }
 
@@ -317,6 +322,9 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     // (NEW — permissions-baseline.) The guard and its policy, tool-neutral, exactly
     // once per run, in this same render step (PB-2, CLI-1).
     files.push(...buildPermissionsFiles(payload));
+    // (NEW — commit-checks.) The git hooks and the commands they lint staged files
+    // with — the same payload the per-turn hooks serialize — once per run (CC-1).
+    files.push(...buildGitHooksFiles(payload, hookPayload.commands));
   }
 
   // (NEW — readiness-doctor.) The readiness runner + generated checks.json,
@@ -361,6 +369,21 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
 
   const written = await applyWrites(plan, { force: options.force });
+
+  // (NEW — commit-checks, CC-6.) Activation is the one consented side effect outside
+  // the write plan: a single git config key, set only after the files it points at
+  // exist, and never over another hook setup.
+  if (options.gitHooks !== false && payload.gitHooksRunner) {
+    const consented = options.interactive ? await confirmGitHooks(io) : true;
+    if (consented) {
+      const outcome = await activateGitHooks(targetDir, location.insideRepo ? location.repoRoot : undefined);
+      if (outcome.kind === 'skipped') {
+        io.warn(`Git hooks not activated: ${outcome.reason}`);
+      } else {
+        io.log(`Git hooks active: core.hooksPath = ${outcome.hooksPath}`);
+      }
+    }
+  }
 
   return { config, planned, written, skippedTools, dryRun: false };
 }

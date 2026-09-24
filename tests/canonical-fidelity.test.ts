@@ -972,3 +972,30 @@ describe('RC-17 — the two live run-doctor.mjs copies stay byte-identical to on
     }
   });
 });
+
+/**
+ * Spec: specs/commit-checks
+ * Covers: contract.md CC-9 (dogfood: this repository's git hooks are what `harny init`
+ * renders for its own `.sdd/harness.json`, and the shims are tracked executable).
+ */
+describe('this repository carries its own commit checks (commit-checks CC-9)', () => {
+  it('has .sdd/git-hooks/* byte-identical to a fresh render, with the shims tracked as 100755', async () => {
+    const { validateConfig } = await import('../src/config.js');
+    const { buildPayload, buildCommandsPayload } = await import('../src/engine.js');
+    const { buildGitHooksFiles } = await import('../src/git-hooks.js');
+
+    const harnessJson = await fs.readFile(path.join(REPO_ROOT, '.sdd', 'harness.json'), 'utf8');
+    const config = validateConfig(JSON.parse(harnessJson), '.sdd/harness.json');
+    const payload = buildPayload(config, await loadRealTemplates());
+    const files = buildGitHooksFiles(payload, buildCommandsPayload(payload.conductor.project.components));
+
+    expect(files).toHaveLength(4);
+    for (const file of files) {
+      expect(await fs.readFile(path.join(REPO_ROOT, file.path), 'utf8'), file.path).toBe(file.contents);
+    }
+    const { stdout } = await execFileAsync('git', ['ls-files', '--stage', '--', '.sdd/git-hooks'], { cwd: REPO_ROOT });
+    for (const shim of ['pre-commit', 'pre-push']) {
+      expect(stdout, shim).toMatch(new RegExp(`^100755 \\S+ 0\\t\\.sdd/git-hooks/${shim}$`, 'm'));
+    }
+  });
+});

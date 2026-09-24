@@ -129,6 +129,9 @@ export async function applyWrites(
     try {
       await fs.mkdir(path.dirname(absolute), { recursive: true });
       await fs.writeFile(absolute, file.contents, 'utf8');
+      if (file.executable) {
+        await fs.chmod(absolute, 0o755);
+      }
     } catch (err) {
       // Partial state must be disclosed, never hidden: report which paths were
       // already written before the failure, then re-throw so `main` still exits

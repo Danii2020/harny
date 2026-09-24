@@ -353,6 +353,7 @@ describe('resolveTemplatesRoot (C7)', () => {
       'ci',
       'conductor',
       'doctor',
+      'git-hooks',
       'hooks',
       'mcp',
       'permissions',

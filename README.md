@@ -260,6 +260,17 @@ Every `harny init` also installs a permissions baseline: `.sdd/permissions/polic
 
 The guard judges the command text the agent writes, so it is a floor, not a wall. For branches that must never be pushed to directly, also enable **server-side branch protection** on your remote (GitHub: *Settings → Rules → Rulesets*); only the remote can make that rule unbypassable. `templates/permissions/README.md` covers the behavior, the failure modes and the per-tool details.
 
+## Commit checks
+
+`harny init` also installs git hooks at `.sdd/git-hooks/`. Hooks are the one checkpoint every committer passes through, so they apply to every agent on all five tools, and to people:
+
+- **`pre-commit`** blocks a commit to a protected branch (the same `git.protectedBranches` list as the permissions baseline; a repository's first commit is exempt). It also blocks a secret in the staged changes, via `gitleaks git --pre-commit --staged` when gitleaks is installed, and a lint finding on the staged files, via the feedback runner's new `run --staged` mode (per-file commands only; whole-project checks such as `tsc` stay in CI). An existing `.git/hooks/pre-commit` is chained.
+- **`pre-push`** blocks a push to a protected branch by any refspec, including deleting one.
+
+With your consent (asked interactively; the default under `--yes`), `harny init` activates the hooks by setting `core.hooksPath`. It never does so over husky, lefthook, pre-commit or an existing `core.hooksPath`; instead it prints the line to add to that setup. Pass `--no-git-hooks` to write the hooks without activating them.
+
+Hooks are local configuration, so a fresh clone, including a cloud agent's checkout, has none active. The generated CI workflow is the backstop: it downloads a pinned gitleaks release, verifies its checksum, and scans each pull request's or push's commits for secrets. `git commit --no-verify` still skips the hooks for people; the permissions baseline denies it to agents. See `templates/git-hooks/README.md` for the details and limits.
+
 ## Checking whether a repository is ready
 
 `npx harny doctor` runs the scaffolded readiness check against a target repository —

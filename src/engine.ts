@@ -229,6 +229,11 @@ export interface HarnessPayload {
   /** **(NEW — permissions-baseline.)** `templates/permissions/policy.json`,
    *  verbatim (PB-1, PB-2). Same absence rule as `hookRunner`. */
   readonly permissionsPolicy?: SkillResource;
+  /** **(NEW — commit-checks.)** The git hook shims and runner, verbatim (CC-1).
+   *  Same absence rule as `hookRunner`. */
+  readonly gitHooksPreCommit?: SkillResource;
+  readonly gitHooksPrePush?: SkillResource;
+  readonly gitHooksRunner?: SkillResource;
 }
 
 export const SPEC_SCHEMA_DIR = '.sdd/spec-schema';
@@ -293,6 +298,9 @@ export function buildPayload(config: HarnessConfig, templates: CanonicalTemplate
     sharedProbes: templates.sharedProbes,
     permissionsGuard: templates.permissionsGuard,
     permissionsPolicy: templates.permissionsPolicy,
+    gitHooksPreCommit: templates.gitHooksPreCommit,
+    gitHooksPrePush: templates.gitHooksPrePush,
+    gitHooksRunner: templates.gitHooksRunner,
   };
 }
 

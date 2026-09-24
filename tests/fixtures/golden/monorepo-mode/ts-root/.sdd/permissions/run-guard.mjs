@@ -249,6 +249,10 @@ function splitCommand(command) {
     } else if (char === '&' || char === '|') {
       if (command[i + 1] === char || (char === '|' && command[i + 1] === '&')) i += 1;
       endSubcommand();
+    } else if (char === '<' && command.startsWith('<<<', i)) {
+      // A here-string feeds a word, not a file (Amendment A1).
+      endToken();
+      i += 2;
     } else if (char === '<') {
       endToken();
       pendingRedirect = true;
@@ -264,6 +268,107 @@ function splitCommand(command) {
   }
   endSubcommand();
   return subcommands;
+}
+
+/**
+ * Removes heredoc bodies — `<<DELIM` / `<<-DELIM`, delimiter quoted or not — up to
+ * the line equal to the delimiter, along with the operator itself, so text a command
+ * merely writes is never judged as commands (Amendment A1, PB-3).
+ */
+function stripHeredocs(command) {
+  let out = '';
+  let quote = '';
+  const pending = [];
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i];
+    if (quote) {
+      if (char === quote) quote = '';
+      out += char;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      out += char;
+    } else if (char === '<' && command.startsWith('<<', i) && !command.startsWith('<<<', i)) {
+      let j = i + 2;
+      const dash = command[j] === '-';
+      if (dash) j += 1;
+      while (command[j] === ' ' || command[j] === '\t') j += 1;
+      const match = /^(['"]?)([A-Za-z0-9_.-]+)\1/.exec(command.slice(j));
+      if (!match) {
+        out += char;
+        continue;
+      }
+      pending.push({ delimiter: match[2], dash });
+      i = j + match[0].length - 1;
+    } else if (char === '\n' && pending.length > 0) {
+      out += char;
+      let rest = i + 1;
+      for (const { delimiter, dash } of pending.splice(0)) {
+        for (;;) {
+          const end = command.indexOf('\n', rest);
+          const line = command.slice(rest, end < 0 ? command.length : end);
+          rest = end < 0 ? command.length : end + 1;
+          if ((dash ? line.replace(/^\t+/, '') : line) === delimiter || end < 0) break;
+        }
+      }
+      i = rest - 1;
+    } else {
+      out += char;
+    }
+  }
+  return out;
+}
+
+/** The bodies of `$(…)` and backtick substitutions outside single quotes, each of
+ *  which is judged as a command line of its own (Amendment A1, PB-3). */
+function substitutions(command) {
+  const bodies = [];
+  let single = false;
+  for (let i = 0; i < command.length; i += 1) {
+    const char = command[i];
+    if (char === "'") {
+      single = !single;
+    } else if (!single && char === '$' && command[i + 1] === '(') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < command.length && depth > 0) {
+        if (command[j] === '(') depth += 1;
+        if (command[j] === ')') depth -= 1;
+        j += 1;
+      }
+      bodies.push(command.slice(i + 2, j - 1));
+      i = j - 1;
+    } else if (!single && char === '`') {
+      const end = command.indexOf('`', i + 1);
+      if (end < 0) break;
+      bodies.push(command.slice(i + 1, end));
+      i = end;
+    }
+  }
+  return bodies;
+}
+
+/** Index of the git verb in a `git …` token list, past git's global options. */
+function gitVerbIndex(tokens) {
+  let i = 1;
+  while (i < tokens.length && tokens[i].startsWith('-')) {
+    i += GIT_VALUE_OPTIONS.has(tokens[i]) ? 2 : 1;
+  }
+  return i;
+}
+
+/** The forms a subcommand is matched in (Amendment A1, PB-5): as written; with the
+ *  program reduced to its basename; for git, without git's global options. */
+function matchForms(tokens) {
+  const program = path.posix.basename(tokens[0]);
+  const forms = [tokens.join(' ')];
+  if (program !== tokens[0]) forms.push([program, ...tokens.slice(1)].join(' '));
+  if (program === 'git') {
+    const verb = gitVerbIndex(tokens);
+    if (verb > 1) forms.push(['git', ...tokens.slice(verb)].join(' '));
+  }
+  return forms;
 }
 
 /** Strips `VAR=value` prefixes and the leading wrappers; unwraps one `sh -c` level. */
@@ -396,15 +501,20 @@ function judgeCommand(policy, command, cwd) {
   const deny = policy.commands.deny.map((rule) => ({ ...rule, regexp: commandPatternRegExp(rule.pattern) }));
   const ask = policy.commands.ask.map((rule) => ({ ...rule, regexp: commandPatternRegExp(rule.pattern) }));
   let asked;
+  const stripped = stripHeredocs(command);
+  const lines = [stripped];
+  for (let k = 0; k < lines.length; k += 1) lines.push(...substitutions(lines[k]));
+  const subcommands = lines.flatMap((line) => expand(splitCommand(line)));
 
-  for (const { tokens, redirects } of expand(splitCommand(command))) {
+  for (const { tokens, redirects } of subcommands) {
     for (const target of redirects) {
       const reason = judgeRead(policy, target, cwd);
       if (reason) return { code: DENY, reason };
     }
     if (tokens.length === 0) continue;
     const text = tokens.join(' ');
-    const denied = deny.find((rule) => rule.regexp.test(text));
+    const forms = matchForms(tokens);
+    const denied = deny.find((rule) => forms.some((form) => rule.regexp.test(form)));
     if (denied) return { code: DENY, reason: `harny-permissions: "${text}" is denied: ${denied.reason}` };
     if (READ_PROGRAMS.has(path.posix.basename(tokens[0]))) {
       for (const arg of tokens.slice(1)) {
@@ -413,12 +523,12 @@ function judgeCommand(policy, command, cwd) {
         if (reason) return { code: DENY, reason };
       }
     }
-    if (tokens[0] === 'git') {
+    if (path.posix.basename(tokens[0]) === 'git') {
       const reason = judgeGit(policy, tokens, state);
       if (reason) return { code: DENY, reason };
     }
     if (!asked) {
-      const rule = ask.find((candidate) => candidate.regexp.test(text));
+      const rule = ask.find((candidate) => forms.some((form) => candidate.regexp.test(form)));
       if (rule) asked = { code: ASK, reason: `harny-permissions: "${text}" needs human approval: ${rule.reason}` };
     }
   }

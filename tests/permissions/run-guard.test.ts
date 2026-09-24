@@ -3,7 +3,8 @@
  * Covers: contract.md PB-3 (decision order across subcommands), PB-4 (secret reads),
  * PB-5 (command patterns), PB-6/PB-7 (protected branches by resolution), PB-10
  * (missing/broken policy); § Data Models "Input normalization" (all five payload
- * shapes); intent.md SC3, SC4 (tool-neutral half), SC7.
+ * shapes); § Amendment A1 (PB-3, PB-5 amended); intent.md SC3, SC4 (tool-neutral
+ * half), SC7.
  *
  * Drives `templates/permissions/run-guard.mjs` as a real subprocess, installed with the
  * canonical `policy.json` beside it inside a throwaway git repository, exactly as
@@ -248,5 +249,29 @@ describe('missing or broken policy, and payloads with nothing to judge (PB-10)',
     const repo = makeRepo('main', { policy: JSON.stringify(policy) });
     expect(judge(repo, bash('git commit -m x')).code).toBe(ALLOW);
     expect(judge(repo, bash('git push origin trunk')).code).toBe(DENY);
+  });
+});
+
+describe('amendment A1: spellings that must not slip past the patterns, and heredocs that must not trip them', () => {
+  it('matches deny patterns through git global options and a program given by path', () => {
+    const repo = makeRepo('feature/x');
+    for (const command of ['git -C . push --force', 'git -c core.x=y push --force', '/bin/rm -rf build', 'git --no-pager commit --no-verify -m x']) {
+      expect(judge(repo, bash(command)).code, command).toBe(DENY);
+    }
+  });
+
+  it('judges the body of a command substitution', () => {
+    const repo = makeRepo('feature/x');
+    for (const command of ['echo $(cat .env)', 'echo "token=$(tail -1 secrets/api)"', 'x=`cat .env`']) {
+      expect(judge(repo, bash(command)).code, command).toBe(DENY);
+    }
+    expect(judge(repo, bash("echo '$(cat .env)'")).code).toBe(ALLOW);
+  });
+
+  it('never judges a heredoc body as commands, but still judges what follows it', () => {
+    const repo = makeRepo('feature/x');
+    expect(judge(repo, bash("cat > notes.md <<'EOF'\ngit push origin main\nrm -rf /\nEOF")).code).toBe(ALLOW);
+    expect(judge(repo, bash('cat <<-EOF > x.txt\n\tcat .env\n\tEOF\ngit push --force')).code).toBe(DENY);
+    expect(judge(repo, bash('grep x <<< "$VALUE"')).code).toBe(ALLOW);
   });
 });

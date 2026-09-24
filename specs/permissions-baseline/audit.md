@@ -43,7 +43,14 @@
 ## Audit Log
 | Date | Auditor | Finding | Severity | Resolution |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-24 | sdd-auditor (harny-audit), round 1 | **Baseline.** Suite 876/876 after commit `7ee2b80`, typecheck clean, doctor 24 ok / 0 failed. No dependency change (`package.json`/lockfile diff empty, S4). No `.sdd/permissions` literal outside `src/permissions.ts` (S5). | INFO | — |
+| 2026-09-24 | round 1 | **Live evidence (positive).** This repo's dogfood `PreToolUse` guard fired in the auditing session itself: it denied the auditor's `rm -rf <scratch>` with the policy's reason, and denied a command containing `git push origin main`. So the Claude Code wiring (PB-8/PB-13) is confirmed live, not only by subprocess. | INFO | — |
+| 2026-09-24 | round 1 | **A1-F1 — Deny patterns are bypassed by git global options.** `git -C . push --force` and `git -c k=v push --force` are allowed: `judgeGit` skips global options but pattern matching (PB-5) sees the raw text, so `git push *--force*` never matches. Agents use `git -C <dir>` routinely. PB-5 holds as written, but intent G2 and SC3 ("force push denied") do not hold for this spelling. Claude Code's static rules have the same gap. | HIGH | Fix: also match patterns against the git subcommand with global options removed. Amend PB-5. |
+| 2026-09-24 | round 1 | **A1-F2 — A program given by path escapes patterns.** `/bin/rm -rf build` is allowed; `rm -rf*` expects a bare `rm`. | MEDIUM | Fix: also match with the program token reduced to its basename. Amend PB-5. |
+| 2026-09-24 | round 1 | **A1-F3 — Command substitution is not inspected.** `echo $(cat .env)` is allowed; `$(…)` and backticks are neither split nor judged. | MEDIUM | Fix: judge each `$(…)`/backtick body as additional subcommands. Amend PB-3. |
+| 2026-09-24 | round 1 | **A1-F4 — Heredoc bodies are judged as commands (false positive).** Observed live: the guard denied the auditor's `cat > file <<'EOF'` whose body contained `git push origin main`, because newline splitting treats heredoc lines as subcommands. This blocks legitimate writes of docs and scripts. | MEDIUM | Fix: skip heredoc bodies up to their delimiter. Amend PB-3. |
+| 2026-09-24 | round 1 | **A1-F5 — Contract error row "guard crashes → wrapper allows" has no test.** The wrapper's non-0/2/3 branch is untested for all five tools. | HIGH | Fix: a test driving each generated wrapper against a guard that exits 1. |
+| 2026-09-24 | round 1 | **A1-F6 — Residual spellings.** `xargs rm -rf`, combined short flags (`git commit -nm`), `cd` before git, `git pull` on a protected branch and `push.default=upstream` are not caught. Best-effort by contract (intent Non-Goals). | LOW | Carry as a reservation; `commit-checks` and server-side protection are the backstops. |
 
 ## Final Verdict
 _(to be completed by the auditing role)_

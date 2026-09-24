@@ -241,3 +241,19 @@ verified 2026-09-24).
 - Tests: `tests/permissions.test.ts`, `tests/permissions/run-guard.test.ts` (new);
   the five `tests/generators/*.test.ts`; `tests/e2e-init.test.ts` counts and goldens;
   `tests/canonical-fidelity.test.ts` dogfood.
+
+## Amendment A1 (2026-09-24, from audit round 1)
+
+Raised by audit findings A1-F1 to A1-F5 and applied under the same gate waiver as the
+rest of this run. They tighten PB-3 and PB-5; nothing is repealed.
+
+- **PB-3 (amended).** Before splitting, heredoc bodies (`<<DELIM` / `<<-DELIM`, with
+  the delimiter quoted or not, up to a line equal to the delimiter) are removed and
+  never judged as commands. A here-string `<<<` is not a read redirection. The body of
+  every `$(…)` and `` `…` `` outside single quotes is judged as additional subcommands
+  of the same command.
+- **PB-5 (amended).** Each subcommand is matched in up to three forms, and a match in
+  any form counts: as written; with the program token reduced to its basename
+  (`/bin/rm` → `rm`); and, for `git`, with git's global options (`-C <dir>`,
+  `-c <k=v>`, `--no-pager`, `--git-dir`, `--work-tree`, …) removed.
+- **Error Handling, row "Guard crashes"** gains a required test per tool (A1-F5).

@@ -2,7 +2,8 @@
  * Spec: specs/permissions-baseline
  * Covers: contract.md PB-8 (native registration and channel per tool, fail-closed
  * where `ask` is unavailable), PB-9 (Claude Code static rules in the same file), PB-12
- * (backward compatibility of `renderHook`); intent.md SC2, SC3, SC4, SC5.
+ * (backward compatibility of `renderHook`); § Error Handling row "Guard crashes" (Amendment
+ * A1); intent.md SC2, SC3, SC4, SC5.
  *
  * Every generated guard command is driven as a real `sh -c` subprocess against the
  * real guard and canonical policy installed in a throwaway git repository, fed that
@@ -227,5 +228,24 @@ describe('renderHook without a permissions payload is unchanged; with it, existi
     expect(without).not.toContain('run-guard.mjs');
     expect(without).not.toContain('"permissions"');
     expect(existing(render(generator, true))).toEqual(existing(JSON.parse(without)));
+  });
+});
+
+describe('a crashing guard never breaks the tool call: every wrapper allows (Error Handling, Amendment A1)', () => {
+  const cases: Array<[string, () => string, (r: Run) => void]> = [
+    ['claude-code', () => render(claudeCodeGenerator).hooks.PreToolUse[0].hooks[0].command, (r) => expect(r.stdout).toBe('')],
+    ['cursor', () => render(cursorGenerator).hooks.beforeShellExecution[0].command, (r) => expect(JSON.parse(r.stdout)).toEqual({ permission: 'allow' })],
+    ['github-copilot', () => render(githubCopilotGenerator).hooks.preToolUse[0].bash, (r) => expect(r.stdout).toBe('')],
+    ['codex', () => render(codexGenerator).hooks.PreToolUse[0].hooks[0].command, (r) => expect(r.stdout).toBe('')],
+    ['kiro', () => render(kiroGenerator).hooks.find((h: any) => h.name === 'harny-permissions').action.command, (r) => expect(r.stdout).toBe('')],
+  ];
+
+  it.each(cases)('%s', (_tool, commandOf, assertAllowOutput) => {
+    const dir = makeRepo();
+    fs.writeFileSync(path.join(dir, '.sdd', 'permissions', 'run-guard.mjs'), 'process.stderr.write("boom\\n"); process.exit(1);\n');
+    const r = run(commandOf(), dir, { tool_name: 'Bash', tool_input: { command: 'git push --force' } });
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('boom');
+    assertAllowOutput(r);
   });
 });

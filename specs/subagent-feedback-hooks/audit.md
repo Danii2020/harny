@@ -43,17 +43,62 @@
 ## Audit Log
 | Date | Auditor | Finding | Severity | Resolution |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-24 | sdd-auditor | **F0 — the Cursor/Codex argv-forwarding deviation is ACCEPTED as necessary and correct.** The executor's claim was verified empirically, not taken on trust: a literally unchanged wrapper reads only `process.argv[1]`/`[2]`, so a trailing `--keep-turn` never reaches the runner. Reconstructed the HEAD wrapper body inside the *generated* Cursor and Codex subagent commands (removing only `.concat(process.argv.slice(3))`, leaving the trailing `--keep-turn` in place) and ran both under `sh -c` against a real turn file: both exited 0 and **deleted the turn file** — the rendered string carries the flag while SF-4 is silently broken, exactly as `tasks.md` describes. With the deviation in place, both wrappers leave the turn file intact. The contract's observable requirement ("the two rendered commands differ by exactly that one trailing argument") is met; only its stated *means* ("wrappers unchanged") was wrong, having been written on the false premise that a trailing argument would reach the runner. | N/A (ruling, not a defect) | Accept. Amend `contract.md` § Interfaces at archive time to record that Cursor and Codex forward trailing argv rather than being literally unchanged. |
+| 2026-09-24 | sdd-auditor | **F1 — the red tests could NOT have caught the swallowed-argument bug, and still cannot.** Every Cursor and Codex assertion for the new registration is a string check on the rendered command (`expect(subagentStopCommand).toContain('--keep-turn')`); nothing in the suite executes either wrapper. Proven, not inferred: reverted `.concat(process.argv.slice(3))` in both generators in a scratch copy of the repo, rebuilt, and ran the full suite — **841/841 passed** with SF-4 broken on both tools. The guarantee that most needed a behavioral test is the one held only by a string match, and a future refactor can silently re-break it. (Claude Code is not exposed: its flag is baked into the script body and its wrapper *is* driven as a subprocess by T4.) | HIGH | Add one behavioral test per tool that runs the generated Cursor/Codex subagent command against a real turn file and asserts the file survives — the exact shape T1 already uses for the runner and T4 for Claude Code. Not blocking: the shipped behavior is correct today, verified live by this audit. |
+| 2026-09-24 | sdd-auditor | **F2 — intent.md SC6 (amend R8) is unmet and untracked.** `specs/current/feedback-controls.md:388` R8 is verbatim as at HEAD. `contract.md` § Integration Points defers it to "archive time", but `tasks.md` has no task for it in any phase and nothing in Blocked Items — unlike SF-10, which is explicitly `[!]` with an owner. A success criterion with no task and no owner is one that quietly never happens. This audit produced exactly the evidence SC6 asks for (see F5). | MEDIUM | Add an explicit `[!]` task naming the archive-time owner, or amend R8 now. Human decision. |
+| 2026-09-24 | sdd-auditor | **F3 — SF-7 is guarded by topology, not by bytes.** `roadmap.md`'s File Change Map contracted an "unchanged-bytes assertion" in `tests/generators/{kiro,github-copilot}.test.ts`; what landed is a five-tool wiring-topology table in `registry.test.ts`. The deviation is documented in `tasks.md` 2.5 and T8 with a defensible rationale (a frozen capture of a generated file goes stale on the first legitimate change). It does catch the realistic regression — a stray event or a stray `--keep-turn` on either unwired tool. The literal byte-identity SF-7 states was verified manually instead: HEAD was built into a scratch tree and both generators rendered from the HEAD `dist/` and the working-tree `dist/` with an identical payload, producing identical bytes. | LOW | Accept as a documented deviation. The stronger property is verified but not guarded in CI. |
+| 2026-09-24 | sdd-auditor | **F4 — the two regenerated `.claude/settings.json` goldens are now inert in `e2e-init`.** The file was both regenerated *and* added to the byte-comparison exception list (cap raised 3 → 4). Its replacement, `assertGeneratedHookConfigMatchesGenerator`, is generator-relative — it proves "the install equals what the generator renders", which by construction cannot detect an unintended generator change, the very thing the golden existed to catch. The generator's own contents remain covered by the per-generator test files, so this is a narrowing, not a hole. Noted because `roadmap.md`'s own risk table lists "golden churn hides an unintended byte change" as Low/High. | LOW | Either drop the two now-unused goldens or keep them under byte comparison; do not keep both a regenerated golden and an exception for it. |
+| 2026-09-24 | sdd-auditor | **F5 — task 4.3's live probe was RUN, partially, and reconfirms the Claude Code half of R8.** This auditing subagent's own `Edit` to `audit.md` fired `accumulate` under turn key `17e60054-55c6-41c0-a580-9ae1dd13759f`, which is the **parent session's** id (it matches the parent's transcript file `~/.claude/projects/-Users-danielerazo-python-harny/17e60054-….jsonl`, live-appended during this session). `.sdd/feedback/.turns/` before handback contained exactly that one file, holding exactly the one path this subagent wrote. So on Claude Code a subagent's edits are attributed to the parent's turn key and are swept up by the conductor's `Stop` — contract.md § Verified per-tool facts confirmed a second time, independently. **Not observable from this role**: what `.turns/` looks like *after* the parent's turn ends, and whether the new `SubagentStop` registration fired at this handback — `.claude/settings.json` gained that registration during this same session, so it may not be loaded in this process. The Codex `turn_id` (open question 1) and Cursor `afterFileEdit` (open question 2) halves remain unprobed; both are correctly recorded as open in `contract.md`, never claimed to work. | N/A (probe result) | Re-run the `.turns/` listing after the parent's turn ends to close the second half. Codex and Cursor need their own live sessions. |
+| 2026-09-24 | sdd-auditor | **F6 — CI state, and a repo-state caveat on this audit's baseline.** This audit ran against the uncommitted working tree, with `b58135b` ("Ship monorepo-mode") as the pre-feature baseline for every HEAD comparison — correct at the time. Mid-audit the tree was committed by another actor as `3615722` + `8344e9a` (`chore: … test Claude in the cloud`), and `origin/main` has since moved to `51f01c5`, which is **not** an ancestor of the local HEAD and whose history includes "Ship subagent-feedback-hooks: document, archive, ADRs 0043-0045" (CI run 35952320371, green). The audited code itself is unchanged by any of this — `git status` shows only this `audit.md` as modified — but these findings were not evaluated against whatever else landed on `origin/main`. The generated workflow is present (`.github/workflows/harny-feedback.yml`); the last run this audit read in full was green and non-vacuous (`harny-feedback: 1 of 2 command(s) ran, 1 skipped` — `eslint` probe-skipped, `tsc` ran). The per-turn hook is demonstrably live here (observed firing during this audit, F5); no artifact survives to prove it fired on each of the executor's own turns, since each `Stop` deletes the turn file by design. Locally: `vitest run` 841/841 passed, `npx harny doctor` 24 ok / 0 failed, `tsc` build clean. | LOW | Re-confirm against `origin/main` if the divergence is real; the local audited tree is green. |
+| 2026-09-24 | sdd-auditor | **F7 — `harny-standards` S1–S7 checked; no violation.** S1: no new imports, no new modules, `.js`/`node:` conventions untouched. S2: no new deliberate error path. S3: determinism preserved (byte-identical re-renders verified twice), no new written path, single trailing newline asserted. S4: `git status` on `package.json` and `package-lock.json` is empty — no dependency added. S5: the new registrations import `CODEX_HOOK_TIMEOUT_SECONDS` / `CURSOR_HOOK_TIMEOUT_SECONDS` / `CURSOR_LOOP_LIMIT` from their owning modules rather than re-literalling; the `--keep-turn` flag name is literalled in the three generators and the runner, which follows the established `--whole-project` precedent exactly (the runner is copied verbatim into targets and cannot import from `src/`). S6: tests mirror `src/`, every touched file carries a `Spec:`/`Covers:` header, no new `it()` name contains a contract id, default run offline. S7: the only tool-neutral content touched is the runner's header comment, whose new `--keep-turn` paragraph names no tool ("at a subagent's own completion"); `templates/hooks/README.md` is untouched and deferred. One observation, not a violation: several new `describe()` titles carry SF ids, consistent with pre-existing practice at HEAD (`(V5)`, `(BG-8)`, `(SC2, MC-5)`). | N/A (compliance check) | None. |
 
 ## Final Verdict
-_(to be completed by the auditing role)_
 
-**Status**: PENDING
+**Status**: APPROVED WITH RESERVATIONS
 
-**Summary**:
+**Summary**: Every behavior guarantee this implementation was scoped to deliver
+(SF-1 through SF-9) holds, and the ones that matter most were verified by driving the
+*generated* hook commands as real subprocesses against real turn files rather than by
+reading assertions — `SubagentStop` emits `"SubagentStop"` and `Stop` still emits
+`"Stop"`; the turn file survives a subagent run and is deleted by the next
+turn-completion run on all three wired tools; Kiro's and Copilot's bytes are identical
+to HEAD; the dogfood and inherited byte-identity guarantees (FC-13, CLI-14) hold and
+`src/feedback.ts` and `src/repo.ts` are untouched. The executor's one deviation from
+the contract — argv forwarding in the Cursor and Codex wrappers — is **accepted**: it
+was necessary, and without it SF-4 would have shipped silently broken on both tools.
+The reservations are that the deviation it fixes is still not guarded by any test
+(F1, HIGH), and that one intent success criterion has no task and no owner (F2).
 
 **Critical Issues** (must fix before merge):
+- None.
 
 **Warnings** (should fix, not blocking):
+- **F1 (HIGH)** — No test executes the Cursor or Codex subagent wrapper. Reverting
+  `.concat(process.argv.slice(3))` in both generators leaves the full suite at
+  **841/841 green** while the turn file is deleted on both tools: SF-4's only
+  protection on two of three wired tools is a `toContain('--keep-turn')` string match.
+  Add one behavioral test per tool, in the shape T1 and T4 already use.
+- **F2 (MEDIUM)** — intent.md SC6 (amend R8 in `specs/current/feedback-controls.md`)
+  is unmet and has no task in `tasks.md` at all. `contract.md` defers it to archive
+  time; nothing tracks that deferral. This audit produced the evidence it needs (F5).
 
 **Recommendations** (nice to have):
+- **F3 (LOW)** — SF-7 is guarded by a wiring-topology table, not the byte-identity
+  assertion `roadmap.md` contracted. Documented deviation, defensible rationale,
+  byte-identity verified by hand this audit.
+- **F4 (LOW)** — The two `.claude/settings.json` goldens were regenerated *and*
+  excluded from byte comparison. Pick one; keeping both leaves a regenerated golden
+  that nothing reads.
+- **F6 (LOW)** — This audit's baseline was `b58135b` against the uncommitted tree. The
+  tree was committed mid-audit by another actor, and `origin/main` (`51f01c5`) has
+  diverged from the local HEAD. The audited code is unchanged; re-confirm this verdict
+  against `origin/main` if that divergence is real.
+- Amend `contract.md` § Interfaces to say Cursor and Codex forward trailing argv,
+  rather than that their wrappers are unchanged (F0). A side note on that forwarding:
+  the wrappers now pass *any* trailing argument through, a slightly wider surface than
+  the one flag — harmless, since the runner ignores unknown tokens and no tool appends
+  arguments to a hook command (verified live: Cursor `stop` and Codex `Stop` behave
+  exactly as at HEAD).
+- Close task 4.3's remaining half: list `.sdd/feedback/.turns/` after the parent's turn
+  ends, and probe Codex `turn_id` and Cursor `afterFileEdit` in their own live sessions
+  (open questions 1–2).

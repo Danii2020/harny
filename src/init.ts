@@ -22,6 +22,7 @@ import {
 import type { HookPayload } from './engine.js';
 import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
+import { buildPermissionsFiles, parsePermissionPolicy } from './permissions.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
@@ -299,6 +300,12 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
       profile: payload.conductor.project.stackProfile,
       runner: payload.hookRunner,
       commands: buildCommandsPayload(payload.conductor.project.components),
+      // (NEW — permissions-baseline.) Parsed once here, so a malformed canonical
+      // policy is a TEMPLATE error before anything is written, and every generator
+      // derives from the same value (PB-1).
+      ...(payload.permissionsGuard && payload.permissionsPolicy
+        ? { permissions: { policy: parsePermissionPolicy(payload.permissionsPolicy.contents) } }
+        : {}),
     };
     for (const generator of resolvedGenerators) {
       const hookFile = generator.renderHook(hookPayload);
@@ -307,6 +314,9 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
       }
     }
     files.push(...buildFeedbackFiles(payload, { prefix: location.prefix }));
+    // (NEW — permissions-baseline.) The guard and its policy, tool-neutral, exactly
+    // once per run, in this same render step (PB-2, CLI-1).
+    files.push(...buildPermissionsFiles(payload));
   }
 
   // (NEW — readiness-doctor.) The readiness runner + generated checks.json,

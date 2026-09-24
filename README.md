@@ -241,6 +241,25 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 
 **Sub-agent feedback:** On Claude Code, Cursor and Codex, the generated hook config also registers the tool's sub-agent completion event (`SubagentStop` / `subagentStop` / `SubagentStop`) beside the turn-completion one. It runs the same feedback runner over the same touched files, plus `--keep-turn`, so a sub-agent such as `sdd-executor` sees lint/type-check findings on its own work before it hands back, and the file list is left in place for the parent agent's own turn-end run. Delivery is at-least-once: a finding may be reported twice (to the sub-agent, then to the parent) but is never dropped by the earlier check. Kiro and GitHub Copilot are deliberately not wired for this; their hook files are unchanged. Still open: whether Cursor's `afterFileEdit` fires inside a sub-agent, and whether a Codex sub-agent's edits and its stop share one `turn_id`. On either tool the registration may therefore be inert; it is never wrong.
 
+## Permissions baseline
+
+Every `harny init` also installs a permissions baseline: `.sdd/permissions/policy.json`, an editable list of what the agent may not do, and `.sdd/permissions/run-guard.mjs`, a tool-neutral guard that each selected tool's "before a tool runs" hook calls. The default baseline:
+
+- **Denies** reading `.env`, `.env.*` (except `.env.example`, `.env.sample` and `.env.template`), `*.pem`, `*.key` and `secrets/**`.
+- **Denies** `git push --force` (and `-f`, `--force-with-lease`, `+refspec`), `--no-verify` on commit and push, and `rm -rf`.
+- **Denies** committing or pushing to a protected branch (`main`, `master`, `production`, `release/*` by default) by any spelling. Commits and pushes on every other branch are allowed.
+- **Asks** before deploys, database migrations and resets, piping a download into a shell, and adding a package.
+
+| Tool | Hook | Deny | Ask |
+|---|---|---|---|
+| Claude Code | `PreToolUse`, plus static `permissions.deny`/`ask` in `.claude/settings.json` | yes | yes |
+| Cursor | `beforeShellExecution`, `beforeReadFile` | yes | shell only; a read-side ask is denied |
+| GitHub Copilot | `preToolUse` | yes | yes |
+| Codex CLI | `PreToolUse` (`Bash`) | yes | denied with "requires human approval" (Codex has no ask) |
+| Kiro | `preToolUse` | yes | denied with "requires human approval" (Kiro has no ask); not yet verified live |
+
+The guard judges the command text the agent writes, so it is a floor, not a wall. For branches that must never be pushed to directly, also enable **server-side branch protection** on your remote (GitHub: *Settings → Rules → Rulesets*); only the remote can make that rule unbypassable. `templates/permissions/README.md` covers the behavior, the failure modes and the per-tool details.
+
 ## Checking whether a repository is ready
 
 `npx harny doctor` runs the scaffolded readiness check against a target repository —

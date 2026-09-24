@@ -121,6 +121,13 @@ export interface CanonicalTemplates {
    *  byte-for-byte (BG-11, BG-20). Tolerated absent for the same reason as
    *  `hookRunner`. */
   readonly sharedProbes?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/run-guard.mjs`, read
+   *  byte-for-byte (PB-2). Tolerated absent for the same reason as `hookRunner`. */
+  readonly permissionsGuard?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/policy.json`, read
+   *  byte-for-byte (PB-1, PB-2). Tolerated absent for the same reason as
+   *  `hookRunner`. */
+  readonly permissionsPolicy?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -387,6 +394,8 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
   const doctorRunner = await loadOptionalResource(templatesRoot, 'doctor/run-doctor.mjs', 'run-doctor.mjs');
   const doctorReadme = await loadOptionalResource(templatesRoot, 'doctor/README.md', 'README.md');
   const sharedProbes = await loadOptionalResource(templatesRoot, 'shared/probes.mjs', 'probes.mjs');
+  const permissionsGuard = await loadOptionalResource(templatesRoot, 'permissions/run-guard.mjs', 'run-guard.mjs');
+  const permissionsPolicy = await loadOptionalResource(templatesRoot, 'permissions/policy.json', 'policy.json');
 
   return {
     root: templatesRoot,
@@ -400,6 +409,8 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     doctorRunner,
     doctorReadme,
     sharedProbes,
+    permissionsGuard,
+    permissionsPolicy,
   };
 }
 

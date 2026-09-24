@@ -355,6 +355,7 @@ describe('resolveTemplatesRoot (C7)', () => {
       'doctor',
       'hooks',
       'mcp',
+      'permissions',
       'roles',
       'shared',
       'skills',

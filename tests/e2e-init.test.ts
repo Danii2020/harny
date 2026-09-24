@@ -360,6 +360,11 @@ const SHARED_DOCTOR_PATHS = [
   '.sdd/shared/probes.mjs',
 ];
 
+/** **(NEW — permissions-baseline.)** The tool-neutral permissions guard and its
+ *  editable baseline, written exactly once per run regardless of tool selection
+ *  (specs/permissions-baseline PB-2). */
+const SHARED_PERMISSIONS_PATHS = ['.sdd/permissions/run-guard.mjs', '.sdd/permissions/policy.json'];
+
 describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
   it('exits 0 with exactly the contracted twenty-one files (contract.md artifact-count table, default row)', async () => {
     const targetDir = await makeTempDir();
@@ -385,6 +390,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.claude/settings.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        ...SHARED_PERMISSIONS_PATHS,
         // (context7-mcp.) The default Context7 MCP server, written to Claude
         // Code's own project-scope config file.
         '.mcp.json',
@@ -396,7 +402,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(33);
   });
 });
 
@@ -514,6 +520,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.cursor/hooks.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        ...SHARED_PERMISSIONS_PATHS,
         // (context7-mcp.) The default Context7 MCP server, written to Cursor's
         // own project-scope config file.
         '.cursor/mcp.json',
@@ -525,7 +532,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(33);
   });
 });
 
@@ -552,6 +559,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.kiro/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        ...SHARED_PERMISSIONS_PATHS,
         // (context7-mcp.) The default Context7 MCP server, written to Kiro's
         // own workspace-scope config file.
         '.kiro/settings/mcp.json',
@@ -563,7 +571,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(33);
   });
 });
 
@@ -590,6 +598,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.github/hooks/harny-feedback.json',
         ...SHARED_FEEDBACK_PATHS,
         ...SHARED_DOCTOR_PATHS,
+        ...SHARED_PERMISSIONS_PATHS,
         // (context7-mcp.) The default Context7 MCP server, written to VS
         // Code's own MCP config file — Copilot's `mcpConfig`, root key `servers`.
         '.vscode/mcp.json',
@@ -601,7 +610,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(33);
   });
 });
 
@@ -627,6 +636,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       'hooks.json',
       ...SHARED_FEEDBACK_PATHS,
       ...SHARED_DOCTOR_PATHS,
+      ...SHARED_PERMISSIONS_PATHS,
       // (context7-mcp.) The default Context7 MCP server, appended to Codex's
       // own project-scope config file — not an MCP-only file (contract.md §
       // "The write model"), but empty here since no `.codex/config.toml`
@@ -640,7 +650,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(31);
+    expect(files).toHaveLength(33);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -730,10 +740,10 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
-    expect(files).toHaveLength(85);
+    expect(files).toHaveLength(87);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
-    expect(sharedFiles).toHaveLength(11);
+    expect(sharedFiles).toHaveLength(13);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(33);
@@ -853,7 +863,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 86.
-    expect(files).toHaveLength(91);
+    expect(files).toHaveLength(93);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(39);
@@ -884,7 +894,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 77.
-    expect(files).toHaveLength(82);
+    expect(files).toHaveLength(84);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(30);
@@ -1213,6 +1223,7 @@ describe('golden-byte regression — a components-free install is byte-identical
     const { validateConfig } = await import('../src/config.js');
     const { buildPayload, buildCommandsPayload } = await import('../src/engine.js');
     const { loadCanonicalTemplates } = await import('../src/templates.js');
+    const { parsePermissionPolicy } = await import('../src/permissions.js');
 
     const harnessJson = await fs.readFile(path.join(installDir, '.sdd', 'harness.json'), 'utf8');
     const config = validateConfig(JSON.parse(harnessJson), '.sdd/harness.json');
@@ -1222,6 +1233,8 @@ describe('golden-byte regression — a components-free install is byte-identical
       profile: payload.conductor.project.stackProfile,
       runner: payload.hookRunner!,
       commands: buildCommandsPayload(payload.conductor.project.components),
+      // (permissions-baseline.) As `runInit` adds it.
+      permissions: { policy: parsePermissionPolicy(payload.permissionsPolicy!.contents) },
     })!;
 
     const installed = await fs.readFile(path.join(installDir, '.claude', 'settings.json'), 'utf8');
@@ -1312,6 +1325,8 @@ describe('a two-component install produces one .sdd/, one spec-schema set, one C
       '.sdd/doctor/run-doctor.mjs',
       '.sdd/doctor/checks.json',
       '.sdd/shared/probes.mjs',
+      '.sdd/permissions/run-guard.mjs',
+      '.sdd/permissions/policy.json',
       '.claude/settings.json',
       '.claude/skills/sdd-conductor/SKILL.md',
       '.github/workflows/harny-feedback.yml',

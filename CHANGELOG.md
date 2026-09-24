@@ -89,6 +89,91 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **One install, many components (`monorepo-mode`)** — a single harny install can now
+  declare `components: [{ path, stack }]` in `.sdd/harness.json` instead of one `stack`,
+  so a repository with a Python backend and a TypeScript frontend needs **one** install
+  rather than two. Components are declared with the repeatable
+  `--component <path>=<stack>` flag (`--component .=python --component apps/web=typescript`),
+  through a `--config` file, or by answering the new "Is this a single repo or a
+  monorepo?" question in interactive `init`, which presets and reports itself when
+  `--stack` or `--component` was supplied on the command line. `stack` and `components`
+  are mutually exclusive from one source: supplying both is a usage error (exit 2) naming
+  both fields, with no precedence rule and no silent winner. **What does not change is the
+  point**: a multi-component install writes the same path set a single-stack install
+  writes — one `.sdd/`, one copy of every role and skill per distinct skill root, one
+  feedback runner, one readiness runner, one `probes.mjs`, one hook config per tool, one
+  CI workflow, one spec-schema set, and therefore one `specs/` and one ADR sequence for
+  the whole repository. Components change what those artifacts do, never how many exist,
+  which is what dissolves the duplicate-runner and duplicate-ADR-registry gaps recorded
+  while dogfooding a two-install monorepo on 2026-09-20. **Per-turn feedback** assigns
+  each touched path to the single component whose declared directory is its longest
+  **segment**-prefix — `apps/web-admin/x.ts` resolves to `apps/web-admin`, never to
+  `apps/web`, and `.` is an ordinary zero-segment component that wins only when nothing
+  longer matches — then runs that component's commands, with that component's directory as
+  both the `spawnSync` cwd and the `requires` probe root, seeing only that component's
+  paths. A `whole-project` command (what CI runs) runs once per component that has **at
+  least one assigned touched path**, from that component's own directory, and not at all
+  for components with none; the gate is assignment, not the per-file extension filter. A
+  touched path belonging to no declared component runs no command and is dropped with
+  exactly one stderr notice naming the count — never reassigned to a default, never
+  silent. A declared component whose directory is absent at runtime is skipped wholesale
+  with one notice naming it and its command count, counted as skipped in the
+  `--whole-project` summary, and the directory is never created. An unrecognized component
+  stack stays inert rather than fatal: every artifact is still written, that component
+  contributes no commands, and `init` warns once naming the component path and the value.
+  **`npx harny doctor`** runs each component's test command from that component's own
+  directory — the component directory travels as a `dir` field on the generated
+  `checks.json` entry, never as a field on `CommandSpec`, so `run-doctor.mjs` acquires no
+  component literal (`command.dir ?? '.'` is its only change), `checks.json` stays at
+  `version: 1`, and a pre-feature `checks.json` behaves byte-identically. **CI stays one
+  workflow with one job** at the git root: one runner step for the whole install plus at
+  most one dependency-install step per component, each scoped with `working-directory`,
+  and none of `strategy:`, `matrix:`, a second workflow, `on.*.paths` or
+  `defaults.run.working-directory`. No generator learns what a component is — the
+  `Generator` interface gains no member, `src/feedback.ts` and `src/repo.ts` are unmodified,
+  and the only component vocabulary under `src/generators/**` is confined by a grep gate to
+  `renderProjectConfigBlock` in `markdown-yaml.ts`. **The non-negotiable constraint —
+  a `components`-free install is byte-identical to before — was proven, not asserted**:
+  golden-byte regression over the whole generated tree for both a root and a subdirectory
+  install, independently verified non-vacuous by perturbation (two stray bytes in
+  `templates/shared/probes.mjs` turn it red), and an existing `.sdd/harness.json` carrying
+  only `stack` loads, merges and round-trips unchanged — never migrated, never warned
+  about. No new runtime or dev dependency, no new file under `templates/` (still
+  thirty-one), no new generated path. Adds ADRs 0038–0042 (`components` replaces `stack`
+  rather than coexisting as a fallback; longest **segment**-prefix match with an
+  unassigned path dropped rather than defaulted; the component list travels on the payload
+  rather than as a new `CiPlacement` field, a declared departure from `ci-workflow-root`
+  XC-6's anticipated mechanism; `whole-project` once per *affected* component; `dir` on the
+  generated checks entry). Suite: **828 passing, 0 failing, 0 skipped (33 files)**; `build`
+  and `typecheck` clean. Verdict: **APPROVED WITH RESERVATIONS** — round 1 was REJECTED on
+  a CRITICAL defect (a lone non-`.` component's readiness command ran at the install root
+  instead of the component's directory, a silent false-readiness verdict); the fix names
+  the two previously-conflated boundaries as exported predicates and was
+  perturbation-proved closed. **Four deferred findings are carried as accepted
+  reservations, knowingly**: **F2 (HIGH)** — the `stack`/`components` exclusivity check
+  runs on the writing path only, so a **hand-edited** `.sdd/harness.json` carrying both
+  fields is accepted silently by `npx harny doctor` with `components` winning (harny itself
+  never writes both); **F3 (HIGH)** — the turn-mode half of the absent-component-directory
+  error row is reachable and untested, and the audit corrects the earlier note that claimed
+  it unreachable; **F4 (MEDIUM)** — `--component .=python`, a single `.` component, renders
+  the generated conductor's project-configuration block with **neither** a `Project stack:`
+  line nor a `Component:` line, so an agent reading that block cannot tell the project is
+  Python (write that shape as `--stack python` meanwhile); **F5 (MEDIUM)** — all five
+  `renderHook`s ship a `payload.commands ?? profile.commands` fallback rather than the
+  contracted literal `payload.commands`, ruled acceptable because the field is non-optional
+  and the fallback is unreachable in production, but five test fixtures now build payloads
+  missing a required field. Also carried: **F6** — settled by human decision, `tests/packaging.test.ts`
+  keeps a key-set-only dependency assertion, which means `AGENTS.md` S4 has lost mechanical
+  version-drift detection and has no replacement enforcement point (now recorded in
+  `AGENTS.md`); **F8 (MEDIUM)** — the per-turn feedback hook could not be confirmed to have
+  fired during implementation (`.sdd/feedback/.turns/` carries a nine-day-stale mtime), the
+  one open question about process rather than code; plus LOW items F7 and MC-5's wording
+  versus MC-14's mandate, F9 (no green CI run on the shipping commit yet), F10 (MC-11's "N
+  is always 0" is not strictly true for a touched path outside the install directory), F11
+  (the repo-shape question is asked fourth, before the stack question, not literally
+  first), F12, F13, MC-20's id-suffix wording, and the unguarded predicate duplication at
+  `src/generators/markdown-yaml.ts:62`. (Shipped 2026-09-23.)
+
 - **CI workflow repository-root placement for monorepo installs** — when `npx harny init` is run in a subdirectory of a git repository, the generated GitHub Actions workflow file is now placed at the repository root (`.github/workflows/`) where GitHub reads it, rather than inside the install directory where it would be silently ignored. The workflow is named after the install path (e.g., `harny-feedback-apps-web.yml` for an install at `apps/web`) to distinguish multiple installs in one repository. All other artifacts (`.sdd/`, agents, skills, MCP config) remain in the install directory. Each generated step carries `working-directory: <component>` so lint/type-check commands run scoped to the component, not the whole repository. Implements repository-root placement via a declared write root on `GeneratedFile` (`root?: 'repo'`), adds `src/repo.ts` for git-root detection, and introduces four Architecture Decision Records (ADRs 0031–0034). A second install deriving the same workflow name exits 3 with the path named and writes nothing (no silent overwrites). Preserves byte-identity for root-install workflows and re-proves FC-13's dogfood guarantee. Includes two low-severity findings: a post-write report that does not distinguish writes above the install directory (AL-5), and an untested case of same-slug collision for distinct-directory installs (AL-6). (Shipped 2026-09-23.)
 
 - **Context7 MCP endpoint update and CI push-to-`main` trigger** — four independent maintenance fixes grouped as one feature (dogfood-quick-fixes). (1) The Context7 MCP endpoint harny writes is now `/mcp/oauth` instead of `/mcp`, updated across all five tools' native MCP configuration files via the single constant `CONTEXT7_MCP_URL` in `src/mcp.ts`. The OAuth endpoint was chosen because `/mcp` was observed not to work correctly in practice, though Context7's own per-client examples still document `/mcp`; a deliberate departure recorded here and in ADR 0029. All five generators' generated role artifacts and this repo's own scaffolded hooks carry the updated value; no generator changed, and the single-literal invariant holds. (2) The `sdd-documentation` role now carries an explicit hard rule forbidding `git commit`, `git push`, and `--no-verify` flags. The rule appears in `templates/roles/sdd-documentation.md` § "Step 5: Hard Rules" and identically in both `harny-document` skill roots, reaching all five tools' generated artifacts via the canonical-body mechanism and this repo's own thinned live agent via the skill route. (3) Two obsolete doc comments describing pre-amendment `CommandSpec.extensions` semantics are aligned to the amendment A1 wording already correct in the implementation: `src/feedback.ts`'s own comment and the archived `feedback-path-hygiene` contract's § Interfaces copy. A dated correction note explains that this is a text-only alignment closing AL-11, with A1's history left unchanged. (4) The CI workflow gains a `push` trigger scoped to the `main` branch, complementing the existing `pull_request` trigger, so that direct integration to `main` is checked by the post-integration feedback sensor. This repo's own `.github/workflows/harny-feedback.yml` is regenerated to maintain byte-identity with scaffold output. The `main` branch name is hardcoded—deriving it from each target repo would require either a user prompt, a git shell-out (non-deterministic), or moving trigger logic into the generated block (violating ADR 0015's YAML-free principle). Hardcoding is documented as a one-line hand edit for repos using a different default branch (ADR 0030 records the decision). All 34 contract guarantees pass; three LOW findings record continued investigation paths (AL-4 extension: id-bearing `describe` titles, a continuation of standing AL-4 defect in test naming; DQ-3 extension: non-reproducing e2e parallelism coupling with AL-20, which needs a `package.json` change out of scope; DQ-2 is informational only). Two reservations carry: `R-OAuth` (the generated OAuth config was never loaded into a live tool install), confirmed as part of the human-gated AL-30 / CG-1 class this repo already carries; SC17 (the green `harny-feedback` run on a push to `main` is a post-merge observation, closing `feedback-path-hygiene`'s AL-5). (Shipped 2026-09-22.)

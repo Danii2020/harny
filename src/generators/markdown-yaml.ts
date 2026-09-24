@@ -57,6 +57,32 @@ export function renderProjectConfigBlock(project: ProjectConfigSummary): string 
     // says so, rather than looking identical to a resolved one.
     const suffix = project.stackProfile ? '' : ' (no built-in profile)';
     lines.push(`- Project stack: ${project.stack}${suffix}`);
+  } else if (
+    project.components &&
+    !(project.components.length === 1 && project.components[0].path === '.')
+  ) {
+    // (specs/monorepo-mode, MC-16.) A monorepo config has no single `stack`
+    // (`project.stack` is undefined), so the per-component lines stand where the
+    // single `Project stack:` line would have gone — the escape-hatch legibility
+    // of the stack line, applied per declared entry. The one-`.`-component case
+    // is excluded here by the SAME boundary that `isSingleRootComponent` in
+    // `src/engine.ts` owns for `buildCommandsPayload` and `buildDoctorChecks`.
+    // It is spelled out rather than imported ONLY because SC14/MC-16 confine
+    // component vocabulary in this file to this function's body, and an import
+    // line sits outside it; keep the two in lockstep — engine.ts is the owner
+    // (`AGENTS.md` S5). The formula's meaning is the byte-identity boundary of
+    // MC-5: a
+    // blank-stack, components-free config resolves to that exact one-`.`-component
+    // shape and must render NEITHER a `Project stack:` line NOR a `Component:`
+    // line, precisely as it does today. `'profile' in item` distinguishes "this
+    // entry's resolution was not carried" (no suffix) from "this entry's
+    // resolution was carried and came back empty" (the unresolved-stack suffix),
+    // which is what a resolved `ResolvedComponent` always literally sets.
+    for (const item of project.components) {
+      const unresolved = 'profile' in item && !item.profile;
+      const suffix = unresolved ? ' (no built-in profile)' : '';
+      lines.push(`- Component: ${item.path} — ${item.stack ?? ''}${suffix}`);
+    }
   }
   lines.push(`- Spec schema directory: ${project.specSchemaDir}`);
   if (project.reducedGates) {

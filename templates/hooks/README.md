@@ -59,6 +59,16 @@ here).
    blocking response when it is set, so this feedback loop can never trip a tool's
    own consecutive-block override.
 
+7. **A touched path is resolved to exactly one declared component, and that
+   component's commands run from that component's directory.** A repository may
+   declare more than one component (a directory and the stack it is written in);
+   a touched path is matched to the single longest-matching declared component
+   directory, never to more than one and never to an arbitrary default, and the
+   commands that see that path run with that component's own directory as their
+   working directory. A repository that declares no components behaves exactly as
+   behaviors 1–6 above describe, unchanged: it is the one-component, install-root
+   case of this same rule, not a separate mode.
+
 ## Attributed examples
 
 The behavior above is realized differently on each tool's own hook surface — this is

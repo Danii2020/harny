@@ -5,6 +5,7 @@
  * Re-exports nothing from `vocabulary.ts`; consumers import the vocabulary
  * directly, which is what keeps this module and `templates.ts` acyclic.
  */
+import path from 'node:path';
 import { HarnessError } from './errors.js';
 import {
   CORE_SKILL_IDS,
@@ -48,7 +49,30 @@ export interface HarnessConfig {
   readonly skills: readonly SkillId[];
   /** Resolved to a `StackProfile` (`src/feedback.ts`'s `resolveStackProfile`) for
    *  the computational-feedback hook and CI gate (`agent-feedback-controls`).
-   *  Omitted when blank; unrecognized values are inert, never an error (SC2). */
+   *  Omitted when blank; unrecognized values are inert, never an error (SC2).
+   *  MUTUALLY EXCLUSIVE with `components` (specs/monorepo-mode MC-1): a single
+   *  source declaring both non-empty is `HarnessError('USAGE')`. */
+  readonly stack?: string;
+  /** (specs/monorepo-mode — NEW.) Declared components, normalized, deduplicated
+   *  and canonically ordered ascending by `path`. Non-empty when present. Absent
+   *  is the single-repo case and is the default — MUTUALLY EXCLUSIVE with `stack`
+   *  (MC-1). */
+  readonly components?: readonly ComponentSelection[];
+}
+
+/** (specs/monorepo-mode.) One declared component of a monorepo install: a
+ *  directory and the stack that directory is written in. Carries a path and a
+ *  stack and nothing else — no roles, no gates, no tools, no tier
+ *  (intent.md § Non-Goals). */
+export interface ComponentSelection {
+  /** Normalized POSIX path, relative to the install directory. `'.'` means the
+   *  install directory itself and is a legal, ordinary member (the catch-all).
+   *  Never absolute, never escaping the install directory, never carrying a
+   *  trailing `/`. */
+  readonly path: string;
+  /** Same semantics as `HarnessConfig.stack`: resolved by `resolveStackProfile`,
+   *  omitted when blank, and inert-never-fatal when unrecognized
+   *  (`feedback-controls.md` FC-2, applied per component). */
   readonly stack?: string;
 }
 
@@ -86,6 +110,12 @@ export interface PartialHarnessConfig {
    *  error, never a silent no-op. Set by `--skills`. */
   readonly optionalSkillIds?: readonly OptionalSkillId[];
   readonly stack?: string;
+  /** (specs/monorepo-mode — NEW.) Wholesale-replaces the component list, exactly
+   *  as `gates` replaces the gate set and `roleIds` replaces role membership.
+   *  Never merged per-path: a component list is a description of a repository's
+   *  shape, and merging two such descriptions produces a shape neither source
+   *  asked for. */
+  readonly components?: readonly ComponentSelection[];
 }
 
 /** Re-adds every `CORE_SKILL_IDS` member (a no-op if already present) and returns
@@ -151,6 +181,117 @@ function validateRoleSelections(raw: unknown, source: string): RoleSelection[] {
   return ROLE_IDS.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
 }
 
+/**
+ * (specs/monorepo-mode.) Normalizes one user-supplied component path and rejects
+ * what cannot be a component. The single home of the rule (`AGENTS.md` S5): the
+ * prompt's `validate` callback, the flag parser (via `validateComponentList`), the
+ * `--config` loader and `validateConfig` all call this one function rather than
+ * re-deriving it.
+ *
+ * Steps, in order: trim; replace `\` with `/`; `path.posix.normalize`; strip a
+ * trailing `/`; map `''` to `'.'`. Then reject, as `HarnessError('USAGE')`: an
+ * absolute path (POSIX or `C:`-style), and any result equal to `'..'` or
+ * beginning `'../'`.
+ */
+export function normalizeComponentPath(raw: string, source: string): string {
+  let value = raw.trim().replace(/\\/g, '/');
+  value = path.posix.normalize(value);
+  if (value.length > 1 && value.endsWith('/')) {
+    value = value.slice(0, -1);
+  }
+  if (value === '') {
+    value = '.';
+  }
+
+  if (value.startsWith('/') || /^[A-Za-z]:/.test(value)) {
+    throw new HarnessError(
+      'USAGE',
+      `Invalid component path "${raw}" (${source}): must be a relative path, not absolute.`,
+    );
+  }
+  if (value === '..' || value.startsWith('../')) {
+    throw new HarnessError(
+      'USAGE',
+      `Invalid component path "${raw}" (${source}): must not escape the install directory.`,
+    );
+  }
+
+  return value;
+}
+
+/**
+ * (specs/monorepo-mode.) Validates, normalizes, deduplicates and canonically
+ * orders a component list. Returns entries sorted ascending by `path` (plain
+ * codepoint comparison, the same ordering `compareByName` in `src/engine.ts`
+ * already uses), which is what makes the list's emission order independent of
+ * the order a user typed it in. An empty list, or two entries whose normalized
+ * paths are equal, is `HarnessError('USAGE')`.
+ */
+export function validateComponentList(raw: unknown, source: string): ComponentSelection[] {
+  if (!Array.isArray(raw)) {
+    throw new HarnessError('USAGE', `Invalid config (${source}): "components" must be an array.`);
+  }
+  if (raw.length === 0) {
+    throw new HarnessError(
+      'USAGE',
+      `Invalid config (${source}): "components" must have at least one entry.`,
+    );
+  }
+
+  const normalized: ComponentSelection[] = raw.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) {
+      throw new HarnessError('USAGE', `Invalid config (${source}): each component entry must be an object.`);
+    }
+    const { path: rawPath, stack } = entry as Record<string, unknown>;
+    if (typeof rawPath !== 'string') {
+      throw new HarnessError(
+        'USAGE',
+        `Invalid config (${source}): each component entry's "path" must be a string.`,
+      );
+    }
+    const normalizedPath = normalizeComponentPath(rawPath, source);
+    if (stack !== undefined && typeof stack !== 'string') {
+      throw new HarnessError(
+        'USAGE',
+        `Invalid config (${source}): component "${normalizedPath}" has a non-string "stack".`,
+      );
+    }
+    return stack !== undefined && stack.length > 0
+      ? { path: normalizedPath, stack }
+      : { path: normalizedPath };
+  });
+
+  const seen = new Set<string>();
+  for (const component of normalized) {
+    if (seen.has(component.path)) {
+      throw new HarnessError(
+        'USAGE',
+        `Invalid config (${source}): duplicate component path "${component.path}" after normalization.`,
+      );
+    }
+    seen.add(component.path);
+  }
+
+  return normalized.slice().sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** (specs/monorepo-mode.) Parses one `--component <path>=<stack>` assignment.
+ *  Splits on the FIRST `=`, exactly as `parseModelAssignment` already does for
+ *  `--model`. An empty right-hand side yields a component with no `stack` (legal
+ *  and inert). An empty left-hand side, or no `=` at all, is `HarnessError('USAGE')`. */
+export function parseComponentAssignment(raw: string): ComponentSelection {
+  const eqIndex = raw.indexOf('=');
+  const rawPath = eqIndex === -1 ? '' : raw.slice(0, eqIndex).trim();
+  if (eqIndex <= 0 || rawPath.length === 0) {
+    throw new HarnessError(
+      'USAGE',
+      `Invalid --component assignment "${raw}". Expected the form <path>=<stack>.`,
+    );
+  }
+  const stack = raw.slice(eqIndex + 1).trim();
+  return stack.length > 0 ? { path: rawPath, stack } : { path: rawPath };
+}
+
 /** Derives defaults from canonical content: every role enabled, every gate active,
  *  each role's tier read from its template's `cost_tier`. Never hardcodes tiers. */
 export function defaultConfig(templates: CanonicalTemplates): HarnessConfig {
@@ -213,6 +354,7 @@ export function loadConfigFile(contents: string, sourcePath: string): PartialHar
     gates?: readonly GateId[];
     optionalSkillIds?: readonly OptionalSkillId[];
     stack?: string;
+    components?: readonly ComponentSelection[];
   } = {};
 
   if (raw.tools !== undefined) {
@@ -250,6 +392,13 @@ export function loadConfigFile(contents: string, sourcePath: string): PartialHar
     if (raw.stack.length > 0) {
       result.stack = raw.stack;
     }
+  }
+  if (raw.components !== undefined) {
+    // (specs/monorepo-mode.) validateComponentList is the single home of the
+    // normalize/dedupe/order rule (S5) — called here so a --config file's
+    // declared components round-trip through the same rule a flag or
+    // .sdd/harness.json would.
+    result.components = validateComponentList(raw.components, sourcePath);
   }
 
   return result;
@@ -296,10 +445,14 @@ export function validateConfig(value: unknown, source: string): HarnessConfig {
     skills,
   };
 
+  let result = config;
   if (typeof raw.stack === 'string' && raw.stack.length > 0) {
-    return { ...config, stack: raw.stack };
+    result = { ...result, stack: raw.stack };
   }
-  return config;
+  if (raw.components !== undefined) {
+    result = { ...result, components: validateComponentList(raw.components, source) };
+  }
+  return result;
 }
 
 /**
@@ -386,16 +539,46 @@ export function mergeConfig(
     override.optionalSkillIds !== undefined ? override.optionalSkillIds : baseOptionalSkillIds;
   const skills = withCoreSkills([...CORE_SKILL_IDS, ...optionalSkillIds]);
 
-  const stack = override.stack !== undefined ? override.stack : base.stack;
+  // (specs/monorepo-mode, MC-1.) `stack` and `components` are mutually
+  // exclusive, evaluated here — the single site (S5) — AFTER the merge inputs
+  // are read but BEFORE they are applied, so this is the only place a config
+  // carrying both can ever be constructed, and it never is.
+  const overrideHasStack = override.stack !== undefined && override.stack.length > 0;
+  const overrideHasComponents = override.components !== undefined && override.components.length > 0;
+  if (overrideHasStack && overrideHasComponents) {
+    throw new HarnessError(
+      'USAGE',
+      'Invalid configuration: "stack" and "components" were both supplied by the same source. ' +
+        'Declare the root as a component ({ path: ".", stack: … }) instead of setting both.',
+    );
+  }
 
-  const merged: HarnessConfig = {
+  let stack = override.stack !== undefined ? override.stack : base.stack;
+  let components = override.components !== undefined ? override.components : base.components;
+
+  // The drop-the-superseded-field rule: an override that replaces the shape
+  // question's answer discards the other field rather than re-triggering the
+  // exclusivity check above on the user's behalf.
+  if (overrideHasComponents) {
+    stack = undefined;
+  } else if (overrideHasStack) {
+    components = undefined;
+  }
+
+  let merged: HarnessConfig = {
     version: CONFIG_VERSION,
     tools,
     roles,
     gates,
     skills,
   };
-  return stack !== undefined && stack.length > 0 ? { ...merged, stack } : merged;
+  if (stack !== undefined && stack.length > 0) {
+    merged = { ...merged, stack };
+  }
+  if (components !== undefined && components.length > 0) {
+    merged = { ...merged, components };
+  }
+  return merged;
 }
 
 /** Stable JSON: keys in declaration order, 2-space indent, one trailing newline. */
@@ -415,6 +598,15 @@ export function serializeConfig(config: HarnessConfig): string {
   };
   if (config.stack !== undefined && config.stack.length > 0) {
     ordered.stack = config.stack;
+  }
+  if (config.components !== undefined && config.components.length > 0) {
+    ordered.components = config.components.map((component) => {
+      const entry: Record<string, unknown> = { path: component.path };
+      if (component.stack !== undefined) {
+        entry.stack = component.stack;
+      }
+      return entry;
+    });
   }
   return `${JSON.stringify(ordered, null, 2)}\n`;
 }

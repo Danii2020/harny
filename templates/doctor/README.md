@@ -98,7 +98,14 @@ all, unlike the feedback hook (`AGENTS.md` S7).
   directory in the repo.
 - **Tests** — the resolved stack's full test-suite command (never the per-turn
   lint/type-check commands `harny-feedback` owns — see "Boundary with
-  `harny-feedback`" below), run once, in full, before work starts.
+  `harny-feedback`" below), run once, in full, before work starts. A repository
+  that declares more than one component (a directory and the stack it is written
+  in) contributes one command per component; each such entry carries a `dir`
+  field naming that component's directory, POSIX and relative to the install
+  directory, absent when it is the install directory itself — the runner
+  resolves both the command's working directory and its presence probe from
+  `dir ?? '.'`, so an older generated `checks.json` (no `dir` anywhere) keeps
+  running unchanged.
 
 ## Boundary with `harny-feedback`
 

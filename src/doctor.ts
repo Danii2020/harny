@@ -13,7 +13,15 @@ import process from 'node:process';
 import { EXIT, HarnessError } from './errors.js';
 import { validateConfig } from './config.js';
 import type { HarnessConfig } from './config.js';
-import { HARNESS_CONFIG_PATH, ROOT_PLACEMENT, SHARED_PROBES_PATH, SPEC_SCHEMA_DIR, skillRootsFor } from './engine.js';
+import {
+  HARNESS_CONFIG_PATH,
+  ROOT_PLACEMENT,
+  SHARED_PROBES_PATH,
+  SPEC_SCHEMA_DIR,
+  isSingleRootComponent,
+  resolveComponents,
+  skillRootsFor,
+} from './engine.js';
 import type { CiPlacement, HarnessPayload } from './engine.js';
 import { ciWorkflowPathFromInstallDir, resolveInstallLocation } from './repo.js';
 import { FEEDBACK_RUNNER_PATH, resolveStackProfile } from './feedback.js';
@@ -83,6 +91,26 @@ export const ARCHITECTURE_PATHS = [
   'docs/architecture.md',
 ] as const;
 
+/** (specs/monorepo-mode.) A readiness command as it appears in a GENERATED
+ *  `checks.json` — the profile's own `ReadinessCommand` plus the directory it
+ *  runs in.
+ *
+ *  Deliberately declared here and not as a field on `CommandSpec` in
+ *  `src/feedback.ts` (intent.md G7, MC-2): a directory is a fact about this
+ *  repo, not about a stack, and putting it on `CommandSpec` would (a) give
+ *  `FeedbackCommand` a second, conflicting way to express a component and (b)
+ *  put mutable per-repo data in the table `feedback-controls.md` FC-1 pins as
+ *  the single command source. `ReadinessCommand`'s `extensions?: never`
+ *  narrowing is untouched (`readiness-checks.md` RD-2). */
+export type ScopedReadinessCommand = ReadinessCommand & {
+  /** POSIX, relative to the install directory. Absent means the install
+   *  directory itself, so a `checks.json` generated before this feature runs
+   *  unchanged against the new runner — the same absent-means-today's-default
+   *  posture as `DoctorCheck.tier` (ADR 0023) and `CommandSpec.extensions`
+   *  (FC-23). */
+  readonly dir?: string;
+};
+
 /** The label the runner prints for the new family. Owned here, travels as data in
  *  `--checks` — the runner never literals it (`G7`, `SC8`). */
 export const REPO_READINESS_FAMILY_LABEL = 'repo readiness';
@@ -105,7 +133,10 @@ export interface DoctorChecksFile {
   /** **(NEW — ai-sdlc-readiness.)** The label the runner prints for that family —
    *  data, never a runner literal (`G7`). */
   readonly repoReadinessLabel: string;
-  readonly commands: readonly ReadinessCommand[];
+  /** **(WIDENED — specs/monorepo-mode.)** Entries may now carry `dir`. Field
+   *  ADDED to the element type; no field of `DoctorChecksFile` itself is added,
+   *  renamed or removed, and `version` stays `1` (MC-21). */
+  readonly commands: readonly ScopedReadinessCommand[];
 }
 
 /** Every entry below `harness-manifest` itself depends on this repo having been
@@ -248,7 +279,29 @@ export function buildDoctorChecks(
     requires: { anyFile: [knowledgeBaseDir] },
   });
 
-  const profile = resolveStackProfile(config.stack);
+  // (specs/monorepo-mode, MC-20.) Family 5's entries are built per resolved
+  // component: every command carries `dir` and an id suffixed `:<path>` EXCEPT in
+  // the one case MC-20 and MC-5 exempt — exactly one `.` component (the
+  // single-repo case, declared or implicit) — where `dir` is omitted and `id` is
+  // unchanged, byte-identical to today.
+  //
+  // The boundary is `isSingleRootComponent`, imported from its one owner. A
+  // component count is the WRONG test here: a lone `apps/web` component gated on
+  // `components.length > 1` emits no `dir`, so `run-doctor.mjs` resolves
+  // `path.resolve(cwd, '.')` and runs both the `requires` probe and the command
+  // at the install root — a silent, false readiness verdict (`audit.md` F1).
+  const components = resolveComponents(config);
+  const scopedByComponent = !isSingleRootComponent(components);
+  const commands: ScopedReadinessCommand[] = [];
+  for (const component of components) {
+    for (const command of component.profile?.readiness ?? []) {
+      commands.push(
+        scopedByComponent
+          ? { ...command, id: `${command.id}:${component.path}`, dir: component.path }
+          : command,
+      );
+    }
+  }
 
   return {
     version: 1,
@@ -262,7 +315,7 @@ export function buildDoctorChecks(
     require,
     repoReadiness: buildRepoReadinessChecks(generators),
     repoReadinessLabel: REPO_READINESS_FAMILY_LABEL,
-    commands: profile?.readiness ?? [],
+    commands,
   };
 }
 

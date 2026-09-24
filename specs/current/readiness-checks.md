@@ -1,6 +1,6 @@
 # Readiness Checks Specification
 
-> Last synced: 2026-09-23. Owned artifacts: `templates/doctor/run-doctor.mjs`, `templates/doctor/README.md`, `templates/shared/probes.mjs`, `harny-doctor` skill, `harny-document` skill (bootstrap mode only), `npx harny doctor` CLI verb.
+> Last synced: 2026-09-23 (monorepo-mode). Owned artifacts: `templates/doctor/run-doctor.mjs`, `templates/doctor/README.md`, `templates/shared/probes.mjs`, `harny-doctor` skill, `harny-document` skill (bootstrap mode only), `npx harny doctor` CLI verb.
 
 ## Purpose
 
@@ -10,9 +10,9 @@ Feedforward, computational pre-checks that run at session start and before new s
 
 ### Requirement: RD-1 — Five check families in fixed order
 
-The system SHALL evaluate readiness across five check families in this exact order: environment (Node version), harness-file manifest (base `.sdd/` artifacts present), **repo readiness** (baseline repo-level documentation an agent needs), spec-state sanity (feature directories coherent), and test suite (stack-specific runner). One check produces one line; no check aborts the run.
+The system SHALL evaluate readiness across five check families in this exact order: environment (Node version), harness-file manifest (base `.sdd/` artifacts present), **repo readiness** (baseline repo-level documentation an agent needs), spec-state sanity (feature directories coherent), and test suite (stack-specific runner). One check produces one line; no check aborts the run. Still five families in the same order for a multi-component install: only family 5 gains entries, one per declared component, and families 1–4 are unchanged in number and content (`monorepo-mode` MC-22).
 
-**Source:** readiness-doctor · intent.md § G3, contract.md § BG-1, BG-2. **Amended by** ai-sdlc-readiness · intent.md § Constraints, contract.md § AR-1 (four families → five; repo readiness inserted third).
+**Source:** readiness-doctor · intent.md § G3, contract.md § BG-1, BG-2. **Amended by** ai-sdlc-readiness · intent.md § Constraints, contract.md § AR-1 (four families → five; repo readiness inserted third); restated as still true by monorepo-mode · contract.md § MC-22.
 
 #### Scenario: all families evaluated
 - **WHEN** the readiness runner executes
@@ -22,7 +22,9 @@ The system SHALL evaluate readiness across five check families in this exact ord
 
 The system SHALL prevent a test-suite command (the readiness kind) from ever reaching a per-turn hook config or the CI workflow; `commands` element type forbids `kind: 'test'` at compile time. `ReadinessCommand` also forbids `extensions` at compile time, since readiness commands run once whole-project and never consult path-specific settings.
 
-**Source:** readiness-doctor · intent.md § G4, contract.md § BG-4; feedback-path-hygiene · contract.md § PH-9
+Component scoping does not change this: the component directory is carried as a `dir` field on the **generated checks entry** (`ScopedReadinessCommand` in `src/doctor.ts`, an intersection type at the composition root), never as a field on `CommandSpec`, `FeedbackCommand`, `ReadinessCommand` or `StackProfile` in `src/feedback.ts`, which gain no component, path, directory or cwd vocabulary at all.
+
+**Source:** readiness-doctor · intent.md § G4, contract.md § BG-4; feedback-path-hygiene · contract.md § PH-9; monorepo-mode · contract.md § MC-2; ADR 0042
 
 #### Scenario: test command rejected at type level
 - **WHEN** attempting to assign `kind: 'test'` to a `StackProfile.commands` entry
@@ -60,11 +62,17 @@ The system SHALL detect and report by feature name: a `specs/<feature>/` missing
 
 The system SHALL ensure a check whose `requires` probe is false is skipped with a notice and never fails; the skip behavior is identical whether reached via readiness check, per-turn hook, or CI gate.
 
-**Source:** readiness-doctor · intent.md § G3, contract.md § BG-9
+Probe evaluation is **per component**, against that component's own directory: a check carrying a `dir` field resolves both its probe and its spawn from `path.resolve(cwd, dir ?? '.')`, so a component's readiness is judged where that component actually lives.
+
+**Source:** readiness-doctor · intent.md § G3, contract.md § BG-9; monorepo-mode · contract.md § MC-12, MC-21
 
 #### Scenario: absent tooling skipped
 - **WHEN** a test runner's `requires` probe is false (e.g., no `pytest` in PATH)
 - **THEN** the check is skipped with a notice, and the run exits ready (0) despite the skip
+
+#### Scenario: a component's probe is evaluated in its own directory
+- **WHEN** a check entry carries `dir: "apps/web"` and the install root declares no test script while `apps/web` does
+- **THEN** the probe and the command both resolve against `apps/web`, the line reports `OK`, and nothing runs at the install root
 
 ### Requirement: RD-6 — No mutations
 
@@ -82,9 +90,9 @@ The system SHALL guarantee the readiness check never writes, never mutates the t
 
 ### Requirement: RD-7 — Verb and direct invocation agreement
 
-The system SHALL ensure `npx harny doctor` and `node <path>/.sdd/doctor/run-doctor.mjs` evaluate the same checks and report the same ready/not-ready for the same repo state, sharing one `buildDoctorChecks` implementation. The verb re-derives the install location before building checks, which is what keeps the agreement true for a subdirectory install (ci-workflow-root feature).
+The system SHALL ensure `npx harny doctor` and `node <path>/.sdd/doctor/run-doctor.mjs` evaluate the same checks and report the same ready/not-ready for the same repo state, sharing one `buildDoctorChecks` implementation. The verb re-derives the install location before building checks, which is what keeps the agreement true for a subdirectory install (ci-workflow-root feature), and it re-derives the declared **components** from the same `.sdd/harness.json`, which is what keeps it true for a multi-component install.
 
-**Source:** readiness-doctor · intent.md § G8, contract.md § BG-7; ci-workflow-root · contract.md Amendment RD-7
+**Source:** readiness-doctor · intent.md § G8, contract.md § BG-7; ci-workflow-root · contract.md Amendment RD-7; monorepo-mode · contract.md § MC-23
 
 #### Scenario: verb and direct invocation agree
 - **WHEN** running `npx harny doctor` and the direct runner invocation against the same repo (root install or subdirectory install)
@@ -203,6 +211,24 @@ byte-identical at commit `d3c2741`); `RD-12` made it load-bearing.
 - **THEN** the runner exits `1`, naming the offending value (or the flag) and the
   accepted set — never a silently-empty, falsely-ready exit `0`
 
+### Requirement: RD-13 — Family 5 is scoped per component by a `dir` field on the generated entry
+
+The system SHALL emit one family-5 (tests) entry per resolved component, each carrying a `dir` field naming that component's directory — POSIX, relative to the install directory — and an `id` suffixed `:<path>`, for every install shape **except** the implicit single-repo shape (exactly one component whose path is `.`), where both the `dir` field and the id suffix are omitted and the generated bytes are unchanged. The runner SHALL acquire no component literal: `path.resolve(cwd, command.dir ?? '.')` is its only change, used for both the probe and the spawn. `checks.json`'s `version` SHALL stay `1`, so a `checks.json` generated before components existed behaves byte-identically.
+
+**Source:** monorepo-mode · contract.md § MC-20, MC-21; ADR 0042
+
+#### Scenario: a lone non-`.` component is scoped, not run at the root
+- **WHEN** an install declares exactly one component `apps/web`
+- **THEN** its family-5 entry carries `dir: "apps/web"` and the `:apps/web` id suffix, and both the probe and the test command run in `apps/web` — never at the install root
+
+#### Scenario: the implicit single-repo shape is unchanged
+- **WHEN** an install declares no components, or exactly one component whose path is `.`
+- **THEN** the family-5 entry carries no `dir` and its id is unsuffixed, byte-identical to the pre-`monorepo-mode` output
+
+#### Scenario: a pre-feature `checks.json` still works
+- **WHEN** the runner reads a `checks.json` generated before components existed, with no `dir` anywhere
+- **THEN** every command resolves against `'.'` and the run behaves exactly as it did before
+
 ## Invariants
 
 **I1 — Entry-level probe gating.** A `require` entry whose `requires` probe is false is skipped with a notice, never failed, using the same probe semantics as feedback controls (`I3`).
@@ -229,6 +255,8 @@ byte-identical at commit `d3c2741`); `RD-12` made it load-bearing.
 | RD-R10 | A generated `checks.json`'s `ci-workflow` entry records an install-relative path that goes stale if the install directory is moved to a different depth; `npx harny doctor` re-derives and is never stale; remediation is to re-run `npx harny init`. The relative path is data produced during init, and persisting it would create a second source of truth that can diverge from the filesystem. | LOW | ci-workflow-root · contract.md § Behavior Guarantees (DR-5) |
 | RC-R7 | **FC-13's byte-identity guarantee has no automated test covering the T24 case.** After `RD-12`'s regeneration, this repo's `.sdd/` (including `.sdd/harness.json`'s recorded `mid` tier) was verified byte-identical to fresh `npx harny init` output — but only manually, at audit time. Nothing in the suite will catch a future drift on this specific path. | LOW (coverage) | documentation-role-completion · audit.md RC-R7 |
 | RC-AL5 | **A misconfigured `specs.dir` yields a green `--only spec-state` run indistinguishable from a genuinely clean repo.** Family 4 swallows a `readdirSync` failure into an empty feature list, so a wrong `specs.dir` exits `0` with the same output shape as a repo with nothing stranded. Pre-existing family-4 behavior that `RD-12` deliberately reuses rather than changes; `contract.md`'s Error Handling Contract explicitly sanctions "`specs/` absent or empty ⇒ exit 0". Running from the wrong working directory is still caught loudly (missing `checks.json` ⇒ exit 1). | LOW | documentation-role-completion · audit.md AL-5 |
+| MR-F1 | **Closed, recorded for its lesson.** `buildDoctorChecks` first gated `dir`/id-suffix emission on "more than one component", so a lone non-`.` component ran both its probe and its test command at the install root — a silent false-readiness verdict with no error and no warning. Fixed before ship by gating on the exported `isSingleRootComponent` predicate and perturbation-proved closed. The lesson stands: the single-repo boundary had four re-derived spellings in `src/`, and that divergence is what produced the defect; it is now two named, exported, documented predicates (`isSingleRootComponent`, `hasMultipleComponents`), each forbidding substitution for the other. One duplication remains unguarded at `src/generators/markdown-yaml.ts:62`, where an import cannot be written without failing the component-vocabulary grep gate. | CLOSED (residual LOW, unguarded) | monorepo-mode · audit.md F1, round-2 Audit Log, S5 |
+| MR-MC20 | RD-13's `:<path>` id suffix follows the `isSingleRootComponent` boundary, so a lone non-`.` component gets `npm-test:apps/web` where MC-20's original wording ("more than one component") implied a bare `npm-test`. MC-20's two clauses never covered that case, MC-5 settles the `dir` half in the shipped direction, and suffixing threatens no uniqueness — recorded here so the gap is not rediscovered as a defect. | LOW (wording) | monorepo-mode · audit.md C20, Final Verdict |
 
 ## Contributing features
 
@@ -237,13 +265,17 @@ byte-identical at commit `d3c2741`); `RD-12` made it load-bearing.
 | readiness-doctor | 2026-09-14 | RD-1–RD-7: four-family readiness check, probe-skip determinism, spec-state coherence detection, verb + direct invocation agreement, no mutations, distinct not-ready exit code. |
 | ai-sdlc-readiness | 2026-09-15 | RD-8–RD-11: fifth `repo readiness` family (README must-have; architecture + per-tool agent-guidance recommended); two-tier model and `warn` outcome; presence-vs-coherence layering (runner checks presence only, `harny-doctor` judges coherence); ask-before-delegating hand-off to `harny-document`'s new bootstrap mode. Amended RD-1/I3 (four families → five) and I2 (ready/not-ready now admits `warn`). |
 | ci-workflow-root | 2026-09-23 | Amended RD-7: the verb re-derives install location before building checks, which keeps agreement true for subdirectory installs. Added RD-R10: generated `checks.json`'s `ci-workflow` entry records install-relative path that goes stale after a directory move; verb is never stale. |
+| monorepo-mode | 2026-09-23 | Added RD-13: family 5 scoped per component by a `dir` field on the generated checks entry, with the id suffixed `:<path>`, both omitted for the implicit single-repo shape; the runner gains no component literal and `checks.json` stays at `version: 1`. Amended RD-2 (`dir` lives on the generated entry type, never on `CommandSpec`), RD-5 (per-component probe evaluation) and RD-7 (the verb re-derives components as well as placement). Restated RD-1/I3 as still true: five families, same order, families 1–4 unchanged. ADR 0042. Carried MR-F1 (closed) and MR-MC20. |
 | documentation-role-completion | 2026-09-23 | Added RD-12: an optional `--only <family>` selector on the direct runner invocation, reusing each family's existing detection logic (never a duplicate), making the spec-state family cheap enough to invoke as a completion precondition rather than only at `harny-doctor`'s two existing checkpoints. `npx harny doctor` (`src/doctor.ts`) is unaffected — no selector, no schema change. |
 
 ## Related ADRs
 
 | ADR | Title | Status |
 |---|---|---|
+| 0018 | `CommandSpec<K>` type-level leak prevention | Accepted |
+| 0020 | `.sdd/harness.json`-gated scaffold-artifact checks | Accepted |
 | 0022 | A fifth check family, `repo readiness`, rather than more entries in family 2 | Accepted |
 | 0023 | Must-have/recommended tier split, a new `warn` outcome, and `conventions-doc` stays in family 2 | Accepted |
 | 0024 | Presence checked in the deterministic runner; coherence judged one layer up, in the skill | Accepted |
 | 0035 | Verify the archive with the existing spec-state detector via a family selector, not with new advisory prose or a second check | Accepted |
+| 0042 | Component scoping for readiness is a `dir` field on the generated checks entry, never on `CommandSpec` | Accepted |

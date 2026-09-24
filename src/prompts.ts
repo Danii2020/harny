@@ -7,7 +7,8 @@ import { cancel, confirm, isCancel, multiselect, select, text } from '@clack/pro
 import { HarnessError } from './errors.js';
 import { CORE_SKILL_IDS, COST_TIERS, DEFAULT_OPTIONAL_SKILL_IDS, GATE_IDS, OPTIONAL_SKILL_IDS, ROLE_IDS, SKILL_IDS, TOOL_IDS } from './vocabulary.js';
 import type { CostTier, GateId, OptionalSkillId, RoleId, SkillId, ToolId } from './vocabulary.js';
-import type { HarnessConfig, PartialHarnessConfig, RoleSelection } from './config.js';
+import { normalizeComponentPath } from './config.js';
+import type { ComponentSelection, HarnessConfig, PartialHarnessConfig, RoleSelection } from './config.js';
 import type { WritePlan } from './writer.js';
 import type { InitIO } from './init.js';
 
@@ -103,6 +104,79 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     optionalSkillIds = unwrapOrCancel(answer);
   }
 
+  // (NEW — specs/monorepo-mode, MC-25.) Repo shape: single repo vs. monorepo,
+  // asked before any stack question. A flag-supplied `--stack` or `--component`
+  // presets this question, skipped and reported through `io.log` exactly like
+  // every other preset question in this file. `select`, not `multiselect` — it
+  // does not consume a slot in the `multiselect` mock queue above.
+  const SHAPE_SINGLE_REPO = 'single-repo';
+  const SHAPE_MONOREPO = 'monorepo';
+  let components: ComponentSelection[] | undefined;
+  let isMonorepo: boolean;
+
+  if (preset.stack !== undefined || preset.components !== undefined) {
+    isMonorepo = preset.components !== undefined;
+    io.log(`Repo shape already set by a flag: ${isMonorepo ? 'monorepo' : 'single repo'}.`);
+    if (isMonorepo) {
+      components = [...preset.components!];
+    }
+  } else {
+    const shapeAnswer = await select<string>({
+      message: 'Is this a single repo or a monorepo?',
+      options: [
+        { value: SHAPE_SINGLE_REPO, label: 'Single repo' },
+        { value: SHAPE_MONOREPO, label: 'Monorepo (multiple components)' },
+      ],
+      initialValue: SHAPE_SINGLE_REPO,
+    });
+    const shape = unwrapOrCancel(shapeAnswer);
+    isMonorepo = shape === SHAPE_MONOREPO;
+
+    if (isMonorepo) {
+      // (MC-25.) Loops a path question then a stack question until an empty
+      // path ends the loop, requiring at least one component.
+      const collected: ComponentSelection[] = [];
+      for (;;) {
+        const pathAnswer = await text({
+          message: 'Component path? (relative to the install directory; leave empty to finish)',
+          placeholder: '(done)',
+          initialValue: '',
+          // (MC-26.) `prompts.ts` owns no rule, only the call: an empty answer
+          // ends the loop rather than being validated as a path, and every
+          // non-empty answer is validated by delegating to the one normalizer.
+          validate: (value: string | undefined) => {
+            if (!value || value.trim().length === 0) {
+              return undefined;
+            }
+            try {
+              normalizeComponentPath(value, 'prompt');
+              return undefined;
+            } catch (err) {
+              return (err as Error).message;
+            }
+          },
+        });
+        const rawPath = unwrapOrCancel(pathAnswer);
+        if (rawPath.trim().length === 0) {
+          break;
+        }
+
+        const stackAnswer = await text({
+          message: `Project stack for component "${rawPath}"? (typescript/python built-in feedback profiles; anything else is inert)`,
+          placeholder: '(none)',
+          initialValue: '',
+        });
+        const rawStack = unwrapOrCancel(stackAnswer);
+        collected.push(rawStack.length > 0 ? { path: rawPath, stack: rawStack } : { path: rawPath });
+      }
+
+      if (collected.length === 0) {
+        throw new HarnessError('USAGE', 'A monorepo install requires at least one declared component.');
+      }
+      components = collected;
+    }
+  }
+
   // Q4 (was Q3): model per role. Preset per-role by `preset.roleOverrides` — a role named
   // there is skipped and reported; every other selected role is asked normally.
   // `config` is already fully resolved (any flag-supplied roleOverride was already
@@ -164,8 +238,13 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
   // Q6 (was Q5): project stack — resolves the computational-feedback hook/CI
   // profile (agent-feedback-controls); an unrecognized value is inert, never an
   // error (SC2).
+  // (specs/monorepo-mode, MC-25.) When the shape answer is monorepo — by preset
+  // or by the loop above — the shape question already answered this one; the
+  // stack question is not asked at all, and `components` carries the answer.
   let stack: string | undefined;
-  if (preset.stack !== undefined) {
+  if (isMonorepo) {
+    stack = undefined;
+  } else if (preset.stack !== undefined) {
     stack = preset.stack;
   } else {
     const answer = await text({
@@ -191,6 +270,9 @@ export async function runInitPrompts(defaults: PromptDefaults, io: InitIO): Prom
     gates,
     skills,
   };
+  if (components !== undefined) {
+    return { ...result, components };
+  }
   return stack !== undefined ? { ...result, stack } : result;
 }
 

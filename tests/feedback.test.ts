@@ -103,6 +103,20 @@
  * yet), so the new test below is expected to fail: it finds zero occurrences
  * where it expects exactly one, not a wrong assumption about which file
  * should carry it.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md Behavior Guarantee MC-2 ("a grep of src/feedback.ts for
+ * [component/path/dir/cwd] vocabulary finds nothing"); intent.md SC16;
+ * audit.md Test Coverage T29. A single, global structural guard modeled
+ * directly on the BG-7/WR-5 gates above, per this repo's own established
+ * convention — `src/feedback.ts` is explicitly on this feature's
+ * NOT-MODIFIED list (G7), so this gate has nothing to violate yet: today's
+ * `src/feedback.ts` already carries none of the forbidden vocabulary, so this
+ * test is expected to PASS already at red time. It stays in this suite, live
+ * and reported (not skipped), as the regression guard that fails the instant
+ * a future edit tries to add a `path`/`dir`/`component`/`cwd` field to
+ * `StackProfile`, `CommandSpec`, `FeedbackCommand`, or `ReadinessCommand`.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -560,5 +574,21 @@ describe('ci-workflow-root — exactly one root: \'repo\' assignment across src/
     expect(totalCount, `expected exactly one root: 'repo' assignment in src/, found: ${JSON.stringify(hits)}`).toBe(1);
     expect(hits).toHaveLength(1);
     expect(hits[0].file).toBe('src/engine.ts');
+  });
+});
+
+describe('monorepo-mode — no component/path/dir/cwd vocabulary leaks into src/feedback.ts (MC-2, SC16, T29)', () => {
+  it('finds no case-insensitive occurrence of "component" in src/feedback.ts, and no "dir"/"cwd" field-name token', async () => {
+    const feedbackTsPath = path.join(REPO_ROOT, 'src', 'feedback.ts');
+    const contents = await fs.readFile(feedbackTsPath, 'utf8');
+
+    expect(contents).not.toMatch(/component/i);
+    // Field-name tokens, not the English word "directory" in prose (which this
+    // file's own doc comments legitimately use) — matched as a TypeScript
+    // property key/reference shape: `<word>:` or `.<word>` or `<word>?:`.
+    expect(contents).not.toMatch(/\bdir\??\s*:/);
+    expect(contents).not.toMatch(/\.dir\b/);
+    expect(contents).not.toMatch(/\bcwd\??\s*:/);
+    expect(contents).not.toMatch(/\.cwd\b/);
   });
 });

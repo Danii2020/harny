@@ -148,6 +148,26 @@
  * becomes the live regression guard the moment Phase 2/3 change that path
  * (roadmap.md's own "byte-identical... proven by a golden test" framing for
  * this exact case).
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md "Public API — src/engine.ts" (`ResolvedComponent`,
+ * `resolveComponents`, `ComponentCommands`, `CommandsPayload`,
+ * `buildCommandsPayload`, `stepWorkingDirectory`); § Interfaces "CI rendering"
+ * (MC-13, MC-14); § Data Models `ProjectConfigSummary.components`; Error
+ * Handling Contract row "no component's stack resolves to a profile"; audit.md
+ * Test Coverage T9-T11, T24, T25.
+ *
+ * None of `resolveComponents`, `buildCommandsPayload`, or
+ * `stepWorkingDirectory` exist on `src/engine.ts` yet at red time, so every
+ * test in their three describe blocks below fails with "does not provide an
+ * export named …". `buildPayload` does not populate `ProjectConfigSummary
+ * .components` yet either, and `renderCiWorkflow`/`buildFeedbackFiles` still
+ * render exactly one install/runner step pair driven by the single resolved
+ * `stack`/`stackProfile`, never per component — so the two-and-three-component
+ * `buildFeedbackFiles` tests below fail on a genuine shape mismatch (missing
+ * per-component install steps, a runner step that ignores every component but
+ * the single resolved `config.stack`), not a test-authoring bug.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -182,6 +202,19 @@ function feedbackTestConfig(overrides: { tools: readonly string[]; stack?: strin
     roles: [{ id: 'sdd-architect' as const, tier: 'most-capable' as const }],
     gates: ['post-specs', 'post-red-tests', 'post-audit'] as const,
     stack: overrides.stack,
+  };
+}
+
+/** (specs/monorepo-mode) Same minimal shape as `feedbackTestConfig`, but with a
+ *  declared `components` list instead of a single `stack` — mutually exclusive
+ *  per MC-1, so callers never pass both. */
+function monorepoTestConfig(components: readonly { path: string; stack?: string }[]) {
+  return {
+    version: 1 as const,
+    tools: ['claude-code'] as const,
+    roles: [{ id: 'sdd-architect' as const, tier: 'most-capable' as const }],
+    gates: ['post-specs', 'post-red-tests', 'post-audit'] as const,
+    components,
   };
 }
 
@@ -1350,5 +1383,282 @@ describe('ci-workflow-root — placement-aware rendering (contract.md § "Render
         expect((file as { root?: string }).root, `${file.path} unexpectedly carries a declared root`).toBeUndefined();
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+describe('resolveComponents — total, pure, never empty (MC-3, T9)', () => {
+  it('a components-free config resolves to the one implicit "." component, carrying the resolved stack profile', async () => {
+    const { resolveComponents } = await import('../src/engine.js');
+    const { resolveStackProfile } = await import('../src/feedback.js');
+
+    const result = resolveComponents(feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].path).toBe('.');
+    expect(result[0].stack).toBe('typescript');
+    expect(result[0].profile).toBe(resolveStackProfile('typescript'));
+  });
+
+  it('a components-free config with a blank stack still resolves to one "." component — never an empty list', async () => {
+    const { resolveComponents } = await import('../src/engine.js');
+
+    const result = resolveComponents(feedbackTestConfig({ tools: ['claude-code'] }) as any);
+
+    expect(result).toEqual([{ path: '.', stack: undefined, profile: undefined }]);
+  });
+
+  it('a declared components list resolves each entry\'s own stack, in canonical order', async () => {
+    const { resolveComponents } = await import('../src/engine.js');
+    const { resolveStackProfile } = await import('../src/feedback.js');
+
+    const result = resolveComponents(
+      monorepoTestConfig([
+        { path: 'apps/web', stack: 'typescript' },
+        { path: '.', stack: 'python' },
+      ]) as any,
+    );
+
+    expect(result.map((c) => c.path)).toEqual(['.', 'apps/web']);
+    expect(result.find((c) => c.path === '.')?.profile).toBe(resolveStackProfile('python'));
+    expect(result.find((c) => c.path === 'apps/web')?.profile).toBe(resolveStackProfile('typescript'));
+  });
+
+  it('a component with a blank or unrecognized stack resolves with profile undefined, never dropped from the list', async () => {
+    const { resolveComponents } = await import('../src/engine.js');
+
+    const result = resolveComponents(monorepoTestConfig([{ path: 'apps/legacy', stack: 'cobol' }]) as any);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].profile).toBeUndefined();
+  });
+});
+
+describe('buildCommandsPayload — bare array for one "." component, object form otherwise (MC-5, MC-6, T10)', () => {
+  it('returns the bare commands array — byte-identical to today\'s shape — for a single "." component', async () => {
+    const { resolveComponents, buildCommandsPayload } = await import('../src/engine.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+
+    const components = resolveComponents(feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any);
+    const payload = buildCommandsPayload(components);
+
+    const typescriptProfile = STACK_PROFILES.find((p) => p.id === 'typescript')!;
+    expect(Array.isArray(payload)).toBe(true);
+    expect(payload).toEqual(typescriptProfile.commands);
+  });
+
+  it('returns an empty bare array for a single "." component with no resolved profile', async () => {
+    const { resolveComponents, buildCommandsPayload } = await import('../src/engine.js');
+
+    const components = resolveComponents(feedbackTestConfig({ tools: ['claude-code'] }) as any);
+    const payload = buildCommandsPayload(components);
+
+    expect(payload).toEqual([]);
+  });
+
+  it('returns the object form for more than one component, carrying every declared component — including profile-less ones with commands: []', async () => {
+    const { resolveComponents, buildCommandsPayload } = await import('../src/engine.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+
+    const components = resolveComponents(
+      monorepoTestConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/web', stack: 'typescript' },
+        { path: 'apps/legacy', stack: 'cobol' },
+      ]) as any,
+    );
+    const payload = buildCommandsPayload(components) as { components: readonly { dir: string; commands: unknown }[] };
+
+    expect(Array.isArray(payload)).toBe(false);
+    expect(payload.components).toHaveLength(3);
+    const byDir = Object.fromEntries(payload.components.map((c) => [c.dir, c.commands]));
+    expect(byDir['.']).toEqual(STACK_PROFILES.find((p) => p.id === 'python')!.commands);
+    expect(byDir['apps/web']).toEqual(STACK_PROFILES.find((p) => p.id === 'typescript')!.commands);
+    expect(byDir['apps/legacy']).toEqual([]);
+  });
+
+  it('the object form is used for a single NON-"." component — the bare array is reserved for the one-"." case only', async () => {
+    const { resolveComponents, buildCommandsPayload } = await import('../src/engine.js');
+
+    const components = resolveComponents(monorepoTestConfig([{ path: 'apps/web', stack: 'typescript' }]) as any);
+    const payload = buildCommandsPayload(components);
+
+    expect(Array.isArray(payload)).toBe(false);
+  });
+});
+
+describe('stepWorkingDirectory (MC-5, T11)', () => {
+  it.each([
+    ['', '.', ''],
+    ['', 'apps/web', 'apps/web'],
+    ['apps', '.', 'apps'],
+    ['apps', 'web', 'apps/web'],
+  ])('stepWorkingDirectory(%j, %j) === %j', async (prefix, componentPath, expected) => {
+    const { stepWorkingDirectory } = await import('../src/engine.js');
+    expect(stepWorkingDirectory(prefix, componentPath)).toBe(expected);
+  });
+});
+
+describe('buildFeedbackFiles — per-component CI install/runner steps and naming (MC-13, MC-14, T24)', () => {
+  function generatedBlockOf(contents: string): string {
+    const lines = contents.split('\n');
+    const beginIndex = lines.findIndex((line) => line.includes('harny:begin generated project configuration'));
+    const endIndex = lines.findIndex((line) => line.includes('harny:end generated project configuration'));
+    expect(beginIndex, 'generated-block begin marker not found').toBeGreaterThanOrEqual(0);
+    expect(endIndex, 'generated-block end marker not found').toBeGreaterThan(beginIndex);
+    return lines.slice(beginIndex + 1, endIndex).join('\n');
+  }
+
+  function parseSteps(block: string): Array<{ name: string; run: string }> {
+    const steps: Array<{ name: string; run: string }> = [];
+    const regex = /-\s*name:\s*(.+)\n\s*run:\s*(.+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(block))) {
+      steps.push({ name: match[1], run: match[2] });
+    }
+    return steps;
+  }
+
+  it('two components, one declaring ciInstall: exactly one install step, one runner step; no matrix/strategy/paths filter/defaults.run (MC-13, SC9)', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      monorepoTestConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/web', stack: 'typescript' },
+      ]) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const contents = workflow!.contents;
+    const block = generatedBlockOf(contents);
+    const steps = parseSteps(block);
+
+    const runnerSteps = steps.filter((s) => /run --whole-project --commands/.test(s.run));
+    const installSteps = steps.filter((s) => !/run --whole-project --commands/.test(s.run));
+
+    expect(runnerSteps).toHaveLength(1);
+    // Only the typescript component declares ciInstall (python does not, BG-21).
+    expect(installSteps).toHaveLength(1);
+
+    expect(contents).not.toContain('strategy:');
+    expect(contents).not.toContain('matrix:');
+    expect(contents).not.toMatch(/^\s*paths:/m);
+    expect(contents).not.toContain('defaults:');
+    expect(contents).not.toContain('defaults.run');
+  });
+
+  it('the sole install step for the typescript component carries working-directory: apps/web', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const { yamlQuote } = await import('../src/generators/markdown-yaml.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      monorepoTestConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/web', stack: 'typescript' },
+      ]) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const block = generatedBlockOf(workflow!.contents);
+
+    const installStepMatch = block.match(
+      /-\s*name:.*\n\s*run:.*\n\s*working-directory:\s*(.+)/,
+    );
+    expect(installStepMatch, 'expected an install step followed by a working-directory line').not.toBeNull();
+    expect(installStepMatch![1]).toBe(yamlQuote('apps/web'));
+  });
+
+  it('step names stay byte-identical for exactly one component (MC-14)', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      feedbackTestConfig({ tools: ['claude-code'], stack: 'typescript' }) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const block = generatedBlockOf(workflow!.contents);
+
+    expect(block).toContain('Install dependencies (TypeScript / Node)');
+    expect(block).toContain('harny feedback (TypeScript / Node)');
+  });
+
+  it('with more than one component, each install step is suffixed " — <componentPath>" and the single runner step lists every resolved display name, deduped, in canonical order (MC-14)', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      monorepoTestConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/web', stack: 'typescript' },
+      ]) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const block = generatedBlockOf(workflow!.contents);
+
+    expect(block).toContain('Install dependencies (TypeScript / Node — apps/web)');
+    expect(block).toContain('harny feedback (Python, TypeScript / Node)');
+  });
+
+  it('a component with no assigned commands (no resolved profile) contributes no install step and its display name is absent from the runner step name', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      monorepoTestConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/legacy', stack: 'cobol' },
+      ]) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const block = generatedBlockOf(workflow!.contents);
+
+    // Positive proof the "." python component's real commands were rendered
+    // (never a vacuous "no mention of the unresolved component" pass): if the
+    // runner falls back to the escape-hatch notice instead of resolving "."'s
+    // real profile, this fails alongside the negative assertions below.
+    expect(block).toContain('ruff');
+    expect(block).not.toContain('apps/legacy');
+    expect(block).not.toContain('cobol');
+  });
+});
+
+describe('buildFeedbackFiles — escape hatch stays a single notice step when NO component resolves a profile (MC-13, Error Handling Contract)', () => {
+  it('two components, neither resolving a built-in profile: exactly one notice step, no install step, no runner invocation', async () => {
+    const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
+    const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
+    const templates = await loadRealTemplates();
+
+    const payload = buildPayload(
+      monorepoTestConfig([
+        { path: '.', stack: 'cobol' },
+        { path: 'apps/legacy', stack: 'fortran' },
+      ]) as any,
+      templates,
+    );
+    const workflow = buildFeedbackFiles(payload).find((f) => f.path === CI_WORKFLOW_PATH);
+    const lines = workflow!.contents.split('\n');
+    const beginIndex = lines.findIndex((line) => line.includes('harny:begin generated project configuration'));
+    const endIndex = lines.findIndex((line) => line.includes('harny:end generated project configuration'));
+    expect(beginIndex).toBeGreaterThanOrEqual(0);
+    expect(endIndex).toBeGreaterThan(beginIndex);
+    const block = lines.slice(beginIndex + 1, endIndex).join('\n');
+
+    const stepCount = (block.match(/^\s*-\s*name:/gm) ?? []).length;
+    expect(stepCount).toBe(1);
+    expect(block).not.toMatch(/run --whole-project --commands/);
   });
 });

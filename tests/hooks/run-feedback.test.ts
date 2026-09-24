@@ -148,6 +148,45 @@
  * is specific to a list with *zero* valid entries, not to a mixed list. This
  * test stays in the suite as the regression guard that pins "invalid entries
  * are ignored, valid entries still filter" once A1.3's fix lands alongside it.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md § "Runner wire format" (the three `--commands` rows,
+ * MC-5); § "Path -> component resolution" (MC-9 through MC-12); § "Per-turn
+ * and whole-project execution" (MC-17 through MC-19); Error Handling Contract
+ * rows for an unassigned touched path and an object `--commands` value with no
+ * `components` array; intent.md SC5-SC8; audit.md Test Coverage T12-T20.
+ *
+ * `normalizeCommandsPayload` and `componentDirFor` do not exist in
+ * `templates/hooks/run-feedback.mjs` yet at red time, and `runRunMode`'s loop
+ * still iterates the bare commands array directly with `cwd` fixed at the
+ * runner's own `process.cwd()` for every command -- it never reads a
+ * `{"components": [...]}` object form at all, never partitions touched paths
+ * by component, and never resolves a per-component working directory. Every
+ * describe block below that feeds the object form or asserts a per-component
+ * `cwd`/skip/notice is therefore expected to fail one of two genuine ways: a
+ * command spawned with the WRONG cwd or the WRONG (unfiltered) path set, or --
+ * for the object-form cases -- no command running at all, because today's
+ * `readCommands` returns `[]` for a top-level object it cannot iterate as an
+ * array of `FeedbackCommand`s. Neither reflects a test-authoring bug.
+ *
+ * Four exceptions, called out explicitly per this repo's own established
+ * convention (see the PH-7/PH-8 note above): the "single-component output
+ * text is unchanged" test is expected to ALREADY PASS, because it drives the
+ * runner with today's bare-array form only, which today's code already
+ * handles with no component label anywhere in its output; the "N is always 0
+ * for the legacy single-component form" test is expected to ALREADY PASS for
+ * the same reason -- no code path exists yet that could print the
+ * unassigned-paths notice at all, so it is trivially never printed; and the
+ * two tolerant-fallback tests in the wire-format describe block (an
+ * unparseable/non-array/non-object `--commands` value, and an object value
+ * with no `components` array) are expected to ALREADY PASS, because today's
+ * `readCommands` already returns `[]` for anything that is not a JSON array
+ * -- both inputs already fall into that existing branch, unrelated to any new
+ * object-form parsing. All four stay in this file as the live regression
+ * guards MC-5 exists to be: once per-component dispatch lands, these are what
+ * prove it changed nothing for the one-`.`-component case and left the
+ * runner's existing tolerant posture intact.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -1151,5 +1190,701 @@ describe('an extensions list with no valid entry means no filter, not "match not
     const invocations = logLines.map((line) => JSON.parse(line) as { argv: string[] });
     expect(invocations).toHaveLength(1);
     expect(invocations[0].argv).toEqual(['MIXED', appFile]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode: per-component dispatch (MC-9 through MC-19)
+// ---------------------------------------------------------------------------
+
+/** Writes the monorepo wire-format's object form: `{"components": [...]}`. */
+async function writeComponentsCommandsFile(
+  dir: string,
+  components: readonly { dir: string; commands: unknown[] }[],
+): Promise<string> {
+  return writeCommandsFile(dir, { components });
+}
+
+interface RecordedInvocation {
+  argv: string[];
+  cwd: string;
+}
+
+async function readInvocations(logPath: string): Promise<RecordedInvocation[]> {
+  const raw = await fs.readFile(logPath, 'utf8').catch(() => '');
+  return raw
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as RecordedInvocation);
+}
+
+describe('wire format — the object form dispatches exactly like the equivalent bare array (MC-5, T12)', () => {
+  it('a bare array and its equivalent {components: [{dir: ".", commands}]} object produce the identical single invocation', async () => {
+    const repoDirA = await makeTempRepo();
+    const repoDirB = await makeTempRepo();
+    const sessionId = 'wire-format-equivalence-session';
+    const fileA = await writeFile(repoDirA, 'src/a.ts');
+    const fileB = await writeFile(repoDirB, 'src/a.ts');
+
+    for (const [dir, file] of [[repoDirA, fileA], [repoDirB, fileB]] as const) {
+      const acc = await runRunner('accumulate', {
+        cwd: dir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandSpec = { id: 'probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'PROBE'], pathMode: 'per-file', requires: {} };
+    const bareArrayFile = await writeCommandsFile(repoDirA, [commandSpec]);
+    const objectFormFile = await writeComponentsCommandsFile(repoDirB, [{ dir: '.', commands: [commandSpec] }]);
+
+    const logA = path.join(repoDirA, 'invocations.log');
+    const logB = path.join(repoDirB, 'invocations.log');
+
+    const resultA = await runRunner('run', {
+      cwd: repoDirA,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', bareArrayFile],
+      env: { INVOCATION_LOG: logA },
+    });
+    const resultB = await runRunner('run', {
+      cwd: repoDirB,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', objectFormFile],
+      env: { INVOCATION_LOG: logB },
+    });
+
+    expect(resultA.code).toBe(0);
+    expect(resultB.code).toBe(0);
+
+    const invocationsA = await readInvocations(logA);
+    const invocationsB = await readInvocations(logB);
+    expect(invocationsA).toHaveLength(1);
+    expect(invocationsB).toHaveLength(1);
+    expect(invocationsA[0].argv).toEqual(['PROBE', fileA]);
+    expect(invocationsB[0].argv).toEqual(['PROBE', fileB]);
+    expect(invocationsA[0].cwd).toBe(await fs.realpath(repoDirA));
+    expect(invocationsB[0].cwd).toBe(await fs.realpath(repoDirB));
+  });
+
+  it('an unparseable or non-array/non-object --commands value tolerantly runs nothing, exit 0 — unchanged tolerant posture', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'tolerant-fallback-session';
+    const file = await writeFile(repoDir, 'src/only.ts');
+    const invocationLog = path.join(repoDir, 'invocations.log');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', '"just a json string, not an array or object"'],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+    expect(await pathExists(invocationLog)).toBe(false);
+  });
+
+  it('an object --commands value with no "components" array normalizes to [] — no commands, no output, exit 0', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'object-no-components-session';
+    const file = await writeFile(repoDir, 'src/only.ts');
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const commandsFile = await writeCommandsFile(repoDir, { notComponents: true });
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stdout.trim()).toBe('');
+    expect(await pathExists(invocationLog)).toBe(false);
+  });
+});
+
+describe('longest segment-prefix match — never a raw string prefix (MC-9, MC-10, SC6)', () => {
+  it('a touched path under apps/web-admin/ resolves to apps/web-admin, never to apps/web (the segment-boundary trap)', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'segment-boundary-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const adminFile = await writeFile(repoDir, 'apps/web-admin/x.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: adminFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const webCommand = { id: 'web-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB'], pathMode: 'per-file', requires: {} };
+    const webAdminCommand = { id: 'web-admin-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB_ADMIN'], pathMode: 'per-file', requires: {} };
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: 'apps/web', commands: [webCommand] },
+      { dir: 'apps/web-admin', commands: [webAdminCommand] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations.map((inv) => inv.argv[0])).toEqual(['WEB_ADMIN']);
+  });
+
+  it('a component with more segments wins over a shorter-matching ancestor component', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'longest-match-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const deepFile = await writeFile(repoDir, 'apps/web/deep/file.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: deepFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const appsCommand = { id: 'apps-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'APPS'], pathMode: 'per-file', requires: {} };
+    const appsWebCommand = { id: 'apps-web-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'APPS_WEB'], pathMode: 'per-file', requires: {} };
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: 'apps', commands: [appsCommand] },
+      { dir: 'apps/web', commands: [appsWebCommand] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations.map((inv) => inv.argv[0])).toEqual(['APPS_WEB']);
+  });
+
+  it('"." matches everything but loses to any longer-matching component', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'dot-catch-all-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const rootFile = await writeFile(repoDir, 'api/main.py');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+
+    for (const file of [rootFile, webFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const dotCommand = { id: 'dot-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'DOT'], pathMode: 'per-file', requires: {} };
+    const webCommand = { id: 'web-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB'], pathMode: 'per-file', requires: {} };
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: '.', commands: [dotCommand] },
+      { dir: 'apps/web', commands: [webCommand] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    const dotInvocation = invocations.find((inv) => inv.argv[0] === 'DOT');
+    const webInvocation = invocations.find((inv) => inv.argv[0] === 'WEB');
+    expect(dotInvocation?.argv.slice(1)).toEqual([rootFile]);
+    expect(webInvocation?.argv.slice(1)).toEqual([webFile]);
+  });
+});
+
+describe('two-component turn dispatch: each command receives only its own component\'s files, from its own cwd (MC-9, MC-12, SC5)', () => {
+  it('a turn touching apps/web/page.tsx and api/main.py runs the "apps/web" command once with only its file and cwd apps/web, and the "." command once with only its file and cwd the install root', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'sc5-two-component-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+    const apiFile = await writeFile(repoDir, 'api/main.py');
+
+    for (const file of [webFile, apiFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const eslintLike = { id: 'eslint-like', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'ESLINT'], pathMode: 'per-file', requires: {} };
+    const ruffLike = { id: 'ruff-like', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'RUFF'], pathMode: 'per-file', requires: {} };
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: '.', commands: [ruffLike] },
+      { dir: 'apps/web', commands: [eslintLike] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations).toHaveLength(2);
+
+    const eslintInvocation = invocations.find((inv) => inv.argv[0] === 'ESLINT')!;
+    const ruffInvocation = invocations.find((inv) => inv.argv[0] === 'RUFF')!;
+
+    expect(eslintInvocation.argv.slice(1)).toEqual([webFile]);
+    expect(eslintInvocation.cwd).toBe(await fs.realpath(path.join(repoDir, 'apps', 'web')));
+
+    expect(ruffInvocation.argv.slice(1)).toEqual([apiFile]);
+    expect(ruffInvocation.cwd).toBe(await fs.realpath(repoDir));
+
+    // Turn-file deletion is unchanged under the component path (MC-19 note;
+    // T20): the accumulator's turn file is still removed after the run,
+    // regardless of how many components the deduped paths were partitioned
+    // across.
+    expect(await pathExists(turnFilePath(repoDir, sessionId))).toBe(false);
+  });
+
+  it('stop_hook_active suppression is unchanged under the component path: a finding in one component is still suppressed on re-entry (T20)', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'sc5-reentry-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: webFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: 'apps/web', commands: [{ id: 'web-fail', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'FAIL'], pathMode: 'per-file', requires: {} }] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: true },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog, FAKE_EXIT_CODE: '1' },
+    });
+
+    // Positive proof the command actually ran and failed (never a vacuous
+    // "nothing ran, so nothing to suppress" pass): if the object-form
+    // payload is not dispatched at all, this fails alongside the exit-code
+    // assertion below.
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations).toHaveLength(1);
+
+    expect(result.code).toBe(0);
+  });
+});
+
+describe('an unassigned touched path is dropped with exactly one count-naming stderr notice, never reassigned (MC-11, SC7)', () => {
+  it('a path matching no declared component runs no command for it, and prints exactly one notice line naming the count', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'unassigned-path-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+    const orphanFile = await writeFile(repoDir, 'tools/scratch/unowned.ts');
+
+    for (const file of [webFile, orphanFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const webCommand = { id: 'web-probe', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB'], pathMode: 'per-file', requires: {} };
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [{ dir: 'apps/web', commands: [webCommand] }]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations).toHaveLength(1);
+    expect(invocations[0].argv.slice(1)).toEqual([webFile]);
+    expect(invocations[0].argv).not.toContain(orphanFile);
+
+    expect(result.stderr).toContain('harny-feedback: 1 touched path(s) matched no declared component; skipped.');
+  });
+
+  it('N is always 0 for the legacy single-"." -component form — the notice is never printed (MC-5)', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'single-component-no-notice-session';
+    const file = await writeFile(repoDir, 'src/only.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      { id: 'noop', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'NOOP'], pathMode: 'per-file', requires: {} },
+    ]);
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).not.toContain('matched no declared component');
+  });
+});
+
+describe('a component with no assigned touched path runs nothing — per-file and whole-project alike (MC-17)', () => {
+  it('only the component with an assigned path runs; the other two components run neither their per-file nor their whole-project commands', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'mc17-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+    // `services/api` must EXIST on disk, otherwise "it ran nothing" would have
+    // two possible causes — MC-17 (no assigned touched path) and the
+    // absent-directory skip — and this test could not tell them apart. The
+    // notice assertion below pins that the absent-directory branch stayed out
+    // of it.
+    await fs.mkdir(path.join(repoDir, 'services', 'api'), { recursive: true });
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: webFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      {
+        dir: '.',
+        commands: [
+          { id: 'root-per-file', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'ROOT_PER_FILE'], pathMode: 'per-file', requires: {} },
+          { id: 'root-whole', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'ROOT_WHOLE'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+      {
+        dir: 'services/api',
+        commands: [
+          { id: 'api-per-file', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'API_PER_FILE'], pathMode: 'per-file', requires: {} },
+          { id: 'api-whole', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'API_WHOLE'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+      {
+        dir: 'apps/web',
+        commands: [
+          { id: 'web-per-file', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB_PER_FILE'], pathMode: 'per-file', requires: {} },
+          { id: 'web-whole', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_WHOLE'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    const ran = new Set(invocations.map((inv) => inv.argv[0]));
+
+    expect(ran.has('WEB_PER_FILE')).toBe(true);
+    expect(ran.has('WEB_WHOLE')).toBe(true);
+    expect(ran.has('ROOT_PER_FILE')).toBe(false);
+    expect(ran.has('ROOT_WHOLE')).toBe(false);
+    expect(ran.has('API_PER_FILE')).toBe(false);
+    expect(ran.has('API_WHOLE')).toBe(false);
+    expect(result.stderr).not.toContain('component directory');
+  });
+});
+
+describe('whole-project commands run once per component with an assigned touched path, from that component\'s directory (MC-18, SC8)', () => {
+  it('two affected components each run their whole-project command exactly once, from their own directory, with no path arguments', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'mc18-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const webFile = await writeFile(repoDir, 'apps/web/page.tsx');
+    const apiFile = await writeFile(repoDir, 'api/main.py');
+
+    for (const file of [webFile, apiFile]) {
+      const acc = await runRunner('accumulate', {
+        cwd: repoDir,
+        stdin: { session_id: sessionId, tool_input: { file_path: file } },
+      });
+      expect(acc.code).toBe(0);
+    }
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: '.', commands: [{ id: 'root-whole', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'ROOT_WHOLE'], pathMode: 'whole-project', requires: {} }] },
+      { dir: 'apps/web', commands: [{ id: 'web-whole', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_WHOLE'], pathMode: 'whole-project', requires: {} }] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    const rootWhole = invocations.find((inv) => inv.argv[0] === 'ROOT_WHOLE')!;
+    const webWhole = invocations.find((inv) => inv.argv[0] === 'WEB_WHOLE')!;
+
+    expect(rootWhole.argv).toEqual(['ROOT_WHOLE']);
+    expect(rootWhole.cwd).toBe(await fs.realpath(repoDir));
+    expect(webWhole.argv).toEqual(['WEB_WHOLE']);
+    expect(webWhole.cwd).toBe(await fs.realpath(path.join(repoDir, 'apps', 'web')));
+  });
+
+  it('gating is "at least one assigned path", never "at least one path that also passed a sibling command\'s extension gate" (ADR 0041)', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'mc18-extension-independence-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    // A markdown file: it will never match a '.ts'-only extensions filter, but
+    // it is still an ASSIGNED touched path for the "apps/web" component.
+    const readmeFile = await writeFile(repoDir, 'apps/web/README.md');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: readmeFile } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      {
+        dir: 'apps/web',
+        commands: [
+          {
+            id: 'web-lint',
+            kind: 'lint',
+            argv: ['node', RECORD_SCRIPT, 'WEB_LINT'],
+            pathMode: 'per-file',
+            extensions: ['.ts'],
+            requires: {},
+          },
+          { id: 'web-typecheck', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_TYPECHECK'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    const ran = new Set(invocations.map((inv) => inv.argv[0]));
+    // The per-file lint command is extension-gated away (no '.ts' file touched)...
+    expect(ran.has('WEB_LINT')).toBe(false);
+    // ...but the whole-project typecheck still runs: the component has an
+    // assigned touched path, full stop, regardless of any sibling command's
+    // own extension filter.
+    expect(ran.has('WEB_TYPECHECK')).toBe(true);
+  });
+});
+
+describe('run --whole-project (CI mode) covers every component, "." sentinel per directory, counters summed (MC-19)', () => {
+  it('every command of every component runs once from its own directory with "." as the sole per-file argument; a finding anywhere still exits 2', async () => {
+    const repoDir = await makeTempRepo();
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    // (Green-phase fixture correction.) `--whole-project` reads no turn state,
+    // so nothing else in this test puts `apps/web` on disk — and a declared
+    // component whose directory is absent is now SKIPPED with a notice rather
+    // than spawned into (contract.md Error Handling Contract, the `requires: {}`
+    // row). Creating the directory is the realistic CI case this test means to
+    // exercise: a checked-out monorepo whose declared components all exist. The
+    // absent-directory branch has its own test below.
+    await fs.mkdir(path.join(repoDir, 'apps', 'web'), { recursive: true });
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      {
+        dir: '.',
+        commands: [
+          { id: 'root-lint', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'ROOT_LINT'], pathMode: 'per-file', requires: {} },
+        ],
+      },
+      {
+        dir: 'apps/web',
+        commands: [
+          { id: 'web-lint', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB_LINT'], pathMode: 'per-file', requires: {} },
+          { id: 'web-typecheck', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_TYPECHECK'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: null,
+      args: ['--whole-project', '--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations).toHaveLength(3);
+
+    const rootLint = invocations.find((inv) => inv.argv[0] === 'ROOT_LINT')!;
+    const webLint = invocations.find((inv) => inv.argv[0] === 'WEB_LINT')!;
+    const webTypecheck = invocations.find((inv) => inv.argv[0] === 'WEB_TYPECHECK')!;
+
+    expect(rootLint.argv).toEqual(['ROOT_LINT', '.']);
+    expect(rootLint.cwd).toBe(await fs.realpath(repoDir));
+    expect(webLint.argv).toEqual(['WEB_LINT', '.']);
+    expect(webLint.cwd).toBe(await fs.realpath(path.join(repoDir, 'apps', 'web')));
+    expect(webTypecheck.argv).toEqual(['WEB_TYPECHECK']);
+    expect(webTypecheck.cwd).toBe(await fs.realpath(path.join(repoDir, 'apps', 'web')));
+
+    // The summed-across-components summary line: 3 of 3 ran, 0 skipped.
+    expect(result.stdout).toContain('harny-feedback: 3 of 3 command(s) ran, 0 skipped.');
+  });
+
+  it('a finding in a NON-root component still exits 2, unmediated by stop_hook_active (BG-19 extended across components)', async () => {
+    const repoDir = await makeTempRepo();
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    await fs.mkdir(path.join(repoDir, 'apps', 'web'), { recursive: true });
+
+    // Only the non-root component's command may fail, so exit 2 can have
+    // exactly one cause. (Green-phase correction: this test previously ran
+    // with FAKE_EXIT_CODE set for BOTH commands and with `apps/web` absent on
+    // disk, so the root command's finding alone produced exit 2 and the
+    // "NON-root" claim in the name was never actually exercised.)
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      { dir: '.', commands: [{ id: 'root-ok', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'ROOT_OK'], pathMode: 'whole-project', requires: {} }] },
+      { dir: 'apps/web', commands: [{ id: 'web-fail', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_FAIL', '--fail'], pathMode: 'whole-project', requires: {} }] },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { stop_hook_active: true },
+      args: ['--whole-project', '--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog, FAKE_EXIT_CODE_WHEN: '--fail', FAKE_EXIT_CODE: '1' },
+    });
+
+    expect(result.code).toBe(2);
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations.map((inv) => inv.argv[0]).sort()).toEqual(['ROOT_OK', 'WEB_FAIL']);
+  });
+
+  /**
+   * (specs/monorepo-mode, contract.md § Error Handling Contract — the
+   * `requires: {}` row, added during implementation.) A component directory
+   * that does not exist on disk at runtime used to be created as a side
+   * effect by the runner's own `resolveComponentCwd`; a feedback runner must
+   * not write directories into the target repository as a result of running a
+   * linter, so that side effect was removed and replaced by a visible,
+   * non-fatal skip. This is the reachable half of that contract row:
+   * `--whole-project` dispatches on the declared component list alone, with no
+   * touched path to imply the directory exists.
+   */
+  it('a declared component whose directory is absent is skipped wholesale with one notice, its commands counted as skipped, never spawned into and never created', async () => {
+    const repoDir = await makeTempRepo();
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const absentDir = path.join(repoDir, 'apps', 'web');
+
+    const commandsFile = await writeComponentsCommandsFile(repoDir, [
+      {
+        dir: '.',
+        commands: [{ id: 'root-lint', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'ROOT_LINT'], pathMode: 'per-file', requires: {} }],
+      },
+      {
+        // No `requires` probe to fall back on: without the directory check
+        // this component's commands would be handed a nonexistent `cwd`.
+        dir: 'apps/web',
+        commands: [
+          { id: 'web-lint', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'WEB_LINT'], pathMode: 'per-file', requires: {} },
+          { id: 'web-typecheck', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'WEB_TYPECHECK'], pathMode: 'whole-project', requires: {} },
+        ],
+      },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: null,
+      args: ['--whole-project', '--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    // Never fatal.
+    expect(result.code).toBe(0);
+
+    // The other component still ran; the absent one's commands never spawned.
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations.map((inv) => inv.argv[0])).toEqual(['ROOT_LINT']);
+
+    // Exactly one notice, naming the directory and its command count.
+    const notices = result.stderr
+      .split('\n')
+      .filter((line) => line.includes('component directory'));
+    expect(notices).toEqual([
+      'harny-feedback: component directory `apps/web` does not exist; 2 command(s) skipped.',
+    ]);
+
+    // The skipped commands still count toward the summary's totals (MC-19).
+    expect(result.stdout).toContain('harny-feedback: 1 of 3 command(s) ran, 2 skipped.');
+
+    // And the directory was not created as a side effect of the run.
+    expect(await pathExists(absentDir)).toBe(false);
+  });
+});
+
+describe('single-component output text stays byte-identical to today — no component label anywhere (MC-5, MC-14)', () => {
+  it('a finding line and a skip line carry no bracketed component tag for the legacy bare-array form', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'single-component-text-session';
+    const file = await writeFile(repoDir, 'src/only.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      { id: 'failing', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'FAIL'], pathMode: 'per-file', requires: {} },
+    ]);
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { FAKE_EXIT_CODE: '1' },
+    });
+
+    expect(result.code).toBe(2);
+    expect(result.stdout).toContain('finding from `failing`');
+    // No "(component ...)"/"[component ...]" style suffix on the finding line.
+    expect(result.stdout).not.toMatch(/\(apps|\[apps|\(\.\)|\[\.\]/);
   });
 });

@@ -97,6 +97,44 @@
  * Test Coverage table, which does not enumerate a dedicated id for the
  * verb-vs-direct-runner agreement specifically — added because both are
  * mechanically testable and cheap given the fixtures T29 already needed.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: intent.md SC1, SC2, SC10; contract.md Behavior Guarantees MC-1,
+ * MC-3, MC-5, MC-6, MC-13, MC-20, MC-23; audit.md Test Coverage T1, T2, T23,
+ * T36.
+ *
+ * ## The golden-byte regression (T1, T2) — the declared PASS exception
+ *
+ * `tests/fixtures/golden/monorepo-mode/{ts-root,py-sub}/` were captured from
+ * this exact CLI, on this exact commit, BEFORE any implementation edit for
+ * this feature exists (roadmap.md Phase 4 step 1: "capture the full generated
+ * tree... before any change"). The two describe blocks that compare against
+ * them are therefore expected to PASS already, right now, at red time —
+ * there is nothing yet that could have drifted. This is deliberate and is
+ * the single most load-bearing test in this feature (roadmap.md's own
+ * words): it is what proves, mechanically rather than by inspection, that a
+ * `components`-free install's bytes do not drift as the rest of this feature
+ * lands. It stays live and reported (not skipped) so it starts protecting
+ * the instant any single-repo rendering path is touched.
+ *
+ * ## The two-component end-to-end install (T36) and the doctor verb/direct
+ * agreement (T23, MC-23)
+ *
+ * `--component` is not a registered flag yet at red time (see this file's
+ * `--component <path>=<stack>` cli.test.ts note for the identical reason), so
+ * every test below that passes it is expected to fail on commander's own
+ * "unknown option" usage error (exit 1), not a wrong assumption about the
+ * artifact set a real two-component install should produce.
+ *
+ * ## Post-audit amendment (audit.md row A2, finding F1)
+ *
+ * Also covers MC-21 end to end for the one-component boundary: an install
+ * declaring a single component that is NOT the repository root. The last
+ * describe block drives the real CLI and then the real
+ * `.sdd/doctor/run-doctor.mjs` it generated, in a fixture where the install
+ * root and `apps/web` give opposite probe answers. Expected red until
+ * `buildDoctorChecks` stops gating `dir` on `components.length > 1`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
@@ -104,7 +142,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { REAL_TEMPLATES_ROOT, REPO_ROOT } from './helpers/paths.js';
+import { REAL_TEMPLATES_ROOT, REPO_ROOT, TESTS_DIR } from './helpers/paths.js';
 import { assertNoRepoAbove } from './helpers/git.js';
 
 const execFileAsync = promisify(execFile);
@@ -147,6 +185,111 @@ async function listFilesRecursively(dir: string, root: string = dir): Promise<st
     }
   }
   return files;
+}
+
+/** Like `listFilesRecursively`, but never descends into a `.git` directory —
+ *  for listing a real git repository's working tree (specs/monorepo-mode's
+ *  golden-byte fixtures below spawn `git init` at the repo root). */
+async function listFilesRecursivelyExcludingGit(dir: string, root: string = dir): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    if (entry.name === '.git') continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursivelyExcludingGit(full, root)));
+    } else {
+      files.push(path.relative(root, full).split(path.sep).join('/'));
+    }
+  }
+  return files;
+}
+
+/** Compares two directory trees (excluding `.git`) for exact path-SET equality
+ *  and byte-for-byte content equality of every file — the golden-byte
+ *  regression oracle for specs/monorepo-mode's SC2. Raw `Buffer`s, not `utf8`
+ *  strings: a byte-identity guarantee should not be laundered through a text
+ *  decode/re-encode step.
+ *
+ *  `contractedExceptions` names paths whose bytes this feature's own
+ *  `roadmap.md` File Change Map contracts as changing; they are excluded from
+ *  the byte comparison ONLY. The path-set equality above still covers them (no
+ *  file may appear or vanish), each is asserted to actually be present (a stale
+ *  or misspelled exception cannot quietly vacate the guard), and each test
+ *  below re-asserts something specific about every file it excludes — see the
+ *  declared-exception docblock on the describe block. */
+async function assertTreesByteIdentical(
+  actualRoot: string,
+  goldenRoot: string,
+  contractedExceptions: readonly string[] = [],
+): Promise<void> {
+  const actualFiles = (await listFilesRecursivelyExcludingGit(actualRoot)).sort();
+  const goldenFiles = (await listFilesRecursivelyExcludingGit(goldenRoot)).sort();
+  expect(actualFiles).toEqual(goldenFiles);
+
+  for (const exception of contractedExceptions) {
+    expect(
+      actualFiles,
+      `declared byte-comparison exception ${exception} is not in the tree; the exception list is stale`,
+    ).toContain(exception);
+  }
+
+  let compared = 0;
+  for (const relativePath of actualFiles) {
+    if (contractedExceptions.includes(relativePath)) continue;
+    const actualBytes = await fs.readFile(path.join(actualRoot, relativePath));
+    const goldenBytes = await fs.readFile(path.join(goldenRoot, relativePath));
+    expect(
+      actualBytes.equals(goldenBytes),
+      `${relativePath} differs from its golden byte-for-byte`,
+    ).toBe(true);
+    compared += 1;
+  }
+
+  // Non-vacuity, two ways. The exception list may not grow past the three
+  // files roadmap.md's File Change Map contracts without someone re-reading
+  // this docblock, and the tree that remains under byte comparison must still
+  // be a real tree — an exception list that swallowed the install would leave
+  // a guard that looks like coverage and is not.
+  expect(
+    contractedExceptions.length,
+    'more than three files are excluded from byte comparison; see the declared-exception docblock',
+  ).toBeLessThanOrEqual(3);
+  expect(compared, 'almost nothing was byte-compared').toBeGreaterThan(20);
+}
+
+/** Asserts `actual` is `golden` with exactly ONE contiguous block of lines
+ *  inserted, every inserted line being a YAML comment. That is precisely
+ *  specs/monorepo-mode MC-14's claim about the generated workflow: the header
+ *  comment gains one paragraph and nothing functional moves, is removed or is
+ *  rewritten. Computed from a common prefix/suffix rather than by greedy
+ *  line matching, so repeated `#` lines at the seam cannot mis-align it. */
+function assertDiffersOnlyByInsertedCommentLines(actual: string, golden: string, label: string): void {
+  const actualLines = actual.split('\n');
+  const goldenLines = golden.split('\n');
+  expect(actualLines.length, `${label}: golden has more lines than the generated file`).toBeGreaterThanOrEqual(
+    goldenLines.length,
+  );
+
+  let prefix = 0;
+  while (prefix < goldenLines.length && actualLines[prefix] === goldenLines[prefix]) prefix += 1;
+
+  let suffix = 0;
+  while (
+    suffix < goldenLines.length - prefix &&
+    actualLines[actualLines.length - 1 - suffix] === goldenLines[goldenLines.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+
+  expect(
+    prefix + suffix,
+    `${label}: the difference from the golden is not a single contiguous insertion (no line may be removed, reordered or rewritten)`,
+  ).toBe(goldenLines.length);
+
+  const inserted = actualLines.slice(prefix, actualLines.length - suffix);
+  const nonComment = inserted.filter((line) => !line.startsWith('#'));
+  expect(nonComment, `${label}: inserted non-comment line(s):\n${nonComment.join('\n')}`).toEqual([]);
 }
 
 /** A path is part of the shared skill-library artifact set (as opposed to a
@@ -959,5 +1102,271 @@ describe('ci-workflow-root — npx harny doctor and the direct runner agree for 
     const verbAfter = await runCli(['doctor', installDir]);
     expect(directAfter.stdout).toContain('FAIL ci-workflow');
     expect(verbAfter.stdout + verbAfter.stderr).toContain('FAIL ci-workflow');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+/**
+ * ## Declared exception (green-phase narrowing of T1/T2)
+ *
+ * The two golden trees under `tests/fixtures/golden/monorepo-mode/` were
+ * captured from this repository's `templates/` and `src/` BEFORE
+ * specs/monorepo-mode's implementation phase, and they stay frozen — they are
+ * not re-baselined here. SC2's guarantee is "a config with no `components`
+ * produces a write plan whose paths and whose every file's bytes are identical
+ * to the pre-change build's", and that is what these two tests assert.
+ *
+ * Three files per tree legitimately differ, and they are exactly the three
+ * `roadmap.md`'s File Change Map contracts as carrying this feature's changes:
+ *
+ *   - `.sdd/feedback/run-feedback.mjs` — per-component dispatch (MC-9, MC-11,
+ *     MC-12, MC-17, MC-18, MC-19)
+ *   - `.sdd/doctor/run-doctor.mjs`     — `command.dir` resolution (MC-21)
+ *   - the generated workflow            — MC-14's one new header paragraph
+ *
+ * They are excluded from the tree-wide byte comparison and re-asserted
+ * individually instead, so none of the three is left unguarded:
+ *
+ *   - each runner is asserted byte-identical to the `templates/` file it is
+ *     scaffolded from, which is the real invariant for a file `init` copies
+ *     verbatim, and whose behavior is covered by
+ *     `tests/hooks/run-feedback.test.ts` and `tests/doctor-runner.test.ts`;
+ *   - the workflow is asserted to differ from its golden by exactly one
+ *     contiguous insertion of YAML comment lines — MC-14's own claim that the
+ *     header comment is the only canonical-region change and that nothing
+ *     functional moved.
+ *
+ * Everything else — 28 of 31 files per tree — stays under the original
+ * frozen-golden byte comparison, and `assertTreesByteIdentical` still asserts
+ * full path-set equality across all 31 plus a cap of three exceptions.
+ */
+describe('golden-byte regression — a components-free install is byte-identical to the pre-feature capture, outside three contracted files (SC2, MC-5) (T1, T2)', () => {
+  /** `templates/` source → scaffolded destination, for the two runner files
+   *  excluded from the byte comparison above. `init` copies each verbatim, so
+   *  this pins the excluded file's bytes to a file that IS under review. */
+  const RUNNER_TEMPLATE_SOURCES: ReadonlyArray<readonly [string, string]> = [
+    ['hooks/run-feedback.mjs', '.sdd/feedback/run-feedback.mjs'],
+    ['doctor/run-doctor.mjs', '.sdd/doctor/run-doctor.mjs'],
+  ];
+
+  async function assertScaffoldedRunnersMatchTemplates(installDir: string): Promise<void> {
+    for (const [templateRelative, scaffoldedRelative] of RUNNER_TEMPLATE_SOURCES) {
+      const templateBytes = await fs.readFile(path.join(REAL_TEMPLATES_ROOT, templateRelative));
+      const scaffoldedBytes = await fs.readFile(path.join(installDir, ...scaffoldedRelative.split('/')));
+      expect(
+        scaffoldedBytes.equals(templateBytes),
+        `${scaffoldedRelative} is not a verbatim copy of templates/${templateRelative}`,
+      ).toBe(true);
+    }
+  }
+
+  it('--stack typescript at a git repository root matches the ts-root golden, byte for byte, outside the three contracted files', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const goldenRoot = path.join(TESTS_DIR, 'fixtures', 'golden', 'monorepo-mode', 'ts-root');
+    const workflowRelative = '.github/workflows/harny-feedback.yml';
+
+    const { code } = await runCli(['init', repoDir, '--yes', '--tools', 'claude-code', '--stack', 'typescript']);
+    expect(code).toBe(0);
+
+    await assertTreesByteIdentical(repoDir, goldenRoot, [
+      '.sdd/feedback/run-feedback.mjs',
+      '.sdd/doctor/run-doctor.mjs',
+      workflowRelative,
+    ]);
+
+    await assertScaffoldedRunnersMatchTemplates(repoDir);
+    assertDiffersOnlyByInsertedCommentLines(
+      await fs.readFile(path.join(repoDir, ...workflowRelative.split('/')), 'utf8'),
+      await fs.readFile(path.join(goldenRoot, ...workflowRelative.split('/')), 'utf8'),
+      workflowRelative,
+    );
+  });
+
+  it('--stack python at a subdirectory of a git repository matches the py-sub golden, byte for byte, from the repository root down, outside the three contracted files', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const installDir = path.join(repoDir, 'apps', 'api');
+    await fs.mkdir(installDir, { recursive: true });
+    const goldenRoot = path.join(TESTS_DIR, 'fixtures', 'golden', 'monorepo-mode', 'py-sub');
+    const workflowRelative = '.github/workflows/harny-feedback-apps-api.yml';
+
+    const { code } = await runCli(['init', installDir, '--yes', '--tools', 'claude-code', '--stack', 'python']);
+    expect(code).toBe(0);
+
+    await assertTreesByteIdentical(repoDir, goldenRoot, [
+      'apps/api/.sdd/feedback/run-feedback.mjs',
+      'apps/api/.sdd/doctor/run-doctor.mjs',
+      workflowRelative,
+    ]);
+
+    await assertScaffoldedRunnersMatchTemplates(installDir);
+    assertDiffersOnlyByInsertedCommentLines(
+      await fs.readFile(path.join(repoDir, ...workflowRelative.split('/')), 'utf8'),
+      await fs.readFile(path.join(goldenRoot, ...workflowRelative.split('/')), 'utf8'),
+      workflowRelative,
+    );
+  });
+});
+
+describe('a two-component install produces one .sdd/, one spec-schema set, one CI workflow, and correct per-component data (SC1, MC-1, MC-6, MC-13, MC-20) (T36)', () => {
+  it('exits 0, writes exactly one of every tool-neutral/shared artifact, and records both components in .sdd/harness.json', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    await fs.mkdir(path.join(repoDir, 'apps', 'web'), { recursive: true });
+
+    const { code } = await runCli([
+      'init',
+      repoDir,
+      '--yes',
+      '--tools',
+      'claude-code',
+      '--component',
+      '.=python',
+      '--component',
+      'apps/web=typescript',
+    ]);
+    expect(code).toBe(0);
+
+    const files = await listFilesRecursivelyExcludingGit(repoDir);
+
+    // Exactly one of every tool-neutral/shared artifact family — never one per
+    // component (SC1, G1).
+    for (const singleton of [
+      '.sdd/harness.json',
+      '.sdd/feedback/run-feedback.mjs',
+      '.sdd/doctor/run-doctor.mjs',
+      '.sdd/doctor/checks.json',
+      '.sdd/shared/probes.mjs',
+      '.claude/settings.json',
+      '.claude/skills/sdd-conductor/SKILL.md',
+      '.github/workflows/harny-feedback.yml',
+    ]) {
+      expect(files.filter((f) => f === singleton), `expected exactly one ${singleton}`).toHaveLength(1);
+    }
+
+    const harnessJson = JSON.parse(await fs.readFile(path.join(repoDir, '.sdd', 'harness.json'), 'utf8'));
+    expect(harnessJson.components).toEqual([
+      { path: '.', stack: 'python' },
+      { path: 'apps/web', stack: 'typescript' },
+    ]);
+    expect(harnessJson.stack).toBeUndefined();
+
+    // The generated CI workflow's block carries both components' real
+    // commands (SC9's "one runner call covering multiple installs").
+    const workflow = await fs.readFile(
+      path.join(repoDir, '.github', 'workflows', 'harny-feedback.yml'),
+      'utf8',
+    );
+    expect(workflow).toContain('ruff');
+    expect(workflow).toContain('eslint');
+
+    // checks.json carries both components' readiness commands, dir-scoped.
+    const checks = JSON.parse(await fs.readFile(path.join(repoDir, '.sdd', 'doctor', 'checks.json'), 'utf8'));
+    const commandIds: string[] = checks.commands.map((c: { id: string }) => c.id);
+    expect(commandIds.some((id) => id.includes('apps/web'))).toBe(true);
+    expect(commandIds.some((id) => id === 'pytest:.' || id === 'pytest')).toBe(true);
+  });
+});
+
+describe('npx harny doctor and the direct runner agree on a two-component install (SC10, RD-7, MC-23)', () => {
+  it('both invocation paths report the same set of readiness command ids', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    await fs.mkdir(path.join(repoDir, 'apps', 'web'), { recursive: true });
+
+    const initResult = await runCli([
+      'init',
+      repoDir,
+      '--yes',
+      '--tools',
+      'claude-code',
+      '--component',
+      '.=python',
+      '--component',
+      'apps/web=typescript',
+    ]);
+    expect(initResult.code).toBe(0);
+
+    const runnerPath = path.join(repoDir, '.sdd', 'doctor', 'run-doctor.mjs');
+    const direct = await runNodeScript(runnerPath, repoDir);
+    const verb = await runCli(['doctor', repoDir]);
+
+    // Both invocation paths must mention BOTH components' readiness ids (or
+    // neither, for either invocation) — the verb re-derives the same
+    // component set from the same .sdd/harness.json the direct runner's own
+    // generated checks.json already encodes (RD-7 preserved for monorepo).
+    const verbOutput = verb.stdout + verb.stderr;
+    for (const token of ['npm-test', 'pytest']) {
+      expect(direct.stdout.includes(token)).toBe(verbOutput.includes(token));
+    }
+  });
+});
+
+/** (specs/monorepo-mode MC-20, MC-21; audit.md row A2, finding F1.) The chain
+ *  from a lone NON-ROOT component through the generated `checks.json` and into
+ *  the shipped runner. `tests/doctor.test.ts` pins the generator's output shape
+ *  for this boundary; this test is what proves the scoping is real work rather
+ *  than a field nobody acts on — the readiness command's probe AND its spawned
+ *  process both have to land in `apps/web`, in an install whose ROOT would give
+ *  the opposite answer. Expected red until `buildDoctorChecks` stops gating
+ *  `dir` on `components.length > 1`: with `dir` absent the runner resolves
+ *  `path.resolve(cwd, '.')`, finds no `test` script in the root `package.json`,
+ *  and SKIPs — the silent false-readiness verdict F1 describes. */
+describe('a lone non-root component scopes readiness to that directory, end to end (MC-20, MC-21) (A2)', () => {
+  it('writes a dir-scoped npm-test entry and the runner probes and runs it inside apps/web, not at the install root', async () => {
+    const repoDir = await makeTempDir();
+    execFileSync('git', ['init', '-q'], { cwd: repoDir });
+    const webDir = path.join(repoDir, 'apps', 'web');
+    await fs.mkdir(webDir, { recursive: true });
+
+    // The discriminator. Only apps/web declares a "test" script, so a probe
+    // evaluated at the install root skips the command outright; and the script
+    // itself drops a marker in whatever directory npm was spawned from, so a
+    // command that runs from the wrong directory is caught too.
+    await fs.writeFile(
+      path.join(repoDir, 'package.json'),
+      JSON.stringify({ name: 'root-no-test-script', private: true, scripts: { build: 'node -e ""' } }),
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(webDir, 'package.json'),
+      JSON.stringify({
+        name: 'web',
+        private: true,
+        scripts: { test: `node -e "require('fs').writeFileSync('ran-here.txt', 'x')"` },
+      }),
+      'utf8',
+    );
+
+    const { code } = await runCli([
+      'init',
+      repoDir,
+      '--yes',
+      '--tools',
+      'claude-code',
+      '--component',
+      'apps/web=typescript',
+    ]);
+    expect(code).toBe(0);
+
+    const checks = JSON.parse(await fs.readFile(path.join(repoDir, '.sdd', 'doctor', 'checks.json'), 'utf8'));
+    const entry = checks.commands.find((c: { id: string }) => c.id === 'npm-test:apps/web');
+    expect(
+      entry,
+      `expected a dir-scoped npm-test:apps/web entry; got ${JSON.stringify(checks.commands)}`,
+    ).toBeDefined();
+    expect(entry.dir).toBe('apps/web');
+
+    const runner = await runNodeScript(path.join(repoDir, '.sdd', 'doctor', 'run-doctor.mjs'), repoDir);
+
+    // OK, never SKIP: the probe found apps/web/package.json's "test" script.
+    expect(runner.stdout.toLowerCase()).toMatch(/ok\s+npm-test:apps\/web/);
+    // And the command itself ran there, not at the install root.
+    await expect(fs.access(path.join(webDir, 'ran-here.txt'))).resolves.toBeUndefined();
+    await expect(fs.access(path.join(repoDir, 'ran-here.txt'))).rejects.toThrow();
   });
 });

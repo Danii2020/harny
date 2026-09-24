@@ -52,6 +52,21 @@
  * repository that is green today and has no README.md will be red after this
  * feature"), so the fixture is kept describing a genuinely fully-onboarded
  * repo rather than becoming a stale false-negative once repo-readiness ships.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md Behavior Guarantee MC-24 (`--component <path>=<stack>`
+ * repeatable, first-`=`-wins, `--component` + `--stack` is USAGE); Error
+ * Handling Contract rows for a malformed `--component` assignment and for
+ * `stack`/`components` supplied together in one invocation; audit.md Test
+ * Coverage T35.
+ *
+ * `--component` is not a registered flag on the `init` command yet at red
+ * time, so commander rejects it outright with its own "unknown option"
+ * usage error (exit 1) rather than the contracted USAGE/exit-2 behavior for
+ * a malformed assignment, and a well-formed `--component apps/web=typescript`
+ * is rejected the same way rather than being accepted and written — every
+ * test below is expected to fail on that mismatch, not a test-authoring bug.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -511,5 +526,73 @@ describe('interactivity resolution (Error Handling Contract row; R14) (T33)', ()
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
+  });
+});
+
+describe('--component <path>=<stack> (MC-24, T35)', () => {
+  it('is repeatable: two --component flags accumulate into one components list, written to .sdd/harness.json', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const { result } = await captureOutput(() =>
+      main([
+        'init',
+        targetDir,
+        '--yes',
+        '--tools',
+        'claude-code',
+        '--component',
+        '.=python',
+        '--component',
+        'apps/web=typescript',
+      ]),
+    );
+
+    expect(result).toBe(0);
+    const harnessJson = JSON.parse(
+      await fs.readFile(path.join(targetDir, '.sdd', 'harness.json'), 'utf8'),
+    );
+    expect(harnessJson.components).toEqual([
+      { path: '.', stack: 'python' },
+      { path: 'apps/web', stack: 'typescript' },
+    ]);
+    expect(harnessJson.stack).toBeUndefined();
+  });
+
+  it('a malformed assignment (no "=") is a USAGE error naming the offending value, and writes nothing', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const { result, text } = await captureOutput(() =>
+      main(['init', targetDir, '--yes', '--tools', 'claude-code', '--component', 'apps/web-no-equals']),
+    );
+
+    expect(result).toBe(2);
+    expect(text).toContain('apps/web-no-equals');
+    expect(await fs.readdir(targetDir)).toEqual([]);
+  });
+
+  it('--component together with --stack in one invocation is USAGE, naming both flags, and writes nothing', async () => {
+    const { main } = await import('../src/cli.js');
+    const targetDir = await makeTempDir();
+
+    const { result, text } = await captureOutput(() =>
+      main([
+        'init',
+        targetDir,
+        '--yes',
+        '--tools',
+        'claude-code',
+        '--stack',
+        'typescript',
+        '--component',
+        'apps/web=typescript',
+      ]),
+    );
+
+    expect(result).toBe(2);
+    expect(text).toContain('stack');
+    expect(text).toContain('component');
+    expect(await fs.readdir(targetDir)).toEqual([]);
   });
 });

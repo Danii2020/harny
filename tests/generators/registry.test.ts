@@ -73,8 +73,50 @@
  * `mcpConfig.entry` still carries the pre-departure value (imported straight
  * from `src/mcp.ts`'s still-unchanged `CONTEXT7_MCP_URL`), so all five
  * `it.each` cases fail on a genuine value mismatch, not a missing member.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md Behavior Guarantee MC-15 ("no generator learns what a
+ * component is" — each `renderHook` reads `payload.commands`, never
+ * `profile.commands`); intent.md SC14 (`Generator` gains no member; grep finds
+ * no component vocabulary in `src/generators/**`); audit.md Test Coverage
+ * T27, T28.
+ *
+ * Every real `renderHook` today still derives its embedded commands from
+ * `profile ? profile.commands : []`, never from a `payload.commands` field
+ * (`HookPayload` does not carry one yet). The "component-blind by
+ * construction" test below feeds a `payload.commands` value that
+ * deliberately differs from `profile.commands`, so it fails today for every
+ * hook-emitting generator: each one embeds the profile's own commands
+ * instead of the distinct marker command `payload.commands` carries.
+ *
+ * ### SC14's grep gate — amended mid-feature, and why
+ *
+ * This docblock originally recorded the gate as absolute: "today's
+ * `src/generators/**` already contains no 'component' vocabulary at all", so
+ * a single sweep asserting zero case-insensitive matches in every file would
+ * pass at red time and stay green. That reading was wrong, and it was wrong
+ * against this feature's own contract: MC-16 REQUIRES
+ * `renderProjectConfigBlock` in `src/generators/markdown-yaml.ts` to emit
+ * literal `- Component: <path> — <stack>` display lines, which an absolute
+ * gate forbids. The architect amended `intent.md` SC14 and `contract.md`
+ * MC-15/MC-16 to resolve the contradiction; the gate below implements the
+ * amended form, which is scoped BY EXCEPTION (one named file) rather than by
+ * enumerating the five `renderHook` files. Enumeration was rejected
+ * deliberately: it would silently stop guarding `types.ts`, which is the very
+ * file SC14's first clause is about — `types.ts` is where a `Generator`
+ * interface member would have to be added for a generator to learn what a
+ * component is.
+ *
+ * The amended gate is two assertions, and BOTH halves are load-bearing today
+ * (neither is a structural guard with nothing to check): the exception half
+ * fails if a component line escapes `renderProjectConfigBlock`, and the
+ * absolute half fails if any of the other nine files acquires the vocabulary.
  */
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { REPO_ROOT } from '../helpers/paths.js';
 // Type-only import: erased at runtime, so this does not require src/generators/types.ts
 // to exist for this file's *other* tests to still fail for the right reason.
 import type { CapabilityMapping, Generator, GeneratedFile, WrapperFormat } from '../../src/generators/types.js';
@@ -390,5 +432,135 @@ describe('mcpConfig — every generator declares the required member, matching t
     for (const [id, generator] of generators) {
       expect('mcpConfig' in (generator as object), `${id} has no mcpConfig key at all`).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+describe('renderHook is component-blind by construction — reads payload.commands, never profile.commands (MC-15, T27)', () => {
+  function fakeHookPayload(profile: unknown, commands: unknown) {
+    return {
+      project: {
+        enabledRoles: [],
+        gates: [],
+        specSchemaDir: '.sdd/spec-schema',
+        reducedGates: false,
+        stack: (profile as { id?: string } | undefined)?.id,
+        stackProfile: profile,
+      },
+      profile,
+      runner: { name: 'run-feedback.mjs', contents: '#!/usr/bin/env node\n', sourcePath: 'hooks/run-feedback.mjs' },
+      // The distinguishing field: deliberately NOT profile.commands, so a
+      // generator that still reads `profile.commands` embeds the WRONG
+      // (profile's real) commands instead of this marker.
+      commands,
+    } as any;
+  }
+
+  it('every hook-emitting generator embeds payload.commands, distinct from and never falling back to profile.commands', async () => {
+    const { generators } = await import('../../src/generators/index.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+    const markerCommands = [
+      {
+        id: 'monorepo-marker-command',
+        kind: 'lint',
+        argv: ['node', 'monorepo-marker-command-argv-token'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+    ];
+    const payload = fakeHookPayload(profile, markerCommands);
+
+    for (const [id, generator] of generators) {
+      const result = (generator as any).renderHook(payload);
+      if (result === undefined) continue; // Not every generator emits a hook yet outside this test's own concern.
+      expect(result.contents, `${id} did not embed payload.commands' marker`).toContain(
+        'monorepo-marker-command-argv-token',
+      );
+      // The profile's own real command ("eslint") must NOT leak in from
+      // profile.commands when payload.commands is what should be embedded.
+      expect(result.contents, `${id} embedded profile.commands instead of payload.commands`).not.toContain('eslint');
+    }
+  });
+});
+
+describe('SC14 grep gate — component vocabulary under src/generators/** is confined to one function in one file (SC14, MC-16, T28)', () => {
+  async function collectFiles(dir: string): Promise<string[]> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const files: string[] = [];
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...(await collectFiles(full)));
+      } else if (entry.isFile()) {
+        files.push(full);
+      }
+    }
+    return files;
+  }
+
+  /** The one file SC14 permits the vocabulary in, and only inside one
+   *  function. Named by exception rather than by enumerating its complement,
+   *  so a NEW file under `src/generators/` is guarded the day it appears. */
+  const EXEMPT_FILE = 'src/generators/markdown-yaml.ts';
+  const EXEMPT_FUNCTION_SIGNATURE = 'export function renderProjectConfigBlock(';
+
+  async function generatorSourceFiles(): Promise<string[]> {
+    const generatorsRoot = path.join(REPO_ROOT, 'src', 'generators');
+    const files = (await collectFiles(generatorsRoot)).filter((f) => f.endsWith('.ts'));
+    expect(files.length, 'no .ts files found under src/generators/').toBeGreaterThan(0);
+    return files;
+  }
+
+  it('finds no case-insensitive occurrence of "component" in any generator file other than markdown-yaml.ts', async () => {
+    const files = await generatorSourceFiles();
+    const relativePaths = files.map((f) => path.relative(REPO_ROOT, f).split(path.sep).join('/'));
+    // A typo in EXEMPT_FILE would silently turn this into a full sweep that
+    // markdown-yaml.ts then fails — but a typo in the OPPOSITE direction (a
+    // path that matches nothing) would vacate nothing, so pin its presence.
+    expect(relativePaths, 'the exempted file no longer exists at that path').toContain(EXEMPT_FILE);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const relativePath = path.relative(REPO_ROOT, file).split(path.sep).join('/');
+      if (relativePath === EXEMPT_FILE) continue;
+      const contents = await fs.readFile(file, 'utf8');
+      if (/component/i.test(contents)) {
+        offenders.push(relativePath);
+      }
+    }
+    expect(offenders, `component vocabulary found in: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('confines every "component" occurrence in markdown-yaml.ts to the body of renderProjectConfigBlock (MC-16)', async () => {
+    const contents = await fs.readFile(path.join(REPO_ROOT, EXEMPT_FILE), 'utf8');
+    const lines = contents.split('\n');
+
+    const start = lines.findIndex((line) => line.startsWith(EXEMPT_FUNCTION_SIGNATURE));
+    expect(start, `${EXEMPT_FILE} declares no line beginning "${EXEMPT_FUNCTION_SIGNATURE}"`).toBeGreaterThanOrEqual(0);
+    const endOffset = lines.slice(start + 1).findIndex((line) => /^export /.test(line));
+    expect(endOffset, `no top-level export follows renderProjectConfigBlock in ${EXEMPT_FILE}`).toBeGreaterThanOrEqual(0);
+    const end = start + 1 + endOffset;
+
+    const outOfRange = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /component/i.test(line))
+      .filter(({ index }) => index <= start || index >= end)
+      .map(({ line, index }) => `${index + 1}: ${line.trim()}`);
+
+    expect(
+      outOfRange,
+      `component vocabulary outside renderProjectConfigBlock in ${EXEMPT_FILE}:\n${outOfRange.join('\n')}`,
+    ).toEqual([]);
+
+    // Non-vacuity: MC-16 requires the display lines to actually exist inside
+    // that function, so an empty in-range set would mean the exception is
+    // guarding nothing (and the block above would have silently stopped
+    // asserting what it was narrowed to assert).
+    const inRange = lines.slice(start + 1, end).filter((line) => /component/i.test(line));
+    expect(inRange.length, 'renderProjectConfigBlock emits no component lines at all').toBeGreaterThan(0);
   });
 });

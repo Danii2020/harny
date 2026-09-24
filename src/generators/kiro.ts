@@ -208,7 +208,7 @@ function agentStopCommand(runner: string, commands: unknown): string {
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
   const runner = runnerInvocation();
-  const commands = profile ? profile.commands : [];
+  const commands = payload.commands ?? (profile ? profile.commands : []);
 
   const settings = {
     version: 'v1',

@@ -127,12 +127,37 @@ function parseRunArgs(argv) {
 }
 
 /**
+ * (specs/monorepo-mode.) Normalizes a parsed `--commands` value to the runner's
+ * one internal shape: a list of `{ dir, commands }` components, in payload
+ * order. The bare-array form (today's shape) becomes one implicit `.` component
+ * — this IS today's value, not a special case (MC-5). The object form
+ * `{ components: [...] }` becomes itself, each entry defaulting `dir` to `'.'`
+ * and `commands` to `[]`. Anything else (non-array, non-object, an object with
+ * no `components` array) normalizes to `[]` — the unchanged tolerant posture:
+ * no commands, no output, exit 0.
+ */
+function normalizeCommandsPayload(parsed) {
+  if (Array.isArray(parsed)) {
+    return [{ dir: '.', commands: parsed }];
+  }
+  if (parsed && typeof parsed === 'object' && Array.isArray(parsed.components)) {
+    return parsed.components.map((entry) => ({
+      dir: entry && typeof entry === 'object' && typeof entry.dir === 'string' ? entry.dir : '.',
+      commands: entry && typeof entry === 'object' && Array.isArray(entry.commands) ? entry.commands : [],
+    }));
+  }
+  return [];
+}
+
+/**
  * `--commands` accepts either a path to a JSON file (the documented,
  * subprocess-tested form) or inline JSON text (a generated per-tool hook config
  * may embed the resolved commands directly in its own command string rather
  * than writing a second file — see `src/generators/claude-code.ts`'s
  * `renderHook`). Inline JSON is detected by a leading `[`/`{`; anything else is
- * treated as a file path, preserving the original behavior exactly.
+ * treated as a file path, preserving the original behavior exactly. Returns the
+ * NORMALIZED component list (`normalizeCommandsPayload`), not the raw parsed
+ * value — every caller below reads the normalized list only.
  */
 function readCommands(commandsArg) {
   if (!commandsArg) {
@@ -143,10 +168,117 @@ function readCommands(commandsArg) {
   try {
     const raw = source ?? fs.readFileSync(commandsArg, 'utf8');
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return normalizeCommandsPayload(parsed);
   } catch {
     return [];
   }
+}
+
+/** Resolves symlinks so a touched path recorded through one filesystem name
+ *  (e.g. a temp directory reached without resolving its symlinked ancestors)
+ *  still compares correctly against `process.cwd()`, which the OS always
+ *  returns fully resolved. Walks up to the nearest EXISTING ancestor (the path
+ *  itself, or any of its parents, may not exist — a vanished touched path, or
+ *  one never written to disk at all), canonicalizes that ancestor, and rejoins
+ *  the non-existent suffix unchanged; `cwd` itself always exists, so this
+ *  always terminates. Used ONLY for component matching — the ORIGINAL absolute
+ *  path is still what a command receives (MC-12). */
+function canonicalPath(absolutePath) {
+  let current = absolutePath;
+  const suffix = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(current);
+      return suffix.length > 0 ? path.join(real, ...suffix) : real;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) {
+        return absolutePath;
+      }
+      suffix.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * (specs/monorepo-mode, MC-9/ADR 0039.) Longest **segment**-prefix match, never
+ * a raw string prefix: a component `d` matches `rel` (a path already made
+ * relative to `cwd` and POSIX-normalized) iff `d === '.'`, or `rel === d`, or
+ * `rel.startsWith(d + '/')`. Among matches, the one with the most path segments
+ * wins — so `apps/web` never matches `apps/web-admin/x.ts`. Returns `undefined`
+ * for a path outside `cwd` entirely, or matching no declared component.
+ */
+function componentDirFor(absolutePath, cwd, dirs) {
+  // Both sides are canonicalized (symlinks resolved) before comparing: `cwd` is
+  // `process.cwd()`, which the OS always returns fully resolved, so an
+  // accumulated path reached through a differently-symlinked name (e.g. macOS's
+  // /var vs. /private/var) would otherwise spuriously compare as "outside cwd".
+  const relRaw = path.relative(canonicalPath(cwd), canonicalPath(absolutePath));
+  if (relRaw === '' ? false : relRaw.startsWith('..') || path.isAbsolute(relRaw)) {
+    return undefined;
+  }
+  const rel = relRaw.split(path.sep).join('/');
+
+  let best;
+  let bestSegments = -1;
+  for (const dir of dirs) {
+    let segments;
+    if (dir === '.') {
+      segments = 0;
+    } else if (rel === dir || rel.startsWith(`${dir}/`)) {
+      segments = dir.split('/').length;
+    } else {
+      continue;
+    }
+    if (segments > bestSegments) {
+      bestSegments = segments;
+      best = dir;
+    }
+  }
+  return best;
+}
+
+/** `'.'`/`''` resolve to `cwd` itself; anything else is joined segment-by-segment
+ *  (mirrors `TOUCHED_FILES_DIR.split('/')`'s convention below, rather than
+ *  assuming `'/'` is the platform separator). Pure — no filesystem side effect:
+ *  a feedback runner must not write directories into the target repository as
+ *  a side effect of running a linter. Whether the result actually exists on
+ *  disk is `componentDirExists`'s question, not this one. */
+function resolveComponentCwd(cwd, componentDir) {
+  return componentDir === '.' || componentDir === '' ? cwd : path.join(cwd, ...componentDir.split('/'));
+}
+
+/** True iff `componentDir` (resolved against `cwd`) exists on disk and is a
+ *  directory. `'.'`/`''` — the install directory itself, the runner's own
+ *  `cwd` — is always true. A declared component directory that does not yet
+ *  exist (contract.md Error Handling Contract: legal — "a component directory
+ *  may legitimately be created after scaffolding") is a genuine runtime
+ *  condition, not an error: callers use this to give that component's commands
+ *  a visible, non-fatal skip (the same "drop it, but say so" posture MC-11
+ *  already takes for an unassigned touched path), rather than letting
+ *  `spawnSync`'s `cwd` option fail outright for an unconstrained command, or
+ *  silently creating the directory as a side effect of running a linter. */
+function componentDirExists(cwd, componentDir) {
+  if (componentDir === '.' || componentDir === '') {
+    return true;
+  }
+  try {
+    return fs.statSync(resolveComponentCwd(cwd, componentDir)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** The single stderr notice both dispatch paths print for a component whose
+ *  declared directory is absent at runtime. One text, one place (`AGENTS.md`
+ *  S5), phrased in MC-11's "what was dropped; skipped." notice style, and it
+ *  always names the component path so the skip is never silent. */
+function componentDirMissingNotice(component) {
+  return (
+    `harny-feedback: component directory \`${component.dir}\` does not exist; ` +
+    `${component.commands.length} command(s) skipped.`
+  );
 }
 
 function readTurnFile(file) {
@@ -203,29 +335,62 @@ function perFilePathsFor(command, touchedPaths) {
  *  unconditionally. `per-file` commands receive exactly `.` in place of the
  *  turn's touched paths (contract.md § Data Models "Whole-project invocation
  *  record"). `stop_hook_active` is never read or honored (BG-19) — CI has no
- *  re-entry concept, so a finding always exits 2. */
-function runWholeProject(commands, cwd) {
+ *  re-entry concept, so a finding always exits 2.
+ *
+ *  (specs/monorepo-mode, MC-19.) `components` is the NORMALIZED `{dir, commands}`
+ *  list (`readCommands`'s return shape). Every command of every component runs
+ *  once, from that component's own directory, with the `.` sentinel; the
+ *  `ran`/`total`/`skipped` counts are summed across every component so the
+ *  summary line's text is unchanged for the legacy one-`.`-component case
+ *  (MC-5). The component label is added to finding/skip lines only when more
+ *  than one component is present, so today's text stays byte-identical.
+ *
+ *  A component whose declared directory is absent on disk is skipped wholesale
+ *  with one stderr notice naming it (`componentDirMissingNotice`); its commands
+ *  count as `skipped` in the summary and are never spawned with a `cwd` that
+ *  does not exist. */
+function runWholeProject(components, cwd) {
   let anyBlockingFinding = false;
   let ranCount = 0;
   let skippedCount = 0;
+  let totalCount = 0;
+  const multiComponent = components.length > 1;
 
-  for (const command of commands) {
-    if (!requirementMet(command.requires, cwd)) {
-      skippedCount += 1;
-      console.error(`skipped \`${command.id}\`: requirement not met (tool not installed in this repo)`);
+  for (const component of components) {
+    const componentCwd = resolveComponentCwd(cwd, component.dir);
+    const label = multiComponent ? ` (${component.dir})` : '';
+
+    if (!componentDirExists(cwd, component.dir)) {
+      // A declared component directory that does not exist yet is a legal runtime
+      // condition, never a failure: drop its commands, but say so — the same
+      // "drop it, but say so" posture MC-11 takes for an unassigned touched path.
+      // The commands still count toward `total`/`skipped` so the summary line
+      // below stays truthful about what was declared.
+      totalCount += component.commands.length;
+      skippedCount += component.commands.length;
+      console.error(componentDirMissingNotice(component));
       continue;
     }
 
-    ranCount += 1;
-    const result = runCommand(command, ['.'], cwd);
-    if (result.status !== 0) {
-      anyBlockingFinding = true;
-      console.log(`finding from \`${command.id}\` (exit ${result.status}):`);
-      if (result.stdout && result.stdout.trim()) {
-        console.log(result.stdout.trim());
+    for (const command of component.commands) {
+      totalCount += 1;
+      if (!requirementMet(command.requires, componentCwd)) {
+        skippedCount += 1;
+        console.error(`skipped \`${command.id}\`${label}: requirement not met (tool not installed in this repo)`);
+        continue;
       }
-      if (result.stderr && result.stderr.trim()) {
-        console.error(result.stderr.trim());
+
+      ranCount += 1;
+      const result = runCommand(command, ['.'], componentCwd);
+      if (result.status !== 0) {
+        anyBlockingFinding = true;
+        console.log(`finding from \`${command.id}\`${label} (exit ${result.status}):`);
+        if (result.stdout && result.stdout.trim()) {
+          console.log(result.stdout.trim());
+        }
+        if (result.stderr && result.stderr.trim()) {
+          console.error(result.stderr.trim());
+        }
       }
     }
   }
@@ -234,19 +399,36 @@ function runWholeProject(commands, cwd) {
   // `run` mode's silence on a clean turn (BG-4) — this is what lets `harny-audit`
   // (BG-17's A1 clause) tell a genuinely green run apart from one that skipped
   // every command.
-  console.log(`harny-feedback: ${ranCount} of ${commands.length} command(s) ran, ${skippedCount} skipped.`);
+  console.log(`harny-feedback: ${ranCount} of ${totalCount} command(s) ran, ${skippedCount} skipped.`);
 
   // BG-19: `stop_hook_active` is never read or honored here — a finding always
   // exits 2, unconditionally.
   process.exit(anyBlockingFinding ? 2 : 0);
 }
 
+/**
+ * (specs/monorepo-mode, MC-9/MC-11/MC-12/MC-17/MC-18.) Partitions the turn's
+ * deduped, absolute touched paths across `components` (payload order) by
+ * longest-segment-prefix match, then iterates components in that same order:
+ * a component with NO assigned path runs nothing at all — not its per-file
+ * commands, and not its whole-project commands (MC-17). A surviving component's
+ * commands run with `cwd` = that component's own directory (MC-12); per-file
+ * commands receive their assigned, extension-filtered, still-existing paths,
+ * `whole-project` commands receive none, exactly as today's single-component
+ * loop did. A touched path matching no declared component is dropped and
+ * counted; when that count is nonzero, exactly one stderr notice names it
+ * (MC-11) — for today's single `.` component this count is always 0, so the
+ * notice is never printed (MC-5). The component label is added to finding/skip
+ * lines only when more than one component is present. A surviving component whose
+ * declared directory is absent on disk is itself skipped, with one stderr notice
+ * naming it (`componentDirMissingNotice`) — visible, non-fatal, never spawned into.
+ */
 function runRunMode(cwd) {
   const { commandsPath, wholeProject } = parseRunArgs(process.argv.slice(3));
-  const commands = readCommands(commandsPath);
+  const components = readCommands(commandsPath);
 
   if (wholeProject) {
-    runWholeProject(commands, cwd);
+    runWholeProject(components, cwd);
     return;
   }
 
@@ -266,35 +448,77 @@ function runRunMode(cwd) {
   }
 
   const touchedPaths = dedupedTouchedPaths(contents);
+  const multiComponent = components.length > 1;
+  const dirs = components.map((component) => component.dir);
+
+  const assignedByDir = new Map(dirs.map((dir) => [dir, []]));
+  let unassignedCount = 0;
+  for (const touchedPath of touchedPaths) {
+    const dir = componentDirFor(touchedPath, cwd, dirs);
+    if (dir === undefined) {
+      unassignedCount += 1;
+      continue;
+    }
+    assignedByDir.get(dir).push(touchedPath);
+  }
+
   let anyBlockingFinding = false;
 
-  for (const command of commands) {
-    if (!requirementMet(command.requires, cwd)) {
-      console.error(`skipped \`${command.id}\`: requirement not met (tool not installed in this repo)`);
+  for (const component of components) {
+    const assignedPaths = assignedByDir.get(component.dir) ?? [];
+    if (assignedPaths.length === 0) {
+      // MC-17: a component with no assigned touched path runs nothing at all —
+      // not its per-file commands, and not its whole-project commands.
       continue;
     }
 
-    let paths = touchedPaths;
-    if (command.pathMode === 'per-file') {
-      paths = perFilePathsFor(command, touchedPaths);
-      if (paths.length === 0) {
-        // PH-5: nothing this command should check survived the filters. Never run
-        // it with zero path args (that would lint the whole repo); no output.
-        continue;
-      }
+    const componentCwd = resolveComponentCwd(cwd, component.dir);
+    const label = multiComponent ? ` (${component.dir})` : '';
+
+    if (!componentDirExists(cwd, component.dir)) {
+      // Same posture as `runWholeProject`: a component directory that does not
+      // exist yet is skipped visibly and non-fatally, never spawned into.
+      console.error(componentDirMissingNotice(component));
+      continue;
     }
 
-    const result = runCommand(command, paths, cwd);
-    if (result.status !== 0) {
-      anyBlockingFinding = true;
-      console.log(`finding from \`${command.id}\` (exit ${result.status}):`);
-      if (result.stdout && result.stdout.trim()) {
-        console.log(result.stdout.trim());
+    for (const command of component.commands) {
+      if (!requirementMet(command.requires, componentCwd)) {
+        console.error(`skipped \`${command.id}\`${label}: requirement not met (tool not installed in this repo)`);
+        continue;
       }
-      if (result.stderr && result.stderr.trim()) {
-        console.error(result.stderr.trim());
+
+      let paths = assignedPaths;
+      if (command.pathMode === 'per-file') {
+        paths = perFilePathsFor(command, assignedPaths);
+        if (paths.length === 0) {
+          // PH-5: nothing this command should check survived the filters. Never run
+          // it with zero path args (that would lint the whole repo); no output.
+          continue;
+        }
+      }
+
+      const result = runCommand(command, paths, componentCwd);
+      if (result.status !== 0) {
+        anyBlockingFinding = true;
+        console.log(`finding from \`${command.id}\`${label} (exit ${result.status}):`);
+        if (result.stdout && result.stdout.trim()) {
+          console.log(result.stdout.trim());
+        }
+        if (result.stderr && result.stderr.trim()) {
+          console.error(result.stderr.trim());
+        }
       }
     }
+  }
+
+  // MC-11: a path matching no declared component is dropped, never reassigned;
+  // exactly one notice names how many. Never printed when every touched path
+  // was assigned (including today's single `.` catch-all component, MC-5), and
+  // never printed when no components were declared at all (today's unchanged
+  // "no --commands" no-op posture).
+  if (components.length > 0 && unassignedCount > 0) {
+    console.error(`harny-feedback: ${unassignedCount} touched path(s) matched no declared component; skipped.`);
   }
 
   // Delete the turn file so a turn key reused across turns cannot leak this

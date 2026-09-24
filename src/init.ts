@@ -9,7 +9,9 @@ import { HarnessError, isHarnessError } from './errors.js';
 import { defaultConfig, loadConfigFile, mergeConfig, validateConfig } from './config.js';
 import type { HarnessConfig, PartialHarnessConfig } from './config.js';
 import { loadCanonicalTemplates } from './templates.js';
+import path from 'node:path';
 import {
+  buildCommandsPayload,
   buildFeedbackFiles,
   buildPayload,
   buildRuntimeSharedFiles,
@@ -163,12 +165,44 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // explicitly configured stack that matches no built-in feedback profile is
   // inert, never fatal — but never silent either. A blank/absent stack is not
   // warned about here; it is the ordinary default, not a misconfiguration.
-  if (config.stack && !payload.conductor.project.stackProfile) {
-    io.warn(
-      `Unrecognized project stack "${config.stack}": no built-in feedback profile matched. ` +
-        `Built-in profiles: ${STACK_PROFILE_IDS.join(', ')}. Lint/typecheck commands are skipped ` +
-        'for this stack; hook and CI artifacts are still written.',
-    );
+  //
+  // (WIDENED — specs/monorepo-mode, MC-28.) Per component: an explicitly
+  // configured component stack matching no built-in profile emits one io.warn
+  // naming that component's path and the unrecognized value alongside the
+  // built-in profile ids. A blank component stack is not warned about — the
+  // same "legitimate absence, not a misconfiguration" treatment as a blank
+  // `config.stack`. For a components-free config this is exactly the single
+  // warning above, since `resolveComponents` returns the one implicit `.`
+  // component carrying `config.stack` (MC-5) — this is the SAME loop, not a
+  // second code path.
+  for (const component of payload.conductor.project.components) {
+    if (component.stack && !component.profile) {
+      io.warn(
+        `Unrecognized stack "${component.stack}" for component "${component.path}": no built-in ` +
+          `feedback profile matched. Built-in profiles: ${STACK_PROFILE_IDS.join(', ')}. Lint/typecheck ` +
+          'commands are skipped for this component; hook and CI artifacts are still written.',
+      );
+    }
+  }
+
+  // (NEW — specs/monorepo-mode, MC-8.) A declared component directory that does
+  // not exist on disk at init time is not an error — component directories are
+  // never created by init, and a component directory may legitimately be
+  // created after scaffolding — but it is never silent either: one io.warn
+  // names the path, and the run proceeds and writes everything normally.
+  for (const component of payload.conductor.project.components) {
+    if (component.path === '.') {
+      continue;
+    }
+    const componentDir = path.join(targetDir, component.path);
+    try {
+      await fs.access(componentDir);
+    } catch {
+      io.warn(
+        `Component directory "${component.path}" does not exist yet under ${targetDir}. ` +
+          'This is fine if it will be created after scaffolding; nothing else is affected.',
+      );
+    }
   }
 
   // (NEW — audit AL-7, task 4.7a.) Warn once per run for every unknown capability
@@ -257,10 +291,14 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // content it never claimed to have. The real, packaged templates root always
   // carries both.
   if (payload.hookRunner && payload.ciWorkflowTemplate) {
+    // (NEW — specs/monorepo-mode, MC-15.) The runner wire format is computed
+    // once, here, in the composition root — the seam that keeps every generator
+    // component-blind (SC14): no generator ever derives `--commands` itself.
     const hookPayload: HookPayload = {
       project: payload.conductor.project,
       profile: payload.conductor.project.stackProfile,
       runner: payload.hookRunner,
+      commands: buildCommandsPayload(payload.conductor.project.components),
     };
     for (const generator of resolvedGenerators) {
       const hookFile = generator.renderHook(hookPayload);

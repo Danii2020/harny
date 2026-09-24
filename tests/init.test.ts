@@ -99,6 +99,24 @@
  * no stale endpoint left behind): the "unchanged" assertions it feeds only
  * check that a warning names the path, never the seeded URL's value, so this
  * update alone does not change their outcome.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md Behavior Guarantee MC-28 (per-component unrecognized-
+ * stack warning, naming the component path; a blank component stack is not
+ * warned about) and MC-8's missing-component-directory warning; intent.md
+ * R18 (verified against the actual write plan); audit.md Test Coverage T31,
+ * T32, and R18's dedicated verification row.
+ *
+ * `runInit` does not read `overrides.components` at all yet at red time — a
+ * `components`-carrying override is silently absent from the resolved
+ * `HarnessConfig` (`mergeConfig` does not merge it in), so every test below
+ * that declares components is expected to fail one of two genuine ways: no
+ * `io.warn` call ever names a component path (because no component-aware
+ * code path exists to emit one), or the write plan for a "two-component"
+ * install is identical to a *bare* `--tools claude-code` install with no
+ * stack at all (since `components` was silently dropped) rather than to a
+ * genuine single-stack install's path set — not a test-authoring bug.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
@@ -1320,5 +1338,114 @@ describe('runInit — --dry-run for a subdirectory install lists the "../"-prefi
     // Nothing written anywhere: neither inside targetDir nor at the repo root.
     await expect(fs.access(path.join(targetDir, '.github'))).rejects.toThrow();
     await expect(fs.access(path.join(repoDir, '.github'))).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+describe('runInit — a two-component install writes exactly the same path set as a single-repo install (R18, T32)', () => {
+  it('the planned path set for two components equals the planned path set for a bare single-stack install', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDirSingle = await makeTempDir();
+    const targetDirMulti = await makeTempDir();
+
+    const singleResult = await runInit({
+      targetDir: targetDirSingle,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: { tools: ['claude-code'], stack: 'typescript' },
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    const multiResult = await runInit({
+      targetDir: targetDirMulti,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: {
+        tools: ['claude-code'],
+        components: [
+          { path: '.', stack: 'python' },
+          { path: 'apps/web', stack: 'typescript' },
+        ],
+      } as any,
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io: collectingIO().io,
+    });
+
+    // One .sdd/, one spec-schema set, one copy of every role/skill, one
+    // runner, one probes.mjs, one hook config, one CI workflow — no NEW
+    // generated path appears for a monorepo install (§ State Changes).
+    expect(multiResult.planned.slice().sort()).toEqual(singleResult.planned.slice().sort());
+  });
+});
+
+describe('runInit — per-component escape-hatch and missing-directory warnings (MC-28, MC-8, T31)', () => {
+  it('an unrecognized component stack warns exactly once, naming the component path and the value; a blank component stack is not warned about', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    const { io, warnings } = collectingIO();
+
+    await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: {
+        tools: ['claude-code'],
+        components: [
+          { path: '.', stack: 'python' },
+          { path: 'apps/legacy', stack: 'cobol' },
+          { path: 'apps/blank' },
+        ],
+      } as any,
+      interactive: false,
+      dryRun: true,
+      force: false,
+      io,
+    });
+
+    const escapeHatchWarnings = warnings.filter((w) => w.includes('cobol'));
+    expect(escapeHatchWarnings).toHaveLength(1);
+    expect(escapeHatchWarnings[0]).toContain('apps/legacy');
+
+    // No warning at all mentions the blank-stack component's path as an
+    // unrecognized-stack case — a blank stack is a legitimate "no automated
+    // feedback for this component," matching today's blank config.stack
+    // treatment.
+    const blankComponentWarnings = warnings.filter(
+      (w) => w.includes('apps/blank') && /unrecognized|no built-in/i.test(w),
+    );
+    expect(blankComponentWarnings).toEqual([]);
+  });
+
+  it('a declared component directory absent on disk warns once naming the path, and the run still writes normally', async () => {
+    const { runInit } = await import('../src/init.js');
+    const targetDir = await makeTempDir();
+    const { io, warnings } = collectingIO();
+
+    // Neither "apps/web" nor "api" exists under targetDir at init time —
+    // component directories are never created by init (MC-8).
+    const result = await runInit({
+      targetDir,
+      templatesRoot: REAL_TEMPLATES_ROOT,
+      overrides: {
+        tools: ['claude-code'],
+        components: [
+          { path: '.', stack: 'python' },
+          { path: 'apps/web', stack: 'typescript' },
+        ],
+      } as any,
+      interactive: false,
+      dryRun: false,
+      force: false,
+      io,
+    });
+
+    const missingDirWarnings = warnings.filter((w) => w.includes('apps/web'));
+    expect(missingDirWarnings.length).toBeGreaterThanOrEqual(1);
+    expect(result.written.length).toBeGreaterThan(0);
   });
 });

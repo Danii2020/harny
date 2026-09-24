@@ -207,3 +207,18 @@ small, concrete polish items — none of them a contract violation or a broken g
   the green run verified here covers `HEAD`, not this working tree.
 - **AL-10** — ADRs 0031–0034 remain to be written by the documentation role; 0033 must
   distinguish itself from ADR 0030 explicitly.
+
+## Note added 2026-09-23 by the documentation role (from `monorepo-mode`'s audit)
+
+`tests/fixtures/golden/ci-workflow-root/run-doctor.mjs` and
+`tests/fixtures/golden/ci-workflow-root/run-feedback.mjs` are **deliberately retained
+history**, not dead fixtures. `monorepo-mode` changed both runners by contract, which
+made this feature's DR-4 rows over those two files either false or vacuous; the rows
+were retired (with the reasoning recorded in `tests/canonical-fidelity.test.ts`) and
+their coverage replaced by live-pair guards pinning each `.sdd/` copy to its
+`templates/` source. `monorepo-mode`'s auditor independently confirmed the replacement
+is genuine and recommended keeping these two files, because they are the only surviving
+record of the pre-`ci-workflow-root` bytes DR-4 asserted. They are referenced by no test
+today. Do not delete them as orphans without reading this note first.
+`tests/fixtures/golden/ci-workflow-root/probes.mjs` is still live: its DR-4 row survives,
+still true, and verified red under perturbation.

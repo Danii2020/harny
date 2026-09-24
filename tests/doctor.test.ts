@@ -70,6 +70,32 @@
  * produces identical output today, so these three pass already at red time
  * and become live regression guards once `placement` actually varies the
  * `ci-workflow` entry.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md § Data Models `DoctorChecksFile.commands` (widened
+ * element type, `ScopedReadinessCommand`); Behavior Guarantees MC-20, MC-22;
+ * audit.md Test Coverage T22.
+ *
+ * `buildDoctorChecks` does not read `config.components` yet at red time — it
+ * always derives family 5's `commands` from the single `resolveStackProfile
+ * (config.stack)` call, so a `fakeMonorepoConfig` (which carries no top-level
+ * `stack` at all) resolves to a blank stack and an EMPTY `commands` array.
+ * Every test in the new describe block below is therefore expected to fail on
+ * a genuine shape mismatch (no `dir`/`:<path>`-suffixed entries at all, where
+ * one or more is expected), not a test-authoring bug.
+ *
+ * ## Post-audit amendment (audit.md row A2, finding F1)
+ *
+ * The boundary between T22's two cases — a list of exactly ONE component whose
+ * path is NOT `.` — was untested, and that is precisely where F1 lives:
+ * `buildDoctorChecks` gated `dir`/the id suffix on `components.length > 1`,
+ * whereas MC-20 and MC-5 gate the OMISSION on "exactly one `.` component" (the
+ * same formula `buildCommandsPayload` uses). The last test in the block below
+ * covers that boundary from both sides in one arrangement, so neither side can
+ * pass vacuously. It is expected to fail at amendment-red time on the non-root
+ * half (a `dir`-less, unsuffixed entry where a `dir: 'apps/web'` entry is
+ * required); its single-`.` half must stay green throughout.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
@@ -783,5 +809,142 @@ describe('ci-workflow-root — every other check family and entry is unaffected 
     expect(subdir.commands).toEqual(root.commands);
     expect(subdir.specs).toEqual(root.specs);
     expect(subdir.version).toEqual(root.version);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+/** Same minimal shape as `fakeConfig`, but with a declared `components` list. */
+function fakeMonorepoConfig(components: readonly { path: string; stack?: string }[]) {
+  return {
+    version: 1 as const,
+    tools: ['claude-code'] as const,
+    roles: [{ id: 'sdd-architect' as const, tier: 'most-capable' as const }],
+    gates: ['post-specs', 'post-red-tests', 'post-audit'] as const,
+    skills: ['harny-propose'] as const,
+    components,
+  };
+}
+
+describe('buildDoctorChecks — per-component readiness commands, dir/id rules (MC-20, T22)', () => {
+  it('a single "." component omits dir and leaves ids unchanged — byte-identical to today', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+
+    const singleComponent = buildDoctorChecks(fakeMonorepoConfig([{ path: '.', stack: 'typescript' }]) as any, generators);
+    const legacyStack = buildDoctorChecks(fakeConfig({ stack: 'typescript' }) as any, generators);
+
+    expect(singleComponent.commands).toEqual(legacyStack.commands);
+    for (const command of singleComponent.commands) {
+      expect('dir' in command).toBe(false);
+    }
+    expect(singleComponent.commands.map((c) => c.id)).toEqual(
+      STACK_PROFILES.find((p) => p.id === 'typescript')!.readiness!.map((c) => c.id),
+    );
+  });
+
+  it('more than one component: each readiness command carries dir and an id suffixed ":<path>"', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+
+    const checks = buildDoctorChecks(
+      fakeMonorepoConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/web', stack: 'typescript' },
+      ]) as any,
+      generators,
+    );
+
+    const pythonReadiness = STACK_PROFILES.find((p) => p.id === 'python')!.readiness!;
+    const typescriptReadiness = STACK_PROFILES.find((p) => p.id === 'typescript')!.readiness!;
+
+    for (const command of pythonReadiness) {
+      const entry = checks.commands.find((c) => c.id === `${command.id}:.`);
+      expect(entry, `expected a ${command.id}:. entry`).toBeDefined();
+      expect((entry as any).dir).toBe('.');
+    }
+    for (const command of typescriptReadiness) {
+      const entry = checks.commands.find((c) => c.id === `${command.id}:apps/web`);
+      expect(entry, `expected a ${command.id}:apps/web entry`).toBeDefined();
+      expect((entry as any).dir).toBe('apps/web');
+    }
+    // No id collisions between components sharing a stack's command id shape.
+    expect(new Set(checks.commands.map((c) => c.id)).size).toBe(checks.commands.length);
+  });
+
+  it('a component with an unrecognized stack contributes no readiness command at all', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+
+    const checks = buildDoctorChecks(
+      fakeMonorepoConfig([
+        { path: '.', stack: 'python' },
+        { path: 'apps/legacy', stack: 'cobol' },
+      ]) as any,
+      generators,
+    );
+
+    // Positive proof the "." python component's readiness command WAS
+    // resolved (never a vacuous "no mention of the unresolved component"
+    // pass): if the whole config is treated as stack-less instead of
+    // per-component, commands is empty and this fails alongside the negative
+    // assertion below.
+    expect(checks.commands.some((c) => c.id.startsWith('pytest'))).toBe(true);
+    expect(checks.commands.some((c) => c.id.includes('apps/legacy'))).toBe(false);
+  });
+
+  // (MC-20, MC-5; audit.md A2 / F1.) The boundary between the two cases above:
+  // a ONE-element component list whose single component is not the repository
+  // root, which MC-10 makes legal. Both sides of the boundary are arranged in
+  // this one test on purpose — the defect survived because each existing test
+  // only ever saw one side of it.
+  it('a lone component that is not the repository root carries dir and the suffixed id, while a lone "." component carries neither', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const { STACK_PROFILES } = await import('../src/feedback.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+    const typescriptReadiness = STACK_PROFILES.find((p) => p.id === 'typescript')!.readiness!;
+    expect(typescriptReadiness.length).toBeGreaterThan(0);
+
+    const loneSubdir = buildDoctorChecks(fakeMonorepoConfig([{ path: 'apps/web', stack: 'typescript' }]) as any, generators);
+    const loneRoot = buildDoctorChecks(fakeMonorepoConfig([{ path: '.', stack: 'typescript' }]) as any, generators);
+
+    // Both arrangements must actually have emitted the profile's readiness
+    // commands: an empty `commands` array would otherwise satisfy every
+    // for-of assertion below vacuously.
+    expect(loneSubdir.commands).toHaveLength(typescriptReadiness.length);
+    expect(loneRoot.commands).toHaveLength(typescriptReadiness.length);
+
+    // Not-at-the-root: scoped by data, with a unique id (MC-20).
+    expect(loneSubdir.commands.map((c) => c.id)).toEqual(
+      typescriptReadiness.map((c) => `${c.id}:apps/web`),
+    );
+    for (const command of loneSubdir.commands) {
+      expect((command as any).dir).toBe('apps/web');
+    }
+
+    // At the root: today's value, reached by construction, not by a branch on
+    // component count (MC-5). Fails if `dir` is ever wrongly ADDED here.
+    expect(loneRoot.commands.map((c) => c.id)).toEqual(typescriptReadiness.map((c) => c.id));
+    for (const command of loneRoot.commands) {
+      expect('dir' in command).toBe(false);
+    }
+  });
+
+  it('families 1-4 are unchanged in count/content by a components-vs-stack config shape, only "commands" (family 5) differs (MC-22)', async () => {
+    const { buildDoctorChecks } = await import('../src/doctor.js');
+    const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
+
+    const singleComponent = buildDoctorChecks(fakeMonorepoConfig([{ path: '.', stack: 'typescript' }]) as any, generators);
+    const legacyStack = buildDoctorChecks(fakeConfig({ stack: 'typescript' }) as any, generators);
+
+    expect(singleComponent.require).toEqual(legacyStack.require);
+    expect(singleComponent.repoReadiness).toEqual(legacyStack.repoReadiness);
+    expect(singleComponent.repoReadinessLabel).toEqual(legacyStack.repoReadinessLabel);
+    expect(singleComponent.specs).toEqual(legacyStack.specs);
+    expect(singleComponent.version).toBe(1);
   });
 });

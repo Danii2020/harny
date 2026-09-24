@@ -30,6 +30,26 @@
  * existing test, fails until the amendment lands" case AGENTS.md S6
  * describes, not a new gap. `harny-feedback` remains core; it simply is no
  * longer the *last* core skill once `harny-doctor` is appended after it.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md "Public API — src/config.ts" (`ComponentSelection`,
+ * `normalizeComponentPath`, `parseComponentAssignment`, `validateComponentList`);
+ * § Data Models (`HarnessConfig.components`, `PartialHarnessConfig.components`,
+ * `mergeConfig` step 3's drop-the-superseded-field rule, `serializeConfig` key
+ * order); Behavior Guarantees MC-1, MC-4, MC-7, MC-8, MC-24; Error Handling
+ * Contract rows for `stack`/`components` exclusivity, a malformed `--component`
+ * assignment, an absolute/escaping component path, a duplicate normalized path,
+ * and an empty `components` array; audit.md Test Coverage T3-T8.
+ *
+ * None of `ComponentSelection`, `normalizeComponentPath`,
+ * `parseComponentAssignment`, or `validateComponentList` exist on
+ * `src/config.ts` yet at red time, and `mergeConfig`/`serializeConfig` do not
+ * handle a `components` field at all. Every describe block below is therefore
+ * expected to fail either on "does not provide an export named …" (the four
+ * new functions) or on a genuine behavioral mismatch (`mergeConfig` silently
+ * ignoring `components` instead of merging or throwing; `serializeConfig`
+ * never emitting a `components` key), not on a test-authoring bug.
  */
 import { describe, expect, it } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -532,5 +552,304 @@ describe('harny-feedback is always scaffolded, never nameable via --skills (Gu 1
       expect(message).toContain('harny-feedback');
       expect(message.toLowerCase()).toContain('always');
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+describe('normalizeComponentPath — the five-step rule plus containment rejections (MC-7, MC-8, T3)', () => {
+  it.each([
+    ['', '.'],
+    ['.', '.'],
+    ['./apps/web', 'apps/web'],
+    ['apps/web/', 'apps/web'],
+    ['apps//web', 'apps/web'],
+    ['apps\\web', 'apps/web'],
+  ])('normalizes %j to %j', async (raw, expected) => {
+    const { normalizeComponentPath } = await import('../src/config.js');
+    expect(normalizeComponentPath(raw, 'test-fixture')).toBe(expected);
+  });
+
+  it.each([['/abs/path'], ['C:/abs/path'], ['..'], ['../x'], ['apps/../../escape']])(
+    'rejects %j as HarnessError USAGE naming the offending path',
+    async (raw) => {
+      const { normalizeComponentPath } = await import('../src/config.js');
+      const { isHarnessError } = await import('../src/errors.js');
+
+      try {
+        normalizeComponentPath(raw, 'test-fixture');
+        expect.unreachable(`expected normalizeComponentPath(${JSON.stringify(raw)}) to throw`);
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('USAGE');
+      }
+    },
+  );
+});
+
+describe('validateComponentList — normalize, reject empty/duplicate, sort ascending (MC-7, T4)', () => {
+  it('rejects an empty list naming that at least one component is required', async () => {
+    const { validateComponentList } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+
+    try {
+      validateComponentList([], 'test-fixture');
+      expect.unreachable('expected validateComponentList to throw on an empty list');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+    }
+  });
+
+  it('rejects two entries whose normalized paths collide, naming the duplicate', async () => {
+    const { validateComponentList } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+
+    try {
+      validateComponentList(
+        [{ path: 'apps/web' }, { path: './apps/web/' }],
+        'test-fixture',
+      );
+      expect.unreachable('expected validateComponentList to throw on a duplicate normalized path');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+      expect((err as Error).message).toContain('apps/web');
+    }
+  });
+
+  it('normalizes and sorts entries ascending by path, independent of input order', async () => {
+    const { validateComponentList } = await import('../src/config.js');
+
+    const result = validateComponentList(
+      [{ path: 'services/api', stack: 'python' }, { path: './apps/web/', stack: 'typescript' }, { path: '.' }],
+      'test-fixture',
+    );
+
+    expect(result.map((c) => c.path)).toEqual(['.', 'apps/web', 'services/api']);
+    expect(result.find((c) => c.path === 'apps/web')?.stack).toBe('typescript');
+  });
+
+  it('rejects a non-array components value, an entry that is not an object, and a non-string path', async () => {
+    const { validateComponentList } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+
+    for (const bad of ['not-an-array', ['a-string-entry'], [{ path: 42 }]]) {
+      try {
+        validateComponentList(bad, 'test-fixture');
+        expect.unreachable(`expected validateComponentList(${JSON.stringify(bad)}) to throw`);
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('USAGE');
+      }
+    }
+  });
+});
+
+describe('parseComponentAssignment — first-=-wins, empty stack accepted, malformed rejected (MC-24, T5)', () => {
+  it('splits on the first "=" only, so a stack value may itself contain "="', async () => {
+    const { parseComponentAssignment } = await import('../src/config.js');
+    expect(parseComponentAssignment('apps/web=typescript')).toEqual({ path: 'apps/web', stack: 'typescript' });
+    expect(parseComponentAssignment('apps/web=ty=pescript')).toEqual({ path: 'apps/web', stack: 'ty=pescript' });
+  });
+
+  it('an empty right-hand side yields a component with no stack — legal and inert', async () => {
+    const { parseComponentAssignment } = await import('../src/config.js');
+    const result = parseComponentAssignment('apps/web=');
+    expect(result.path).toBe('apps/web');
+    expect(result.stack).toBeUndefined();
+  });
+
+  it('throws USAGE for a missing "=" or an empty left-hand side', async () => {
+    const { parseComponentAssignment } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+
+    for (const bad of ['apps/web-no-equals', '=typescript']) {
+      try {
+        parseComponentAssignment(bad);
+        expect.unreachable(`expected parseComponentAssignment(${JSON.stringify(bad)}) to throw`);
+      } catch (err) {
+        expect(isHarnessError(err)).toBe(true);
+        expect((err as any).code).toBe('USAGE');
+      }
+    }
+  });
+});
+
+describe('mergeConfig — stack/components mutual exclusivity from a single source (MC-1, T6)', () => {
+  it('throws USAGE naming both fields when an .sdd/harness.json-shaped file declares both, translated through loadConfigFile', async () => {
+    const { mergeConfig, defaultConfig, loadConfigFile } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const templates = await loadTemplates('well-formed');
+    const base = defaultConfig(templates);
+
+    const persisted = JSON.stringify({
+      version: 1,
+      tools: ['claude-code'],
+      roles: [{ id: 'sdd-architect', tier: 'most-capable' }],
+      gates: [],
+      stack: 'typescript',
+      components: [{ path: 'apps/web', stack: 'typescript' }],
+    });
+    const fileConfig = loadConfigFile(persisted, '.sdd/harness.json');
+
+    try {
+      mergeConfig(base, fileConfig, templates);
+      expect.unreachable('expected mergeConfig to throw for stack+components from one .sdd/harness.json');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+      const message = (err as Error).message;
+      expect(message).toContain('stack');
+      expect(message).toContain('components');
+    }
+  });
+
+  it('throws USAGE naming both fields when a --config file declares both', async () => {
+    const { mergeConfig, defaultConfig, loadConfigFile } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const templates = await loadTemplates('well-formed');
+    const base = defaultConfig(templates);
+
+    const configFileContents = JSON.stringify({
+      version: 1,
+      stack: 'python',
+      components: [{ path: '.', stack: 'python' }],
+    });
+    const fileConfig = loadConfigFile(configFileContents, '/tmp/harny-config.json');
+
+    try {
+      mergeConfig(base, fileConfig, templates);
+      expect.unreachable('expected mergeConfig to throw for stack+components from one --config file');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+    }
+  });
+
+  it('throws USAGE naming both fields when a single flag invocation supplies both --stack and --component', async () => {
+    const { mergeConfig, defaultConfig } = await import('../src/config.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const templates = await loadTemplates('well-formed');
+    const base = defaultConfig(templates);
+
+    // The shape cli.ts's buildOverrides would produce from one invocation of
+    // `--stack typescript --component apps/web=typescript` — a single
+    // PartialHarnessConfig carrying both fields non-empty.
+    const overrides = { stack: 'typescript', components: [{ path: 'apps/web', stack: 'typescript' }] };
+
+    try {
+      mergeConfig(base, overrides as any, templates);
+      expect.unreachable('expected mergeConfig to throw for stack+components from one flag invocation');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('USAGE');
+    }
+  });
+});
+
+describe('mergeConfig — an override replacing the shape answer drops the superseded field, never errors (MC-1, T7)', () => {
+  it('an override supplying components drops a base stack, without throwing', async () => {
+    const { mergeConfig, defaultConfig } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+    const base = { ...defaultConfig(templates), stack: 'typescript' };
+
+    const merged = mergeConfig(base, { components: [{ path: '.', stack: 'python' }] } as any, templates);
+
+    expect((merged as any).components).toEqual([{ path: '.', stack: 'python' }]);
+    expect(merged.stack).toBeUndefined();
+  });
+
+  it('an override supplying stack drops a base components list, without throwing', async () => {
+    const { mergeConfig, defaultConfig } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+    const base = { ...defaultConfig(templates), components: [{ path: 'apps/web', stack: 'typescript' }] } as any;
+
+    const merged = mergeConfig(base, { stack: 'python' }, templates);
+
+    expect(merged.stack).toBe('python');
+    expect((merged as any).components).toBeUndefined();
+  });
+});
+
+describe('serializeConfig / loadConfigFile round-trip components (MC-4, MC-7, T8)', () => {
+  it('appends components last, only when present, each entry serialized as {path} or {path, stack}', async () => {
+    const { serializeConfig } = await import('../src/config.js');
+
+    const config = {
+      version: 1 as const,
+      tools: ['claude-code'] as const,
+      roles: [{ id: 'sdd-architect' as const, tier: 'most-capable' as const }],
+      gates: [] as const,
+      skills: [] as const,
+      components: [{ path: '.', stack: 'python' }, { path: 'apps/web' }],
+    };
+
+    const serialized = serializeConfig(config as any);
+    const parsed = JSON.parse(serialized);
+    const keys = Object.keys(parsed);
+
+    expect(keys[keys.length - 1]).toBe('components');
+    expect(parsed.components).toEqual([{ path: '.', stack: 'python' }, { path: 'apps/web' }]);
+  });
+
+  it('a components-free config serializes with no "components" key at all — byte-identical to today (MC-4)', async () => {
+    const { serializeConfig, defaultConfig } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+
+    const serialized = serializeConfig(defaultConfig(templates));
+
+    expect(JSON.parse(serialized)).not.toHaveProperty('components');
+    expect(serialized).not.toContain('"components"');
+  });
+
+  it('round-trips a declared components list through serializeConfig -> loadConfigFile -> mergeConfig -> serializeConfig, byte-identically', async () => {
+    const { serializeConfig, loadConfigFile, mergeConfig, defaultConfig } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+
+    const original = {
+      ...defaultConfig(templates),
+      stack: undefined,
+      components: [{ path: '.', stack: 'python' }, { path: 'apps/web', stack: 'typescript' }],
+    } as any;
+
+    const firstSerialization = serializeConfig(original);
+    // Guards against a vacuous round-trip: today, before this feature,
+    // serializeConfig drops "components" entirely, so a naive round-trip would
+    // pass trivially with an empty components set surviving at every step. This
+    // assertion forces the round-trip to be over a REAL, non-empty components
+    // array.
+    expect(JSON.parse(firstSerialization).components).toEqual(original.components);
+
+    const parsed = loadConfigFile(firstSerialization, 'harness.json');
+    const merged = mergeConfig(defaultConfig(templates), parsed, templates);
+    const secondSerialization = serializeConfig(merged);
+
+    expect(secondSerialization).toBe(firstSerialization);
+  });
+
+  it('an existing .sdd/harness.json carrying only "stack" is never rewritten to a components form and never warned about (SC4)', async () => {
+    const { serializeConfig, loadConfigFile, mergeConfig, defaultConfig, CONFIG_VERSION } = await import('../src/config.js');
+    const templates = await loadTemplates('well-formed');
+
+    const preFeatureConfig = JSON.stringify({
+      version: CONFIG_VERSION,
+      tools: ['claude-code'],
+      roles: [{ id: 'sdd-architect', tier: 'most-capable' }],
+      gates: ['post-specs', 'post-red-tests', 'post-audit'],
+      stack: 'typescript',
+    });
+
+    const parsed = loadConfigFile(preFeatureConfig, 'harness.json');
+    expect((parsed as any).components).toBeUndefined();
+
+    const merged = mergeConfig(defaultConfig(templates), parsed, templates);
+    expect((merged as any).components).toBeUndefined();
+    expect(merged.stack).toBe('typescript');
+
+    const reserialized = serializeConfig(merged);
+    expect(reserialized).not.toContain('"components"');
   });
 });

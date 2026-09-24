@@ -247,7 +247,10 @@ Read across the rows:
   the turn touched (pre-integration); the GitHub Actions workflow fires once per PR,
   independent of any single agent session (post-integration). Both are
   **computational** — deterministic lint/type-check commands, never a semantic judgment
-  call.
+  call. Since `monorepo-mode`, a repository may declare more than one component (a
+  directory and the stack it is written in); the feedback-computational cell is now
+  true *per component* — each touched path runs its own component's commands from
+  its own directory — with no quadrant moving and no new cell opened.
 - **Inferential feedback is deliberately empty.** AI code review or LLM-as-judge would
   fill this cell. This feature ships the computational column only; the empty cell is
   named so a future contributor can see which quadrant is unclaimed rather than
@@ -281,6 +284,14 @@ skill points here rather than restating any of this; `sdd-executor` follows it, 
 | S5 | A shared constant is imported from its owning module, never re-literalled at a call site (e.g. `SPEC_SCHEMA_DIR` from `src/engine.ts:45`) | `specs/archived/cursor-kiro-copilot-generators/contract.md` guarantee 8 |
 | S6 | Tests: vitest; `tests/` mirrors `src/`; every test file opens with a `Spec:` / `Covers:` header naming the feature and the ids it covers; contract ids never appear in test names; the default run is offline | `tests/packaging.test.ts:1–10`; `.claude/skills/high-value-tests/SKILL.md` |
 | S7 | In tool-neutral content, no single tool's mechanic may be named as the only possibility; name the behavior first and the tool as an attributed example | `specs/archived/canonical-role-templates/audit.md` AL-9 |
+
+> **S4 enforcement caveat**, recorded 2026-09-23 from `monorepo-mode`'s audit (finding
+> F6, accepted by the human as an amendment to `codex-generator` guarantee 16):
+> `tests/packaging.test.ts` now asserts the *key set* of declared dependencies rather
+> than their exact version pins, so it still detects a dependency appearing or
+> disappearing but no longer detects a version change. S4's rule is unchanged; only its
+> mechanical enforcement narrowed, and no replacement enforcement point has been chosen
+> yet.
 
 Per-role checklist: **executor** — S1, S2, S3, S4, S5, S6 before marking a task done;
 **auditor** — all seven, reported as findings under the existing severity ratings, never

@@ -36,6 +36,36 @@
  * new Q3 shifts every subsequent `multiselect` call's mock queue position —
  * exactly the risk `roadmap.md`'s risk table names and Task 3.6 addresses by
  * "renumbering deliberately."
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md Behavior Guarantees MC-25 (the repo-shape question,
+ * asked before any stack question, defaulting to single repo; the monorepo
+ * path/stack loop; flag presets skipped and reported) and MC-26 (the path
+ * prompt's `validate` callback delegates to `normalizeComponentPath`);
+ * intent.md SC15; audit.md Test Coverage T33, T34.
+ *
+ * ## The acceptance interface this file's new describe block establishes
+ *
+ * `contract.md` fixes the question's content (asked before any stack
+ * question, default single repo, monorepo loops a path then a stack question
+ * until an empty path) but leaves the exact widget choice an implementation
+ * detail, mirroring how this file's own pre-existing docblock already pins
+ * "Q3 = optional skills" as the acceptance interface for a similarly
+ * under-specified insertion point. This suite pins: the shape question is a
+ * `select` with two options (values containing "single" and "monorepo"),
+ * defaulting to the single-repo value; each monorepo loop iteration asks a
+ * `text` question for the path (whose `validate` callback is
+ * `normalizeComponentPath`) followed by a `text` question for that
+ * component's stack, repeating until an empty path is entered.
+ *
+ * No question in `runInitPrompts` asks about repo shape yet at red time, so
+ * every test in the new describe block below fails one of two genuine ways:
+ * the `select` mock is never called with a shape-shaped question at all (a
+ * `toHaveBeenCalledTimes` or `.mock.calls[N]` assertion failing outright), or
+ * the returned `HarnessConfig` carries neither `components` nor the expected
+ * `stack` shape, because today's six-question sequence has no way to produce
+ * either. Neither reflects a test-authoring bug.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fixtureTemplatesRoot } from './helpers/paths.js';
@@ -71,7 +101,16 @@ async function loadDefaults() {
 }
 
 describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => {
-  it('asks the six questions in order with the contracted widgets and defaults (Q3 = optional skills)', async () => {
+  // (specs/monorepo-mode, MC-25 — green-phase amendment.) The sequence this
+  // test walks is now SEVEN questions, not six: the repo-shape question is
+  // inserted after Q3 (optional skills) and before the per-role tier selects,
+  // and it is itself a `select`, so it shares the `select` mock queue with the
+  // five tier questions. `select` is therefore called 6 times — once for the
+  // shape question (call index 0) and once per enabled role (indices 1-5) —
+  // and the "every select offers the three cost tiers" sweep below must skip
+  // call 0, which offers repo shapes instead. The stack question stays last,
+  // so MC-25's "before any stack question" holds.
+  it('asks the seven questions in order with the contracted widgets and defaults (Q3 = optional skills, Q4 = repo shape)', async () => {
     const { runInitPrompts } = await import('../src/prompts.js');
     const { config } = await loadDefaults();
 
@@ -127,20 +166,25 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
       expect(skillOptionValues).not.toContain(coreId);
     }
 
-    // Q4 (was Q3): one select per enabled role, defaulting to that role's canonical tier.
-    expect(clackMocks.select).toHaveBeenCalledTimes(5);
-    for (const call of clackMocks.select.mock.calls) {
+    // Q4 (NEW — MC-25): the repo-shape question, a `select`, asked before the
+    // per-role tier selects and before the stack question.
+    // Q5 (was Q4, was Q3): one select per enabled role, defaulting to that
+    // role's canonical tier. Six `select` calls total: 1 shape + 5 roles.
+    expect(clackMocks.select).toHaveBeenCalledTimes(6);
+    const shapeSelectCall = clackMocks.select.mock.calls[0][0];
+    expect(shapeSelectCall.message).toMatch(/monorepo/i);
+    for (const call of clackMocks.select.mock.calls.slice(1)) {
       const options = call[0].options.map((o: any) => o.value);
       expect(options).toEqual(expect.arrayContaining(['most-capable', 'mid', 'cheapest']));
       expect(options.some((v: string) => /custom/i.test(v))).toBe(true);
     }
 
-    // Q5 (was Q4): gate selection — NOT required (fewer than three is permitted).
+    // Q6 (was Q5, was Q4): gate selection — NOT required (fewer than three is permitted).
     const gatesCall = clackMocks.multiselect.mock.calls[3][0];
     expect(gatesCall.required).toBe(false);
     expect(gatesCall.initialValues).toEqual(['post-specs', 'post-red-tests', 'post-audit']);
 
-    // Q6 (was Q5): stack — free text, empty allowed.
+    // Q7 (was Q6, was Q5): stack — free text, empty allowed.
     const stackCall = clackMocks.text.mock.calls[0][0];
     expect(stackCall.initialValue ?? '').toBe('');
 
@@ -253,6 +297,163 @@ describe('runInitPrompts — question order and widgets (G2, SC2) (T43)', () => 
       expect((err as any).code).toBe('CANCELLED');
       expect(clackMocks.cancel).toHaveBeenCalled();
     }
+  });
+});
+
+describe('runInitPrompts — the repo-shape question (MC-25, MC-26, T33, T34)', () => {
+  it('asks the shape question, defaulting to single repo; answering single repo leads to the unchanged stack question, and the result has no components', async () => {
+    const { runInitPrompts } = await import('../src/prompts.js');
+    const { config } = await loadDefaults();
+
+    clackMocks.multiselect
+      .mockResolvedValueOnce(['claude-code']) // tools
+      .mockResolvedValueOnce([
+        'sdd-architect',
+        'sdd-test-writer',
+        'sdd-executor',
+        'sdd-auditor',
+        'sdd-documentation',
+      ]) // roles
+      .mockResolvedValueOnce(['harny-standards']) // optional skills
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']); // gates
+    clackMocks.select.mockImplementation(async (opts: any) => {
+      // The shape question: two options, defaulting to the single-repo value.
+      expect(opts.options).toHaveLength(2);
+      expect(opts.initialValue).toBeDefined();
+      const singleRepoOption = opts.options.find((o: any) => /single/i.test(String(o.value) + String(o.label)));
+      expect(singleRepoOption).toBeDefined();
+      expect(opts.initialValue).toBe(singleRepoOption.value);
+      return singleRepoOption.value;
+    });
+    // Every role's model-tier question also uses `select` in this flow, so once
+    // the shape question is answered, fall back to the tier default for the
+    // rest of the calls.
+    let shapeAnswered = false;
+    const originalImpl = clackMocks.select.getMockImplementation()!;
+    clackMocks.select.mockImplementation(async (opts: any) => {
+      if (!shapeAnswered) {
+        shapeAnswered = true;
+        return originalImpl(opts);
+      }
+      return 'most-capable';
+    });
+    clackMocks.text.mockResolvedValue(''); // stack question: unchanged, empty
+
+    const result = await runInitPrompts(
+      { config, available: ['claude-code'], preset: {} },
+      { log: () => {}, warn: () => {} },
+    );
+
+    expect((result as any).components).toBeUndefined();
+    expect(result.stack).toBeUndefined();
+
+    // The shape select call happened before the stack text call.
+    const shapeCallOrder = clackMocks.select.mock.invocationCallOrder[0];
+    const stackCallOrder = clackMocks.text.mock.invocationCallOrder[0];
+    expect(shapeCallOrder).toBeLessThan(stackCallOrder);
+  });
+
+  it('answering monorepo loops a path question (validated by normalizeComponentPath) and a stack question until an empty path, requiring at least one component', async () => {
+    const { runInitPrompts } = await import('../src/prompts.js');
+    const { normalizeComponentPath } = await import('../src/config.js');
+    const { config } = await loadDefaults();
+
+    clackMocks.multiselect
+      .mockResolvedValueOnce(['claude-code'])
+      .mockResolvedValueOnce([
+        'sdd-architect',
+        'sdd-test-writer',
+        'sdd-executor',
+        'sdd-auditor',
+        'sdd-documentation',
+      ])
+      .mockResolvedValueOnce(['harny-standards'])
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']);
+
+    let shapeAnswered = false;
+    clackMocks.select.mockImplementation(async () => {
+      if (!shapeAnswered) {
+        shapeAnswered = true;
+        const monorepoValue = 'monorepo';
+        return monorepoValue;
+      }
+      return 'most-capable'; // per-role model tier, unrelated to this test
+    });
+
+    // Path/stack loop: '.' -> 'python', then 'apps/web' -> 'typescript', then
+    // an empty path to terminate. The path question's own `validate` callback
+    // must delegate to normalizeComponentPath (MC-26) — captured off the last
+    // text() call carrying one, so it does not depend on call-index brittleness
+    // for the assertion below.
+    let capturedValidate: ((raw: string) => string | undefined) | undefined;
+    const pathAndStackAnswers = ['.', 'python', 'apps/web', 'typescript', ''];
+    let callIndex = 0;
+    clackMocks.text.mockImplementation(async (opts: any) => {
+      if (typeof opts.validate === 'function') {
+        capturedValidate = opts.validate;
+      }
+      const answer = pathAndStackAnswers[callIndex];
+      callIndex += 1;
+      return answer;
+    });
+
+    const result = await runInitPrompts(
+      { config, available: ['claude-code'], preset: {} },
+      { log: () => {}, warn: () => {} },
+    );
+
+    expect((result as any).components).toEqual([
+      { path: '.', stack: 'python' },
+      { path: 'apps/web', stack: 'typescript' },
+    ]);
+    expect(result.stack).toBeUndefined();
+
+    // MC-26: the path prompt's validate callback IS normalizeComponentPath (or
+    // delegates to it) — an absolute path must be rejected the same way.
+    expect(capturedValidate).toBeDefined();
+    let rejectedAbsolute = false;
+    try {
+      const message = capturedValidate!('/abs/path');
+      rejectedAbsolute = typeof message === 'string' && message.length > 0;
+    } catch {
+      rejectedAbsolute = true;
+    }
+    expect(rejectedAbsolute).toBe(true);
+    expect(() => normalizeComponentPath('/abs/path', 'prompt')).toThrow();
+  });
+
+  it.each([
+    ['--stack', { tools: ['claude-code'], stack: 'typescript' }],
+    ['--component', { tools: ['claude-code'], components: [{ path: '.', stack: 'typescript' }] }],
+  ] as const)('a %s flag presets the shape question, skipping it and reporting through io.log', async (_label, preset) => {
+    const { runInitPrompts } = await import('../src/prompts.js');
+    const { config } = await loadDefaults();
+    const logs: string[] = [];
+
+    clackMocks.multiselect
+      .mockResolvedValueOnce([
+        'sdd-architect',
+        'sdd-test-writer',
+        'sdd-executor',
+        'sdd-auditor',
+        'sdd-documentation',
+      ])
+      .mockResolvedValueOnce(['harny-standards'])
+      .mockResolvedValueOnce(['post-specs', 'post-red-tests', 'post-audit']);
+    clackMocks.select.mockResolvedValue('most-capable');
+    clackMocks.text.mockResolvedValue(''); // stack question, when reached
+
+    await runInitPrompts(
+      { config, available: ['claude-code'], preset: preset as any },
+      { log: (m: string) => logs.push(m), warn: () => {} },
+    );
+
+    // The shape question is presented and skipped just like every other
+    // preset question in this file (preset.tools/preset.gates both log "…
+    // already set by a flag: …") — pinned here as "shape" appears somewhere
+    // in a reported log line, the same convention this file already
+    // establishes for every other preset question.
+    expect(logs.some((m) => /shape/i.test(m))).toBe(true);
   });
 });
 

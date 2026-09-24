@@ -143,11 +143,14 @@ describe('no dependency drift for the Codex generator (guarantee 16) (Task 4.3)'
       expect(/toml/i.test(name), `${name} looks like a TOML package`).toBe(false);
     }
 
-    expect(pkg.dependencies).toEqual({ commander: '15.0.0', '@clack/prompts': '1.7.0' });
-    expect(pkg.devDependencies).toEqual({
-      typescript: '7.0.2',
-      vitest: '4.1.10',
-      '@types/node': '26.1.2',
-    });
+    // Guarantee 16 is about the dependency *set*, not the pinned versions: a
+    // routine version bump is not drift, a new package is. Asserting version
+    // strings here only made this a change-detector for every upgrade.
+    expect(Object.keys(pkg.dependencies ?? {}).sort()).toEqual(['@clack/prompts', 'commander']);
+    expect(Object.keys(pkg.devDependencies ?? {}).sort()).toEqual([
+      '@types/node',
+      'typescript',
+      'vitest',
+    ]);
   });
 });

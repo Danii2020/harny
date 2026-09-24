@@ -314,15 +314,20 @@ function main() {
     }
   }
 
-  // 5. tests.
+  // 5. tests. (specs/monorepo-mode, MC-21.) Each command's working directory AND
+  // its `requires` probe are resolved from `command.dir ?? '.'`, relative to the
+  // runner's own `cwd` — `path.resolve(cwd, '.')` is `path.resolve(cwd)`, so a
+  // `checks.json` generated before this feature (no `dir` anywhere) produces
+  // byte-identical behavior.
   if (selected('tests')) {
     for (const command of commands) {
-      if (!requirementMet(command.requires, cwd)) {
+      const commandCwd = path.resolve(cwd, command.dir ?? '.');
+      if (!requirementMet(command.requires, commandCwd)) {
         emit(command.id, 'skip', 'requirement not met, skipping');
         continue;
       }
       const [binary, ...rest] = command.argv;
-      const result = spawnSync(binary, rest, { cwd, stdio: 'pipe', encoding: 'utf8' });
+      const result = spawnSync(binary, rest, { cwd: commandCwd, stdio: 'pipe', encoding: 'utf8' });
       if (result.status === 0) {
         emit(command.id, 'ok');
       } else {

@@ -1,7 +1,7 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-23 by documentation-role-completion (archive mode: feature archived, capability docs updated)
+> Last synced: 2026-09-23 by monorepo-mode (archive mode: feature archived, capability docs updated, ADRs 0038–0042 registered)
 
 ## Capabilities
 
@@ -10,10 +10,10 @@
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
 | pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/), [monorepo-mode](../archived/monorepo-mode/) |
 
 ## Keyword lookup
 
@@ -29,6 +29,12 @@
 | merge-write / merge-marked | cli-init |
 | git root / repository root | cli-init, feedback-controls |
 | monorepo / subdirectory install | feedback-controls, cli-init |
+| components | feedback-controls, cli-init |
+| monorepo mode | feedback-controls |
+| --component | cli-init |
+| per-component dispatch | feedback-controls |
+| longest-prefix match | feedback-controls |
+| component directory / dir field | readiness-checks, feedback-controls |
 | write root | cli-init |
 | workflow file name | feedback-controls |
 | human gate / verdict | pipeline-roles |
@@ -102,6 +108,7 @@
 | feedback-path-hygiene | [specs/archived/feedback-path-hygiene/](../archived/feedback-path-hygiene/) | [feedback-controls.md](./feedback-controls.md), [readiness-checks.md](./readiness-checks.md) |
 | dogfood-quick-fixes | [specs/archived/dogfood-quick-fixes/](../archived/dogfood-quick-fixes/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 | documentation-role-completion | [specs/archived/documentation-role-completion/](../archived/documentation-role-completion/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [readiness-checks.md](./readiness-checks.md) |
+| monorepo-mode | [specs/archived/monorepo-mode/](../archived/monorepo-mode/) | [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 
 ## Decisions (ADR registry)
 
@@ -144,6 +151,11 @@
 | 0035 | Verify the archive with the existing spec-state detector via a family selector, not with new advisory prose or a second check | Accepted | readiness-checks | `specs/archived/documentation-role-completion/decisions/0035-family-selector-not-new-check.md` |
 | 0036 | Raise `sdd-documentation` to `mid`; leave `cheapest` unoccupied rather than reassigning another role to it | Accepted | pipeline-roles | `specs/archived/documentation-role-completion/decisions/0036-raise-documentation-tier-to-mid.md` |
 | 0037 | Guard the untracked live conductor with a presence-gated parity test rather than tracking the file or leaving it unguarded | Accepted | pipeline-roles | `specs/archived/documentation-role-completion/decisions/0037-presence-gated-conductor-guard.md` |
+| 0038 | `components` replaces `stack`, mutually exclusive, never a fallback | Accepted | cli-init | `specs/archived/monorepo-mode/decisions/0038-components-replaces-stack.md` |
+| 0039 | Longest segment-prefix match; an unassigned path is dropped with a notice | Accepted | feedback-controls | `specs/archived/monorepo-mode/decisions/0039-longest-segment-prefix-match.md` |
+| 0040 | The component list travels on the payload, not as a new `CiPlacement` field | Accepted | cli-init | `specs/archived/monorepo-mode/decisions/0040-component-list-on-payload-not-ciplacement.md` |
+| 0041 | A `whole-project` command runs once per component with an assigned touched path | Accepted | feedback-controls | `specs/archived/monorepo-mode/decisions/0041-whole-project-per-affected-component.md` |
+| 0042 | Component scoping for readiness is a `dir` field on the generated checks entry, never on `CommandSpec` | Accepted | readiness-checks | `specs/archived/monorepo-mode/decisions/0042-dir-on-generated-checks-entry.md` |
 
 ## Open reservations
 
@@ -198,6 +210,19 @@
 | RC-AL2 | The acceptance-substring tests pinning the documentation role's completion-precondition text are looser than the guarantee itself; verified to hold today only by independent auditor re-derivation. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-2 | pipeline-roles |
 | RC-AL3 | The per-generator propagation test for the completion-precondition text pins a single anchor substring rather than the full element list, weaker than its "verbatim" guarantee; verified to hold today only by independent auditor re-derivation across all five scaffolded artifacts. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-3 | pipeline-roles |
 | RC-AL5 | A misconfigured `specs.dir` yields a green `--only spec-state` run indistinguishable from a genuinely clean repo; pre-existing family-4 behavior deliberately reused, not introduced, by this feature. | LOW | `specs/archived/documentation-role-completion/audit.md` AL-5 | readiness-checks |
+| MR-F2 | The `stack`/`components` exclusivity rule is enforced on the writing path only; `validateConfig` has no check, so a hand-edited `.sdd/harness.json` carrying both fields is accepted silently by `npx harny doctor`, with `components` winning. harny itself never writes both. | HIGH (deferred by human decision) | `specs/archived/monorepo-mode/audit.md` F2, C1, A3 | cli-init |
+| MR-F3 | The turn-mode half of the "component directory absent + `requires: {}`" error row is reachable and untested; the earlier "unreachable" reasoning is disproved and corrected in audit row T39a. | HIGH (coverage, deferred by human decision) | `specs/archived/monorepo-mode/audit.md` F3, T39a | feedback-controls |
+| MR-F4 | A declared single `.` component (`--component .=python`) renders the conductor's project-configuration block with neither a `Project stack:` line nor a `Component:` line — and that is exactly the shape the exclusivity error message recommends. | MEDIUM (deferred by human decision) | `specs/archived/monorepo-mode/audit.md` F4, C16, A4 | cli-init |
+| MR-F5 | All five generators' `renderHook` ship a `payload.commands ?? profile.commands` fallback rather than the contracted literal; ruled acceptable because the field is non-optional and the fallback is unreachable in production, but five test fixtures now build payloads missing a required field. | MEDIUM (design, deferred) | `specs/archived/monorepo-mode/audit.md` F5, C15 | feedback-controls |
+| MR-F6 | `tests/packaging.test.ts` now asserts the dependency key set rather than exact version pins, so `AGENTS.md` S4 has lost mechanical version-drift detection and has no replacement enforcement point. Accepted by the human as an amendment to `codex-generator` guarantee 16. | MEDIUM (accepted amendment, consequence open) | `specs/archived/monorepo-mode/audit.md` F6 | cli-init |
+| MR-F8 | The per-turn feedback hook could not be confirmed to have fired during `monorepo-mode`'s implementation (`.sdd/feedback/.turns/` carried a nine-day-stale mtime). The human should confirm the hooks were live for those sessions. | MEDIUM (process, human-gated) | `specs/archived/monorepo-mode/audit.md` F8 | feedback-controls |
+| MR-F7 | MC-5's "no single-repo guard at any rendering site" cannot be literally held, because its own MC-14 mandates different step-name text for more than one component; byte-identity is proven by golden comparison instead. Amend the wording, not the code. | LOW (wording) | `specs/archived/monorepo-mode/audit.md` F7, C5 | feedback-controls |
+| MR-F9 | CI had not exercised `monorepo-mode` at sign-off (nothing committed); a green run on the shipping commit is still required. | LOW (process) | `specs/archived/monorepo-mode/audit.md` F9 | cli-init |
+| MR-F10 | A touched path outside the install directory now resolves to no component and is dropped with the notice, where it was previously passed through — so "the dropped count is always 0 for a single `.` component" is not strictly true. Subdirectory installs only; no artifact changes. | LOW | `specs/archived/monorepo-mode/audit.md` F10 | feedback-controls |
+| MR-F11 | The interactive repo-shape question is asked fourth (before the stack question), not literally first as its contract headline says, and carries no `Q` number in the prompt comment scheme. | LOW (wording) | `specs/archived/monorepo-mode/audit.md` F11, C25 | cli-init |
+| MR-F13 | The "N is always 0" regression test lacks a positive control: it would also pass on a runner that dispatched nothing. Weak rather than vacuous. | LOW (test quality) | `specs/archived/monorepo-mode/audit.md` F13, A5 | feedback-controls |
+| MR-MC20 | The readiness id suffix `:<path>` follows the `isSingleRootComponent` boundary, so a lone non-`.` component gets `npm-test:apps/web` where MC-20's original wording implied a bare id. Recorded so the gap is not rediscovered as a defect. | LOW (wording) | `specs/archived/monorepo-mode/audit.md` C20 | readiness-checks |
+| MR-S5 | The single-repo predicate is duplicated as an inline expression at `src/generators/markdown-yaml.ts:62`, because an ESM import is top-level and would fail the component-vocabulary grep gate over `src/generators/**`. Ruled the correct disposition, but unguarded: nothing turns red if `src/engine.ts`'s predicate changes and that line does not. Deleted by MR-F4's fix. | LOW (residual) | `specs/archived/monorepo-mode/audit.md` round-2 Audit Log ruling, S5 | cli-init |
 
 ## Notes
 

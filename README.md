@@ -122,11 +122,74 @@ npx harny init apps/web --yes --stack typescript
 # - The CI workflow runs its checks scoped to the `apps/web` component
 ```
 
+### One install, several components
+
+A repository whose directories are written in different stacks no longer needs one
+harny install per stack. A single install can declare **components** — a directory and
+the stack it is written in — through the repeatable `--component <path>=<stack>` flag,
+or by answering "Monorepo" to the repo-shape question in interactive mode:
+
+```sh
+# One install at the repository root covering a Python backend and a TypeScript frontend
+npx harny init /path/to/repo --yes --component .=python --component apps/web=typescript
+```
+
+That install writes exactly the same artifact set a single-stack install writes: one
+`.sdd/`, one copy of every role and skill per distinct skill root, one feedback runner,
+one readiness runner, one CI workflow, one spec-schema set — and therefore one `specs/`
+and one ADR sequence for the whole repository. Components change what those artifacts
+*do*, never how many of them there are:
+
+- **Per-turn feedback** — each touched path is assigned to the single component whose
+  declared directory is its longest **segment**-prefix, so `apps/web-admin/x.ts` resolves
+  to `apps/web-admin` and never to `apps/web`. That component's commands run with that
+  component's directory as their working directory, and see only that component's paths.
+  `.` is an ordinary component that wins only when nothing longer matches.
+- **Whole-project commands** (`--whole-project`, which is what CI runs) run once per
+  component that has at least one assigned touched path, from that component's own
+  directory — not once per declared component.
+- **A touched path belonging to no declared component** runs no command. It is reported
+  once on stderr with the number of dropped paths, never reassigned to a default and
+  never silently discarded.
+- **A declared component whose directory is absent** is skipped with a notice naming it;
+  harny never creates the directory.
+- **`npx harny doctor`** runs each component's test command from that component's own
+  directory, and the direct runner invocation agrees with the verb.
+- **CI stays one workflow with one job** at the repository root: one runner step for the
+  whole install, plus at most one dependency-install step per component, each scoped with
+  `working-directory`. No build matrix, no second workflow, no path filters.
+- **An unrecognized component stack is inert, not fatal** — every artifact is still
+  written, that component simply contributes no commands, and `init` warns once naming
+  the component path and the value.
+
+`--stack` and `--component` are mutually exclusive: supplying both in one `init`
+invocation is a usage error naming both fields, and `.sdd/harness.json` carries either
+`stack` or `components`, never both.
+
+**An install that declares no components is unchanged, byte for byte.** `--stack
+typescript` (or no stack at all) produces exactly the paths and exactly the file contents
+it produced before components existed, and an existing `.sdd/harness.json` carrying only
+`stack` keeps loading and round-tripping unchanged — never migrated, never warned about.
+This is held by golden-byte regression tests over the whole generated tree, not by
+convention.
+
+**Two known gaps, recorded in the feature's audit and deliberately deferred:**
+
+- A **hand-edited** `.sdd/harness.json` carrying *both* `stack` and `components` is
+  accepted silently by `npx harny doctor`, with `components` taking effect. The
+  mutual-exclusivity check runs on the writing path, not on the reading path. harny
+  itself never writes both fields, so this is reachable only by editing the file by hand.
+- A single-component install declared as `--component .=<stack>` renders the generated
+  conductor's project-configuration block with **neither** a project-stack line nor a
+  component line, so an agent reading that block cannot tell which stack the project is.
+  Write that shape as `--stack <stack>` until this is fixed.
+
 ### Basic usage examples
 
 ```sh
-# Interactive mode — asks five questions: which tool(s), which roles,
-# model per role, active gates, and project stack.
+# Interactive mode — asks seven questions: which tool(s), which roles, which
+# optional skills, single repo or monorepo, model per role, active gates, and
+# project stack (for a monorepo, one path/stack pair per component instead).
 npx harny init /path/to/target-repo
 
 # Non-interactive with defaults:
@@ -154,7 +217,8 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `--skills <list>` — optional skill ids to scaffold: `all`, `none`, or comma list of `harny-adr`/`harny-standards` (default: `harny-standards` only; the eight core skills are always included)
 - `--model <role>=<value>` — repeatable; `<value>` is a cost tier or a literal model id
 - `--gates <list>` — comma-separated gate ids, `all`, or `none` (default: all three)
-- `--stack <name>` — project stack (captured only, for future MCP provisioning)
+- `--stack <name>` — project stack (captured only, for future MCP provisioning); mutually exclusive with `--component`
+- `--component <path>=<stack>` — repeatable; declares one component of a monorepo install (a directory and the stack it is written in), e.g. `--component .=python --component apps/web=typescript` for one install covering a Python backend and a TypeScript frontend. Mutually exclusive with `--stack`. The runner resolves each touched path to its component by longest **segment**-prefix match and runs that component's commands from that component's own directory — see "One install, several components" above and `templates/hooks/README.md`
 - `--config <path>` — read configuration from JSON file instead of prompting
 - `--yes` — accept all defaults, skip prompts and final confirmation
 - `--dry-run` — print planned file list; write nothing

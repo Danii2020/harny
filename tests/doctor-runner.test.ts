@@ -60,6 +60,22 @@
  * non-zero exit for a missing `README.md`, and the summary line still reports
  * only three counts. That is the expected red-phase failure mode here, not a
  * bug in these tests' own setup.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers: contract.md § Interfaces "src/doctor.ts" (`ScopedReadinessCommand`);
+ * Behavior Guarantee MC-21; Error Handling Contract row for a `checks.json`
+ * entry whose `dir` names a directory that does not exist; audit.md Test
+ * Coverage T21.
+ *
+ * `run-doctor.mjs`'s family 5 today always resolves a command's `cwd` and its
+ * `requires` probe against the runner's own `cwd`, never against a `dir` field
+ * on the command entry (that field does not exist in `checks.json`'s schema
+ * yet). The describe block below is therefore expected to fail on a genuine
+ * shape mismatch — a command that should `ok` (because its `dir`-scoped probe
+ * and cwd both resolve inside a subdirectory) instead `skip`s or `fail`s,
+ * because the runner evaluated everything against the repo root — not a
+ * test-authoring bug.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -771,5 +787,80 @@ describe('a failing repo-readiness outcome writes nothing to the target repo (T1
 
     expect(result.code).toBe(2);
     expect(after).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/monorepo-mode
+// ---------------------------------------------------------------------------
+
+describe('family 5 resolves a command\'s cwd AND its requires probe from command.dir ?? "." (MC-21, T21)', () => {
+  it('a command with dir: "services/api" runs from, and probes against, that subdirectory rather than the runner\'s own cwd', async () => {
+    const repoDir = await makeTempRepo();
+    const apiDir = path.join(repoDir, 'services', 'api');
+    await fs.mkdir(apiDir, { recursive: true });
+    // Present ONLY inside services/api — both the probe gate and the spawned
+    // script's own existence check key off this file, so either one still
+    // resolving against the repo root (rather than the "dir") makes this fail.
+    await fs.writeFile(path.join(apiDir, 'only-here.txt'), 'marker\n', 'utf8');
+
+    const checks = {
+      version: 1,
+      specs: SPECS,
+      require: [],
+      commands: [
+        {
+          id: 'scoped-in-api-dir',
+          kind: 'test',
+          argv: ['node', '-e', "process.exit(require('fs').existsSync('only-here.txt') ? 0 : 1)"],
+          pathMode: 'whole-project',
+          requires: { anyFile: ['only-here.txt'] },
+          dir: 'services/api',
+        },
+        {
+          id: 'unscoped-at-root',
+          kind: 'test',
+          argv: ['node', '-e', "process.exit(require('fs').existsSync('only-here.txt') ? 0 : 1)"],
+          pathMode: 'whole-project',
+          requires: {},
+        },
+      ],
+    };
+    const checksFile = await writeChecksFile(repoDir, checks);
+
+    const result = await runRunner({ cwd: repoDir, args: ['--checks', checksFile] });
+
+    const stdout = result.stdout.toLowerCase();
+    expect(stdout).toMatch(/ok\s+scoped-in-api-dir/);
+    // Without a dir, the runner's own cwd is used (today's unchanged default),
+    // where only-here.txt does not exist — the spawned script exits 1, a FAIL.
+    expect(stdout).toMatch(/fail\s+unscoped-at-root/);
+  });
+
+  it('an entry with no dir at all is unaffected — the absent-means-today\'s-default posture for a pre-feature checks.json', async () => {
+    const repoDir = await makeTempRepo();
+    await fs.writeFile(path.join(repoDir, 'root-marker.txt'), 'marker\n', 'utf8');
+
+    const checks = {
+      version: 1,
+      specs: SPECS,
+      require: [],
+      // A checks.json exactly as generated before this feature: no command
+      // entry carries a "dir" key at all.
+      commands: [
+        {
+          id: 'root-scoped',
+          kind: 'test',
+          argv: ['node', '-e', "process.exit(require('fs').existsSync('root-marker.txt') ? 0 : 1)"],
+          pathMode: 'whole-project',
+          requires: { anyFile: ['root-marker.txt'] },
+        },
+      ],
+    };
+    const checksFile = await writeChecksFile(repoDir, checks);
+
+    const result = await runRunner({ cwd: repoDir, args: ['--checks', checksFile] });
+
+    expect(result.stdout.toLowerCase()).toMatch(/ok\s+root-scoped/);
   });
 });

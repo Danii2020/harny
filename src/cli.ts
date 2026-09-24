@@ -8,8 +8,15 @@ import process from 'node:process';
 import { Command, CommanderError } from 'commander';
 import { EXIT, HarnessError, isHarnessError } from './errors.js';
 import type { ExitCode } from './errors.js';
-import { parseGateList, parseModelAssignment, parseRoleList, parseSkillList, parseToolList } from './config.js';
-import type { PartialHarnessConfig, RoleOverride } from './config.js';
+import {
+  parseComponentAssignment,
+  parseGateList,
+  parseModelAssignment,
+  parseRoleList,
+  parseSkillList,
+  parseToolList,
+} from './config.js';
+import type { ComponentSelection, PartialHarnessConfig, RoleOverride } from './config.js';
 import type { GateId, OptionalSkillId, RoleId, ToolId } from './vocabulary.js';
 import { runInit } from './init.js';
 import type { InitIO } from './init.js';
@@ -31,6 +38,9 @@ interface InitCommandOptions {
   readonly gates?: string;
   readonly skills?: string;
   readonly stack?: string;
+  /** (specs/monorepo-mode.) Repeatable `--component <path>=<stack>`, accumulated
+   *  raw, exactly as `--model` accumulates into `opts.model`. */
+  readonly component: readonly string[];
   readonly config?: string;
   readonly yes?: boolean;
   readonly dryRun?: boolean;
@@ -69,6 +79,7 @@ function buildOverrides(opts: InitCommandOptions): PartialHarnessConfig {
     gates?: readonly GateId[];
     optionalSkillIds?: readonly OptionalSkillId[];
     stack?: string;
+    components?: readonly ComponentSelection[];
   } = {};
 
   if (opts.tools !== undefined) {
@@ -89,6 +100,12 @@ function buildOverrides(opts: InitCommandOptions): PartialHarnessConfig {
   }
   if (opts.stack !== undefined) {
     overrides.stack = opts.stack;
+  }
+  // (specs/monorepo-mode, MC-24.) `--component` is repeatable and REPLACES
+  // wholesale — the same posture `--roles`/`--gates` already take — never
+  // merged into a `--config` file's own list.
+  if (opts.component.length > 0) {
+    overrides.components = opts.component.map((raw) => parseComponentAssignment(raw));
   }
 
   return overrides;
@@ -183,6 +200,12 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('--gates <list>', 'Comma list of gate ids, "all", or "none"')
     .option('--skills <list>', 'Comma list of optional skill ids, "all", or "none"')
     .option('--stack <name>', 'Project stack (resolves the feedback hook/CI profile; see agent-feedback-controls)')
+    .option(
+      '--component <assignment>',
+      'Repeatable: <path>=<stack>; declares a monorepo component. Mutually exclusive with --stack',
+      collectModel,
+      [] as string[],
+    )
     .option('--config <path>', 'JSON config file; implies non-interactive')
     .option('-y, --yes', 'Accept defaults, skip all prompts and the final confirmation')
     .option('--dry-run', 'Print the write plan; write nothing')

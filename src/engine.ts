@@ -2,6 +2,7 @@
  * Turns a `HarnessConfig` + `CanonicalTemplates` into a `HarnessPayload` —
  * the typed data every generator consumes.
  */
+import path from 'node:path';
 import { HarnessError } from './errors.js';
 import { serializeConfig } from './config.js';
 import type { HarnessConfig } from './config.js';
@@ -22,7 +23,7 @@ import {
   TOUCHED_FILES_DIR,
   resolveStackProfile,
 } from './feedback.js';
-import type { FeedbackInstall, StackProfile } from './feedback.js';
+import type { FeedbackCommand, FeedbackInstall, StackProfile } from './feedback.js';
 import { ciWorkflowPathFor } from './repo.js';
 import { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END, yamlQuote } from './generators/markdown-yaml.js';
 import { wrapPosixShellArg } from './generators/json.js';
@@ -48,6 +49,11 @@ export interface ProjectConfigSummary {
   readonly specSchemaDir: string;
   /** True when fewer than all three gates are active. */
   readonly reducedGates: boolean;
+  /** (specs/monorepo-mode — NEW.) `resolveComponents(config)`'s result. ALWAYS
+   *  present and ALWAYS non-empty — for a single-repo config it is the one
+   *  implicit `.` component. `stack`/`stackProfile` are left in place unchanged
+   *  precisely so `renderProjectConfigBlock`'s existing lines do not move (MC-16). */
+  readonly components: readonly ResolvedComponent[];
 }
 
 export interface ConductorPayload {
@@ -68,6 +74,114 @@ export interface HookPayload {
   readonly profile?: StackProfile;
   /** Canonical runner script contents, verbatim from `templates/hooks/`. */
   readonly runner: HookRunnerTemplate;
+  /** (specs/monorepo-mode — NEW.) The exact value each generator serializes onto
+   *  its hook's `--commands` argument. Precomputed once by `runInit` via
+   *  `buildCommandsPayload`, so no generator ever derives it and no generator
+   *  ever learns what a component is (MC-15, SC14). */
+  readonly commands: CommandsPayload;
+}
+
+/** (specs/monorepo-mode.) A `ComponentSelection` with its stack already resolved.
+ *  The one shape every downstream consumer reads, so no consumer branches on
+ *  whether the install declared components (MC-3). */
+export interface ResolvedComponent {
+  readonly path: string;
+  readonly stack?: string;
+  /** `undefined` for a blank or unrecognized stack — the per-component escape
+   *  hatch (`feedback-controls.md` FC-2). */
+  readonly profile?: StackProfile;
+}
+
+function compareComponentPath(a: { readonly path: string }, b: { readonly path: string }): number {
+  if (a.path < b.path) return -1;
+  if (a.path > b.path) return 1;
+  return 0;
+}
+
+/** (specs/monorepo-mode.) The unification point (MC-3). Returns `config.components`
+ *  resolved, in their canonical order, when present; otherwise exactly one entry,
+ *  `{ path: '.', stack: config.stack, profile: resolveStackProfile(config.stack) }`.
+ *  Total, pure, and NEVER empty. */
+export function resolveComponents(config: HarnessConfig): readonly ResolvedComponent[] {
+  if (config.components !== undefined && config.components.length > 0) {
+    return config.components
+      .map((component) => ({
+        path: component.path,
+        stack: component.stack,
+        profile: resolveStackProfile(component.stack),
+      }))
+      .sort(compareComponentPath);
+  }
+  return [{ path: '.', stack: config.stack, profile: resolveStackProfile(config.stack) }];
+}
+
+/** (specs/monorepo-mode, MC-5 / MC-20.) THE single-repo boundary, owned here and
+ *  imported — never re-derived at a call site (`AGENTS.md` S5). True iff the
+ *  resolved list is exactly one component whose path is `.`, which is the shape a
+ *  `components`-free config resolves to (MC-3) and therefore the one and only
+ *  case whose rendered bytes must equal today's.
+ *
+ *  A single component that is NOT at `.` is a real monorepo-mode install and must
+ *  be scoped like one. Gating on `components.length > 1` instead silently runs
+ *  that install's commands at the install root (`audit.md` finding F1).
+ *
+ *  Deliberately distinct from `hasMultipleComponents`, which is MC-14's different
+ *  boundary. Do not substitute one for the other. */
+export function isSingleRootComponent(components: readonly { readonly path: string }[]): boolean {
+  return components.length === 1 && components[0].path === '.';
+}
+
+/** (specs/monorepo-mode, MC-14.) MC-14's boundary, which is NOT
+ *  `isSingleRootComponent`'s. MC-14 widens a CI step's NAME only when there is
+ *  more than one component to disambiguate in that name, so a single non-`.`
+ *  component keeps today's unsuffixed step names while still being scoped by
+ *  `working-directory` (which is `stepWorkingDirectory`'s job, not this
+ *  predicate's). Named here so the two boundaries are told apart by name rather
+ *  than by re-derived expression (`AGENTS.md` S5). */
+export function hasMultipleComponents(components: readonly { readonly path: string }[]): boolean {
+  return components.length > 1;
+}
+
+/** (specs/monorepo-mode.) One component's slice of the runner wire format. */
+export interface ComponentCommands {
+  /** POSIX, relative to the runner's own `cwd` (the install directory). */
+  readonly dir: string;
+  /** The component's resolved profile's commands, or `[]` when it resolved none. */
+  readonly commands: readonly FeedbackCommand[];
+}
+
+/** (specs/monorepo-mode.) What travels to the runner on `--commands`. The legacy
+ *  bare-array form is not a compatibility shim to be removed later: it is the
+ *  canonical encoding of the one-component-at-`.` case, and the reason every
+ *  single-repo artifact stays byte-identical (MC-5). */
+export type CommandsPayload =
+  | readonly FeedbackCommand[]
+  | { readonly components: readonly ComponentCommands[] };
+
+/** (specs/monorepo-mode.) Bare array iff `isSingleRootComponent(components)`; the
+ *  object form otherwise, carrying EVERY declared component including those that
+ *  resolved no profile (MC-6). Pure. */
+export function buildCommandsPayload(components: readonly ResolvedComponent[]): CommandsPayload {
+  if (isSingleRootComponent(components)) {
+    return components[0].profile?.commands ?? [];
+  }
+  return {
+    components: components.map((component) => ({
+      dir: component.path,
+      commands: component.profile?.commands ?? [],
+    })),
+  };
+}
+
+/** (specs/monorepo-mode.) The `working-directory:` value for a step that must run
+ *  inside `componentPath`, for an install sitting at `prefix` inside its
+ *  repository. `path.posix.join` then `path.posix.normalize`; `'.'` maps to `''`,
+ *  and an empty result means the caller emits no `working-directory:` line at
+ *  all — which is what keeps a root install's generated block byte-identical
+ *  (MC-13). */
+export function stepWorkingDirectory(prefix: string, componentPath: string): string {
+  const joined = path.posix.normalize(path.posix.join(prefix, componentPath));
+  return joined === '.' ? '' : joined;
 }
 
 export interface HarnessPayload {
@@ -131,6 +245,7 @@ export function buildPayload(config: HarnessConfig, templates: CanonicalTemplate
     stackProfile: resolveStackProfile(config.stack),
     specSchemaDir: SPEC_SCHEMA_DIR,
     reducedGates: config.gates.length < GATE_IDS.length,
+    components: resolveComponents(config),
   };
 
   const conductor: ConductorPayload = { template: templates.conductor, project };
@@ -294,6 +409,24 @@ function renameCanonicalWorkflow(template: string, workflowName: string): string
   return lines.join('\n');
 }
 
+/** (specs/monorepo-mode.) Generalizes `noBuiltinProfileNotice` to a component
+ *  list. This is a CI step's notice TEXT, so it takes MC-14's boundary
+ *  (`hasMultipleComponents`), not MC-5/MC-20's (`isSingleRootComponent`): with a
+ *  single component — at `.` or not — there is no second stack to disambiguate,
+ *  so naming the path would add nothing and would move a byte MC-14 freezes. For
+ *  more than one component, none of which resolved a profile, it names every
+ *  component's declared stack. */
+function noBuiltinProfileNoticeForComponents(components: readonly ResolvedComponent[]): string {
+  if (!hasMultipleComponents(components)) {
+    return noBuiltinProfileNotice(components[0]?.stack);
+  }
+  const named = components.map((component) => `${component.path}='${component.stack ?? ''}'`).join(', ');
+  return (
+    `harny-feedback: no built-in profile resolved for any component (${named}). ` +
+    `Built-in profiles: ${STACK_PROFILE_IDS.join(', ')}. No lint/typecheck commands run.`
+  );
+}
+
 /** Renders `templates/ci/harny-feedback.yml`'s generated block (BG-10, rewritten
  *  by A1): at most one dependency-install step, emitted only when the resolved
  *  profile declares `ciInstall`, followed by exactly one runner-invocation step
@@ -309,34 +442,74 @@ function renameCanonicalWorkflow(template: string, workflowName: string): string
  *  byte-for-byte (CR-1). For a non-empty prefix, every generated step gains a
  *  `working-directory: <yamlQuote(prefix)>` line immediately after its `run:`
  *  line (CR-2), and the canonical `name:` line is rewritten via
- *  `renameCanonicalWorkflow` (CR-3). */
+ *  `renameCanonicalWorkflow` (CR-3).
+ *
+ *  **(MODIFIED — monorepo-mode.)** Takes the full resolved component list
+ *  (`ResolvedComponent[]`, MC-3's one-or-more, never-empty shape) rather than a
+ *  single profile/stack pair. At most one install step per component that
+ *  resolved a profile declaring `ciInstall`, in canonical component order, each
+ *  scoped with `stepWorkingDirectory(placement.prefix, component.path)`; then
+ *  exactly one runner-invocation step, scoped to `placement.prefix` (the runner
+ *  resolves components itself), embedding `buildCommandsPayload` of only the
+ *  RESOLVED components (a component with no profile contributes zero commands,
+ *  so naming it in the CI step's inline JSON would add nothing but noise — MC-13).
+ *  For a single component this is exactly today's shape by construction: the
+ *  suffix/list-join formulas below degrade to today's single-name text when
+ *  there is only one name to join (MC-5, MC-14). */
 function renderCiWorkflow(
   template: string,
-  profile: StackProfile | undefined,
-  stack: string | undefined,
+  components: readonly ResolvedComponent[],
   placement: CiPlacement,
 ): string {
+  const resolvedComponents = components.filter((component) => component.profile !== undefined);
+  // (specs/monorepo-mode, MC-14.) Step NAMES widen at MC-14's boundary — more
+  // than one component — which is deliberately NOT MC-5/MC-20's
+  // `isSingleRootComponent`. Directory scoping is separate and unconditional:
+  // `stepWorkingDirectory` below scopes a lone non-`.` component correctly while
+  // its step name stays byte-identical to today's.
+  const multiComponent = hasMultipleComponents(components);
   const bodyLines: string[] = [];
-  if (profile) {
-    if (profile.ciInstall && profile.ciInstall.length > 0) {
-      bodyLines.push(`- name: ${yamlQuote(`Install dependencies (${profile.displayName})`)}`);
-      bodyLines.push(`  run: ${yamlQuote(renderInstallGateChain(profile.ciInstall))}`);
-      if (placement.prefix !== '') {
-        bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
-      }
-    }
-    bodyLines.push(`- name: ${yamlQuote(`harny feedback (${profile.displayName})`)}`);
-    bodyLines.push(`  run: ${yamlQuote(renderRunnerInvocation(profile.commands))}`);
+
+  if (resolvedComponents.length === 0) {
+    bodyLines.push(`- name: ${yamlQuote('harny-feedback notice')}`);
+    bodyLines.push(
+      `  run: ${yamlQuote(`echo ${JSON.stringify(noBuiltinProfileNoticeForComponents(components))}`)}`,
+    );
     if (placement.prefix !== '') {
       bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
     }
   } else {
-    bodyLines.push(`- name: ${yamlQuote('harny-feedback notice')}`);
-    bodyLines.push(`  run: ${yamlQuote(`echo ${JSON.stringify(noBuiltinProfileNotice(stack))}`)}`);
+    for (const component of resolvedComponents) {
+      const profile = component.profile as StackProfile;
+      if (profile.ciInstall && profile.ciInstall.length > 0) {
+        const installName = multiComponent
+          ? `Install dependencies (${profile.displayName} — ${component.path})`
+          : `Install dependencies (${profile.displayName})`;
+        bodyLines.push(`- name: ${yamlQuote(installName)}`);
+        bodyLines.push(`  run: ${yamlQuote(renderInstallGateChain(profile.ciInstall))}`);
+        const workingDirectory = stepWorkingDirectory(placement.prefix, component.path);
+        if (workingDirectory !== '') {
+          bodyLines.push(`  working-directory: ${yamlQuote(workingDirectory)}`);
+        }
+      }
+    }
+
+    const displayNames: string[] = [];
+    for (const component of resolvedComponents) {
+      const displayName = (component.profile as StackProfile).displayName;
+      if (!displayNames.includes(displayName)) {
+        displayNames.push(displayName);
+      }
+    }
+    bodyLines.push(`- name: ${yamlQuote(`harny feedback (${displayNames.join(', ')})`)}`);
+    bodyLines.push(
+      `  run: ${yamlQuote(renderRunnerInvocation(buildCommandsPayload(resolvedComponents)))}`,
+    );
     if (placement.prefix !== '') {
       bodyLines.push(`  working-directory: ${yamlQuote(placement.prefix)}`);
     }
   }
+
   const spliced = spliceGeneratedYamlBlock(template, bodyLines);
   if (placement.prefix === '') {
     return spliced;
@@ -374,14 +547,15 @@ export function buildFeedbackFiles(
     return [];
   }
 
-  const profile = payload.conductor.project.stackProfile;
-  const stack = payload.config.stack;
-
   return [
     { path: FEEDBACK_RUNNER_PATH, contents: payload.hookRunner.contents },
     {
       path: ciWorkflowPathFor(placement.prefix),
-      contents: renderCiWorkflow(payload.ciWorkflowTemplate.contents, profile, stack, placement),
+      contents: renderCiWorkflow(
+        payload.ciWorkflowTemplate.contents,
+        payload.conductor.project.components,
+        placement,
+      ),
       root: 'repo',
     },
     { path: TOUCHED_FILES_GITIGNORE_PATH, contents: '*\n!.gitignore\n' },

@@ -572,6 +572,16 @@ apply across **five** generators. The following are additional and feature-local
     byte-identical after this feature. In particular **no TOML parsing or serialization
     package is added**, in either list. (G9)
 
+    > **Amendment, 2026-09-23, accepted by the human at `monorepo-mode`'s post-audit
+    > gate (that feature's audit finding F6).** The guarantee's *rule* is unchanged;
+    > its *enforcement* narrowed. `tests/packaging.test.ts` now asserts the **key set**
+    > of both dependency lists rather than their exact version pins, so a package
+    > appearing or disappearing is still detected but a version change is not. This is
+    > how a pre-existing `vitest`-pin failure was closed. Consequence carried forward in
+    > `specs/current/cli-init.md` (invariant 3, reservation MR-F6) and in `AGENTS.md`
+    > § "Coding standards": standard S4 names this test as its enforcement evidence and
+    > now has no mechanical version-drift detection anywhere.
+
 ## Error Handling Contract
 
 All rows of `specs/cli-skeleton/contract.md` and

@@ -62,6 +62,18 @@
  * every later phase of this feature, the same documented posture the BG-7
  * gate in `tests/feedback.test.ts` and this file's own T13/T14/T16 blocks
  * above already use for their "declared regression guard" assertions.
+ *
+ * ---
+ * Spec: specs/monorepo-mode
+ * Covers (by narrowing, not by adding): the DR-4 block above and the RC-17
+ * block below. Two of DR-4's three rows are retired and RC-17's third copy is
+ * dropped, because this feature changes `templates/hooks/run-feedback.mjs`
+ * (MC-9, MC-11, MC-12, MC-17, MC-18, MC-19) and
+ * `templates/doctor/run-doctor.mjs` (MC-21) by contract. The paragraph above
+ * reading "nothing has touched these three files yet" is true of
+ * `ci-workflow-root`'s red phase and is retained as the historical record it
+ * is; it is NOT a standing claim. The full reasoning, and the replacement
+ * guards for everything retired, are on the two describe blocks themselves.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -631,20 +643,76 @@ describe('the "never commit or push" hard rule reaches sdd-documentation only, n
  * (`tests/skills-fidelity.test.ts`).
  */
 
-describe('ci-workflow-root — the three generated-entry-point runner templates are byte-unchanged by this feature (DR-4) (T31)', () => {
-  const RUNNER_TEMPLATES = [
-    ['templates/doctor/run-doctor.mjs', 'run-doctor.mjs'],
-    ['templates/shared/probes.mjs', 'probes.mjs'],
-    ['templates/hooks/run-feedback.mjs', 'run-feedback.mjs'],
-  ] as const;
-
-  it.each(RUNNER_TEMPLATES)('%s is byte-identical to the golden captured before this feature', async (relativePath, goldenName) => {
-    const live = await fs.readFile(path.join(REPO_ROOT, relativePath), 'utf8');
+/**
+ * ## Declared exception (specs/monorepo-mode green phase): DR-4 is narrowed
+ * from three runner templates to one, and the other two are re-guarded
+ *
+ * `ci-workflow-root`'s DR-4 reads "byte-unchanged **by this feature**", where
+ * "this feature" is `ci-workflow-root` — a claim about one archived change
+ * set, made once and true forever after. The `it.each` above asserted it as
+ * "byte-unchanged by every future feature", which is a scoping bug in a
+ * change-detector: it freezes three generated-entry-point runners against the
+ * whole rest of the repository's history. specs/monorepo-mode is the first
+ * feature to hit it, and it hits it **by contract**, not by accident —
+ * `roadmap.md`'s File Change Map names both runners as carrying this feature's
+ * changes:
+ *
+ *   - `templates/hooks/run-feedback.mjs` — per-component dispatch (MC-9,
+ *     MC-11, MC-12, MC-17, MC-18, MC-19)
+ *   - `templates/doctor/run-doctor.mjs` — `command.dir` resolution (MC-21)
+ *
+ * Those two rows are therefore RETIRED, on exactly the ground this file's own
+ * retired `codex-generator` block above records: a this-feature gate that can
+ * never pass again once a later contracted change lands, and that nobody could
+ * ever un-skip. This is not a deletion of coverage — each is replaced below and
+ * elsewhere by a guard that does not go stale:
+ *
+ *   - `tests/fixtures/golden/monorepo-mode/{ts-root,py-sub}` pin the
+ *     SCAFFOLDED copy of both runners inside a fresh install, and
+ *     `tests/e2e-init.test.ts` additionally asserts each scaffolded copy is a
+ *     verbatim copy of its `templates/` source — so an unintended edit to
+ *     either template still turns a test red.
+ *   - the live-pair assertion below (for the feedback runner) and RC-17's
+ *     (for the doctor runner) pin this repository's own `.sdd/` copies to
+ *     their templates, which is the dogfood half `feedback-controls.md` FC-13
+ *     cares about and the half a frozen golden could never express.
+ *
+ * `templates/shared/probes.mjs` is NOT retired: it genuinely is byte-unchanged
+ * since before `ci-workflow-root`, this feature adds no probe (MC-2, MC-29),
+ * and the frozen golden therefore still states something true and live —
+ * a claim spanning four features that no post-feature capture could make.
+ *
+ * `tests/fixtures/golden/ci-workflow-root/{run-doctor.mjs,run-feedback.mjs}`
+ * are deliberately left on disk and deliberately NOT re-baselined: they remain
+ * the historical pre-`ci-workflow-root` captures those two retired rows cited,
+ * and re-baselining them would only manufacture a comparison of the current
+ * bytes against themselves.
+ */
+describe('ci-workflow-root — templates/shared/probes.mjs is still byte-unchanged since before that feature (DR-4, narrowed) (T31)', () => {
+  it('is byte-identical to the golden captured before ci-workflow-root', async () => {
+    const live = await fs.readFile(path.join(REPO_ROOT, 'templates', 'shared', 'probes.mjs'), 'utf8');
     const golden = await fs.readFile(
-      path.join(REPO_ROOT, 'tests', 'fixtures', 'golden', 'ci-workflow-root', goldenName),
+      path.join(REPO_ROOT, 'tests', 'fixtures', 'golden', 'ci-workflow-root', 'probes.mjs'),
       'utf8',
     );
     expect(live).toBe(golden);
+  });
+});
+
+/**
+ * The feedback runner's analogue of RC-17 below, and the live half of the
+ * DR-4 row retired above: this repository's own scaffolded copy must track
+ * `templates/hooks/run-feedback.mjs`. Unlike a frozen golden this never goes
+ * stale — it says "whenever the template changes, the dogfood install is
+ * regenerated in the same change", which is exactly the regression
+ * `feedback-controls.md` FC-13 exists to prevent and exactly what a contracted
+ * template edit must NOT be allowed to skip.
+ */
+describe('this repository\'s own .sdd/feedback/run-feedback.mjs tracks its template (FC-13 dogfood fidelity)', () => {
+  it('is byte-identical to templates/hooks/run-feedback.mjs', async () => {
+    const template = await fs.readFile(path.join(REPO_ROOT, 'templates', 'hooks', 'run-feedback.mjs'), 'utf8');
+    const scaffolded = await fs.readFile(path.join(REPO_ROOT, '.sdd', 'feedback', 'run-feedback.mjs'), 'utf8');
+    expect(scaffolded).toBe(template);
   });
 });
 
@@ -803,11 +871,34 @@ describe('the shipped conductor verifies the archive before declaring the pipeli
   });
 });
 
-describe('RC-17 — the three run-doctor.mjs copies stay byte-identical to one another (T23)', () => {
+/**
+ * ## Declared exception (specs/monorepo-mode green phase): RC-17's third copy
+ *
+ * `documentation-role-completion` RC-17 named three `run-doctor.mjs` copies
+ * and required all three to stay byte-identical, the third being
+ * `tests/fixtures/golden/ci-workflow-root/run-doctor.mjs`. That third entry is
+ * a FROZEN GOLDEN, not a live copy: its whole purpose was to be the
+ * pre-`ci-workflow-root` capture the DR-4 row above compared against. Keeping
+ * it in this list makes the two guards contradict each other — DR-4 says "the
+ * golden must never move", RC-17 says "the golden must move whenever the
+ * template does" — and whichever way the contradiction is resolved, one of the
+ * two becomes vacuous. specs/monorepo-mode changes `run-doctor.mjs` by
+ * contract (MC-21), which forces the question.
+ *
+ * It is resolved in RC-17's favour for the LIVE pair and against it for the
+ * golden: the third entry is dropped here (and DR-4's `run-doctor.mjs` row is
+ * retired above, so nothing else reads that fixture either). What RC-17
+ * actually protects — this repository's own scaffolded copy never drifting
+ * from the template it was generated from, `feedback-controls.md` FC-13's
+ * dogfood pin — is unchanged, still live, and verified below. The two live
+ * copies ARE byte-identical today; this assertion is load-bearing, not a
+ * formality, because a template edit that forgets to regenerate `.sdd/` is a
+ * regression this repository has actually had to guard against before.
+ */
+describe('RC-17 — the two live run-doctor.mjs copies stay byte-identical to one another (T23, narrowed)', () => {
   const COPIES = [
     'templates/doctor/run-doctor.mjs',
     '.sdd/doctor/run-doctor.mjs',
-    'tests/fixtures/golden/ci-workflow-root/run-doctor.mjs',
   ];
 
   it('every copy is byte-identical to the first', async () => {

@@ -34,6 +34,16 @@
 # and checks the whole project, never a per-turn touched-file set. A finding
 # is the one case where the runner's exit 2 is not translated: it fails the
 # step, and the job, directly — there is no agent turn to protect here.
+#
+# A repository that declares more than one component (a directory and the
+# stack it is written in, specs/monorepo-mode) is still one job, with exactly
+# one runner-invocation step — the runner itself resolves every component from
+# that one call, never a per-component job or a second workflow file. Per-
+# component dependency-install steps are the one exception: one such step may
+# run per component whose resolved stack declares install candidates, each
+# scoped to that component's own directory. A repository declaring no
+# components is the one-component, install-root case of this same shape, not
+# a separate mode.
 name: harny feedback
 on:
   pull_request:

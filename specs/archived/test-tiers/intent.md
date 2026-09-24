@@ -1,5 +1,7 @@
 # Intent: Test Tiers
 
+**Shipped: 2026-09-24**
+
 ## Problem Statement
 
 harny ships a test-writer (`templates/roles/sdd-test-writer.md`, the `harny-test` skill

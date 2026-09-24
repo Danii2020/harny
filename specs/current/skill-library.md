@@ -1,6 +1,6 @@
 # Skill Library Specification
 
-> Last synced: 2026-09-23. Owned artifacts: `.agents/skills/harny-*/`,
+> Last synced: 2026-09-24 by test-tiers. Owned artifacts: `.agents/skills/harny-*/`,
 > `.agents/skills/README.md`, `.claude/skills/harny-*` (bridge symlinks),
 > `AGENTS.md` § "Coding standards", `specs/current/`, `specs/archived/`.
 
@@ -184,6 +184,32 @@ can see.
   symlinks, and `.claude/settings.json`, and excludes `.claude/agents/**` and
   `.claude/settings.local.json`
 
+### Requirement: SL-11 — harny-test bundles the value rubric; no dangling skill references ship
+
+The system SHALL bundle `harny-test`'s test-value rubric
+(`templates/skills/harny-test/high-value-tests.md`) as a resource of the existing
+`harny-test` skill, loaded by the existing `loadSkillTemplates` / `buildSkillFiles`
+path with no `src/` change, landing beside `harny-test/SKILL.md` under every distinct
+skill root a selected tool uses, byte-identical to the source. No shipped
+`harny-*/SKILL.md`, role, or conductor artifact references a skill harny does not
+ship, and every bundled-resource reference in a shipped `SKILL.md` resolves to a file
+beside it in the same installed skill directory.
+
+**Source:** test-tiers · contract.md § Behavior Guarantees TT-1 to TT-5; ADR 0050.
+
+#### Scenario: A tool's install includes harny-test
+- **WHEN** any tool's install includes the `harny-test` skill
+- **THEN** `high-value-tests.md` is present beside `harny-test/SKILL.md`,
+  byte-identical to the template, and cited by bare file name and section (e.g.
+  `` `high-value-tests.md` § "The one question" ``) from both `harny-test/SKILL.md`
+  and `sdd-test-writer.md`
+
+#### Scenario: A shipped file names a skill or a bundled resource
+- **WHEN** any shipped `harny-*/SKILL.md`, role, or conductor artifact names a
+  "`<skill>` skill" or a bundled resource file
+- **THEN** that name resolves to a skill harny actually ships, or to a file that
+  exists beside it in the installed skill directory — never a dangling reference
+
 ## Invariants
 
 1. No `harny-*` skill body may exist as a regular file or directory under `.claude/skills/` — the canonical copy lives only under `.agents/skills/`.
@@ -199,6 +225,7 @@ can see.
 | CR-2 | The canonical `.agents/skills/` location is not read by Claude Code at all (V3); the entire live pipeline depends on the symlink bridge surviving, mitigated by tracked symlinks, the missing-skill STOP guard, and the guard test | LOW | sdd-skill-library · audit.md "Carried reservations" |
 | AL-S15 | `contract.md` § Amendment A1 still prescribes a before/after differential mechanism that was not shipped (the delivered form is a filtered absolute assertion). Contract, `roadmap.md`, and `tasks.md` all state the superseded mechanism. Must be corrected in place before being archived (or will become a permanent historical error). | MEDIUM | sdd-skill-library · audit.md AL-S15 |
 | AL-S16 | The T41 filter is status-blind and hardcodes the eight skill names. A modification of a tracked bridge symlink may escape detection (M3), and a ninth `harny-*` skill causes a false positive (M4) against the advertised extension point. Filter must use `?? ` prefix and `harny-` discovery pattern rather than hardcoded names. | MEDIUM | sdd-skill-library · audit.md AL-S16 |
+| TT-R3 | The dogfood `harny-test` and `harny-audit` (`.agents/skills/harny-test/`, `.agents/skills/harny-audit/`, bridged to `.claude/skills/`) intentionally lack the tier flow and tier audit this feature shipped; the dogfood `harny-test` still points at the dogfood-only `high-value-tests` skill. Declared in `tests/skills-fidelity.test.ts` `DIVERGENCE_TABLE`. A future dogfood-sync feature may close it. | LOW (design, deliberate) | test-tiers · audit.md TT-R3 |
 
 ## Contributing features
 
@@ -208,6 +235,7 @@ can see.
 | templates-skill-library-parity | 2026-09-13 | Scaffolded skill library parity: the same eight `harny-*` skills now write as real files to each tool's native skill-discovery root (`.claude/skills/`, `.kiro/skills/`, `.agents/skills/` shared by three tools), with six core skills always scaffolded and two optional (selectable via `--skills` flag); closed the `templates-parity` reservation that diverged the live pipeline from `templates/` |
 | dogfood-quick-fixes | 2026-09-22 | `harny-document`'s § Guardrails now carries an explicit hard rule forbidding `git commit` and `git push` (matching the identical rule in the canonical role body). This is the layer thinned live agents actually execute (SL-5's degradation mode made concrete): when the live agent is a thin pointer delegating to the skill, the rule enters the execution context here, not in the agent body. |
 | documentation-role-completion | 2026-09-23 | Both `harny-document/SKILL.md` copies gain identical text stating the archive-verification completion precondition (`pipeline-roles` PR-5), landed together to preserve `SL-1`'s exhaustive fidelity sweep; the pre-existing `DIVERGENCE_TABLE` entry for `harny-document` is unchanged. Amended SL-7 (A-SL7): unchanged in substance, strengthened in enforcement. |
+| test-tiers | 2026-09-24 | Added SL-11: `harny-test` bundles its test-value rubric (`high-value-tests.md`) as a resource, closing the dangling reference to an unshipped `high-value-tests` skill. Both `harny-test` and `harny-audit` reach `metadata.version` "1.1". `DIVERGENCE_TABLE['harny-test']` changes from byte-identical to diverges (dogfood keeps the unshipped skill reference and no tier flow, reservation TT-R3); `DIVERGENCE_TABLE['harny-audit']` gains required-in-template needles for the tier-results marker. |
 
 ## Related ADRs
 
@@ -217,3 +245,4 @@ can see.
 | 0005 | Portable skill frontmatter — six keys | Accepted |
 | 0009 | Keep `allowed-tools` key uniformly across all skill roots | Accepted |
 | 0012 | Skills get stronger fidelity guarantees than roles (Gu 9/10 not TG-3/TG-4) | Accepted |
+| 0050 | The test-value rubric ships as a bundled harny-test resource, not a skill | Accepted |

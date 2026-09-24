@@ -12,18 +12,37 @@ sdd-architect
      |
 [HUMAN GATE: review the 5 specs]
      |
-sdd-test-writer   (red phase - tests that must fail for the right reason)
+sdd-test-writer   (red phase - proposes unit/integration/e2e tests, then checkpoint*)
      |
 [HUMAN GATE: confirm the tests fail for the right reason]
      |
 sdd-executor      (green phase - implements until tests pass)
      |
-sdd-auditor       (verifies the contract + confirms the per-turn hook fired and CI is green)
+sdd-auditor       (verifies the contract, tier coverage + confirms the per-turn hook fired and CI is green)
      |
 [HUMAN GATE: review the final verdict]
      |
 sdd-documentation (automatic, non-gated - runs only on an approved verdict)
 ```
+
+\* The shipped `sdd-test-writer` picks tests at the `unit`, `integration` and/or `e2e`
+tier — only where the feature's nature makes that tier suitable — and infers a
+framework per tier from the repository's own evidence (manifests, config, existing
+tests), never from a hard-coded table. It records the proposal as a Test Plan in
+`audit.md`. If the plan needs any tier beyond `unit`, or any setup at all (a dev
+dependency, a config file or a script), it stops and asks for confirmation before
+writing a test or installing anything — routed through the conductor when the
+test-writer runs as a delegated sub-agent, asked inline when a human invokes it
+directly. A unit-only plan with no setup skips the checkpoint and proceeds straight to
+writing tests. This checkpoint is conditional, not a fourth human gate: the pipeline
+still has exactly three (specs, tests, audit). The rubric behind "is this test worth
+writing" ships as a bundled `harny-test/high-value-tests.md` resource, and the
+shipped `sdd-auditor` reads the confirmed Test Plan and records the results per tier
+as a `### Tier Results` table in `audit.md` § Test Coverage, flagging (for example) an
+unconfirmed non-unit test or a confirmed tier with no tests. This repository's own
+dogfood pipeline (`.claude/skills/harny-test/` and `.claude/skills/harny-audit/`, via
+the `.agents/skills/` bridge) intentionally does not run this tier flow yet — it keeps
+proposing tests without tiers or a confirmation checkpoint.
 
 Each feature gets a 5-file spec under `specs/<feature-name>/`:
 

@@ -235,6 +235,7 @@ The system SHALL declare, on every `Generator`, a `guidancePath: string | undefi
 | ai-sdlc-readiness | 2026-09-15 | TG-12: extended the `Generator` interface with `guidancePath` (per-tool root instruction-file path, required-but-possibly-`undefined`), consumed by the readiness-checks capability's new `repo readiness` family |
 | context7-mcp | 2026-09-15 | TG-1/TG-10: extended the `Generator` interface with `mcpConfig` (per-tool MCP server configuration path and shape, required-but-possibly-`undefined`); emits one MCP config artifact per resolved generator with default Context7 wiring |
 | dogfood-quick-fixes | 2026-09-22 | TG-1/TG-10: Context7 endpoint value changed from `/mcp` to `/mcp/oauth` across all five tools via constant update in `src/mcp.ts`. No generator interface or artifact count change. |
+| subagent-feedback-hooks | 2026-09-24 | `renderHook` on `claude-code.ts`, `cursor.ts` and `codex.ts` adds a sub-agent completion registration inside the same hook file (see feedback-controls FC-27). Claude Code's stop wrapper takes the event name as a parameter, while Cursor and Codex share one wrapper that forwards trailing argv. No `Generator` interface change, no new artifact, and `kiro.ts`/`github-copilot.ts` are untouched. ADR 0045. |
 
 ## Related ADRs
 
@@ -242,4 +243,9 @@ The system SHALL declare, on every `Generator`, a `guidancePath: string | undefi
 |---|---|---|
 | 0010 | GitHub Copilot skills route to `.agents/skills/` unconditionally | Accepted |
 | 0011 | Generator interface gains `skillsDir` member; no `renderSkill` method | Accepted |
+| 0012 | Skills get stronger fidelity guarantees than roles (Gu 9/10 not TG-3/TG-4) | Accepted |
+| 0014 | renderHook as method on Generator interface | Accepted |
 | 0025 | `guidancePath` as a declarative `Generator` member, continuing ADR 0011 not ADR 0014 | Accepted |
+| 0026 | Merge-write, never whole-file, for co-owned MCP config | Accepted |
+| 0027 | mcpConfig as a declarative Generator member (continuing ADR 0011/0025) | Accepted |
+| 0045 | Claude Code's wrapper takes the event name as a parameter; Cursor and Codex share one argv-forwarding wrapper | Accepted |

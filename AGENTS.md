@@ -251,6 +251,11 @@ Read across the rows:
   directory and the stack it is written in); the feedback-computational cell is now
   true *per component* — each touched path runs its own component's commands from
   its own directory — with no quadrant moving and no new cell opened.
+  Since `subagent-feedback-hooks`, the per-turn hooks on Claude Code, Cursor and Codex
+  also fire when a delegated sub-agent completes, with `--keep-turn`, so the sub-agent
+  sees findings on its own work while the touched-file list survives for the parent's
+  own turn-end run (at-least-once delivery); Kiro and GitHub Copilot are not wired for
+  it. Still the same feedback-computational cell — earlier, not a new quadrant.
 - **Inferential feedback is deliberately empty.** AI code review or LLM-as-judge would
   fill this cell. This feature ships the computational column only; the empty cell is
   named so a future contributor can see which quadrant is unclaimed rather than

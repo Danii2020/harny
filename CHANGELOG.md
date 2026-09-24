@@ -89,6 +89,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- **Sub-agent feedback hooks** (`subagent-feedback-hooks`). Claude Code, Cursor and
+  Codex now register their sub-agent completion event (`SubagentStop`, `subagentStop`,
+  `SubagentStop`) in the hook file they already generate, beside the turn-completion
+  event. The new registration runs the same runner, `run` mode and inline `--commands`
+  payload, plus a new boolean flag, `--keep-turn`. It never passes `--whole-project`.
+  `--keep-turn` is identical to a normal `run` except that the turn file is not
+  deleted; it has no effect under `--whole-project`. A sub-agent therefore sees its
+  findings at its own stop, and the parent's turn-completion run still sees the same
+  paths and clears them. Delivery is at-least-once: a finding may be reported twice,
+  and is never consumed and dropped by the earlier check.
+  - Claude Code's wrapper now takes the event name as a parameter, so it emits
+    `hookEventName: "SubagentStop"` for the new registration (a mismatch would be
+    silently dropped).
+  - The Cursor and Codex wrappers stay one shared script that now forwards trailing
+    arguments to the runner.
+  - Kiro and GitHub Copilot hook files are unchanged. No new artifact, path or
+    `Generator` member was added.
+  - `templates/hooks/README.md` gains an eighth tool-neutral behavior property and
+    dated per-tool examples.
+  - This repo's own `.claude/settings.json` and two golden fixtures were regenerated.
+
+  Audit verdict: **APPROVED WITH RESERVATIONS**. The auditor drove all three tools'
+  generated sub-agent commands end to end against the real runner. The suite is
+  841/841. Open reservations:
+  - **F1 (HIGH):** no test executes the Cursor or Codex sub-agent wrapper, so the
+    argument forwarding that carries `--keep-turn` on those two tools has no
+    regression guard. It works today.
+  - **F4 (LOW):** the two regenerated `.claude/settings.json` goldens are excluded from
+    byte comparison.
+  - **F6 (LOW):** contract IDs appear in test names (the standing AL-4 class).
+  - **F7 (LOW):** the live `.turns/` probe was not run. Whether Codex sub-agent edits
+    share the stop's `turn_id`, and whether Cursor's `afterFileEdit` fires inside a
+    sub-agent, remain open, so on those tools the registration may be inert.
+
+  (Shipped 2026-09-24.)
+
 - **One install, many components (`monorepo-mode`)** — a single harny install can now
   declare `components: [{ path, stack }]` in `.sdd/harness.json` instead of one `stack`,
   so a repository with a Python backend and a TypeScript frontend needs **one** install

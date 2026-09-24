@@ -1,5 +1,7 @@
 # Intent: Subagent Feedback Hooks
 
+**Shipped: 2026-09-24**
+
 ## Problem Statement
 
 harny's per-turn feedback loop pairs a per-edit accumulator with a turn-completion

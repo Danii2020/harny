@@ -1,7 +1,7 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-23 by monorepo-mode (archive mode: feature archived, capability docs updated, ADRs 0038–0042 registered)
+> Last synced: 2026-09-24 by subagent-feedback-hooks (archive mode: feature archived, capability docs updated, ADRs 0043–0045 registered)
 
 ## Capabilities
 
@@ -11,8 +11,8 @@
 | pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
 | readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/), [monorepo-mode](../archived/monorepo-mode/) |
 
 ## Keyword lookup
@@ -90,6 +90,8 @@
 | --only / family selector | readiness-checks |
 | completion precondition / archive verification | pipeline-roles |
 | shipped stamp / marker matching / bolded marker | readiness-checks |
+| SubagentStop / subagentStop / sub-agent feedback | feedback-controls, tool-generators |
+| --keep-turn / at-least-once delivery | feedback-controls |
 
 ## Synchronized Changes
 
@@ -109,6 +111,7 @@
 | dogfood-quick-fixes | [specs/archived/dogfood-quick-fixes/](../archived/dogfood-quick-fixes/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 | documentation-role-completion | [specs/archived/documentation-role-completion/](../archived/documentation-role-completion/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [readiness-checks.md](./readiness-checks.md) |
 | monorepo-mode | [specs/archived/monorepo-mode/](../archived/monorepo-mode/) | [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
+| subagent-feedback-hooks | [specs/archived/subagent-feedback-hooks/](../archived/subagent-feedback-hooks/) | [feedback-controls.md](./feedback-controls.md), [tool-generators.md](./tool-generators.md) |
 
 ## Decisions (ADR registry)
 
@@ -156,6 +159,9 @@
 | 0040 | The component list travels on the payload, not as a new `CiPlacement` field | Accepted | cli-init | `specs/archived/monorepo-mode/decisions/0040-component-list-on-payload-not-ciplacement.md` |
 | 0041 | A `whole-project` command runs once per component with an assigned touched path | Accepted | feedback-controls | `specs/archived/monorepo-mode/decisions/0041-whole-project-per-affected-component.md` |
 | 0042 | Component scoping for readiness is a `dir` field on the generated checks entry, never on `CommandSpec` | Accepted | readiness-checks | `specs/archived/monorepo-mode/decisions/0042-dir-on-generated-checks-entry.md` |
+| 0043 | A sub-agent's stop runs the ordinary runner with `--keep-turn`, giving at-least-once delivery | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0043-keep-turn-flag-at-least-once-delivery.md` |
+| 0044 | Wire a sub-agent completion event only where first-party documentation confirms it | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0044-wire-only-documented-subagent-events.md` |
+| 0045 | Claude Code's wrapper takes the event name as a parameter; Cursor and Codex share one argv-forwarding wrapper | Accepted | tool-generators | `specs/archived/subagent-feedback-hooks/decisions/0045-event-name-is-a-wrapper-parameter.md` |
 
 ## Open reservations
 
@@ -174,7 +180,7 @@
 | R5 | Kiro's and GitHub Copilot's post-edit payload field shape is assumed but not cited. AL-30 class: wrong field name exits 0 recording nothing. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R5 | feedback-controls |
 | R6 | Python profile CI gate is deliberately probe-skip-only (no install, both ruff/mypy skip on stock runner). Closeable only by a future feature adding `ciInstall`. | MEDIUM (scope, deliberate) | `specs/archived/agent-feedback-controls/audit.md` R6 | feedback-controls |
 | R7 | TypeScript install candidates cover npm only; pnpm/Yarn-Berry can re-enter F1. Needs `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | `specs/archived/agent-feedback-controls/audit.md` R7 | feedback-controls |
-| R8 | Only `Stop` is hooked, never `SubagentStop` — Stop fires only for the main conversation, so in a conductor-orchestrated pipeline the check only runs when the conductor's own turn ends, never while a subagent is working; a mid-implementation broken state inside a subagent's own turn is never caught live. Whether `PostToolUse` accumulation still attributes subagent edits to the same turn key as the conductor (so they're swept up at that next `Stop`) is plausible but not independently confirmed. Never examined when `agent-feedback-controls` shipped. | MEDIUM (design, unexamined) | `specs/current/feedback-controls.md` R8 — context7-mcp dogfood observation, 2026-09-15 | feedback-controls |
+| R8 | Narrowed by subagent-feedback-hooks: `SubagentStop` is wired on Claude Code, and a sub-agent's edits were confirmed live to share the parent's turn key. Still open: Codex sub-agent `turn_id` and Cursor `afterFileEdit` inside a sub-agent (see SF-R1) | MEDIUM (narrowed) | `specs/current/feedback-controls.md` R8; `specs/archived/subagent-feedback-hooks/contract.md` § Open questions | feedback-controls |
 | AL-S16 | The T41 filter is status-blind and hardcodes eight skill names. A modification of a tracked bridge symlink may escape detection, and a ninth `harny-*` skill causes false positive. Must filter on `?? ` + `harny-` discovery pattern. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S16 | skill-library |
 | CR-1 | Live discovery of a symlinked skill and warning-free `skills:` preloading are unverified in-session (require a Claude Code restart) | MEDIUM | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
 | CR-2 | The entire live pipeline depends on the `.agents`↔`.claude` symlink bridge surviving | LOW | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
@@ -223,6 +229,10 @@
 | MR-F13 | The "N is always 0" regression test lacks a positive control: it would also pass on a runner that dispatched nothing. Weak rather than vacuous. | LOW (test quality) | `specs/archived/monorepo-mode/audit.md` F13, A5 | feedback-controls |
 | MR-MC20 | The readiness id suffix `:<path>` follows the `isSingleRootComponent` boundary, so a lone non-`.` component gets `npm-test:apps/web` where MC-20's original wording implied a bare id. Recorded so the gap is not rediscovered as a defect. | LOW (wording) | `specs/archived/monorepo-mode/audit.md` C20 | readiness-checks |
 | MR-S5 | The single-repo predicate is duplicated as an inline expression at `src/generators/markdown-yaml.ts:62`, because an ESM import is top-level and would fail the component-vocabulary grep gate over `src/generators/**`. Ruled the correct disposition, but unguarded: nothing turns red if `src/engine.ts`'s predicate changes and that line does not. Deleted by MR-F4's fix. | LOW (residual) | `specs/archived/monorepo-mode/audit.md` round-2 Audit Log ruling, S5 | cli-init |
+| SF-R1 | The live `.turns/` probe was never run, so the Codex and Cursor sub-agent registrations may be inert (never wrong) | MEDIUM (human-gated) | `specs/archived/subagent-feedback-hooks/audit.md` F7 | feedback-controls |
+| SF-R2 | Kiro and GitHub Copilot are not wired for sub-agent completion; Copilot's first-party docs also disagree with harny's shipped hook shape | MEDIUM (human-gated) | `specs/archived/subagent-feedback-hooks/contract.md` § Open questions 3–4 | feedback-controls |
+| SF-F1 | No test executes the Cursor/Codex sub-agent wrapper, so the argv forwarding that carries `--keep-turn` is unguarded | HIGH (coverage) | `specs/archived/subagent-feedback-hooks/audit.md` F1 | feedback-controls |
+| SF-F4 | Two regenerated `.claude/settings.json` goldens are excluded from byte comparison, so a Claude Code hook-config drift would pass | LOW (test quality) | `specs/archived/subagent-feedback-hooks/audit.md` F4 | feedback-controls |
 
 ## Notes
 

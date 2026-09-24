@@ -89,6 +89,7 @@ Review tasks.md:
 - Check that every contract guarantee has at least one test.
 - Check that every success criterion has at least one test.
 - Identify any untested behavior guarantees.
+- **Tier audit.** Read `audit.md`'s `### Test Plan`, if one exists, and its `**Plan status**:` line — one of `**Plan status**: PROPOSED`, `**Plan status**: CONFIRMED` or `**Plan status**: NOT REQUIRED`. Your write scope stays `audit.md` only — never edit the Test Plan, never change its status, and never write or delete tests. For a plan whose status is `CONFIRMED` or `NOT REQUIRED`, and for each tier in it, verify four things: (a) at least one test of that tier exists, identified by the project's own convention for that tier (location, naming, tag or separate config, as the plan's "Default run" line records); (b) every contract or intent id listed in that tier's "Covers" cell is exercised by a test of that tier; (c) the setup actually present (the dev dependencies, config files and scripts added since the feature began, found by diffing the manifest, lockfile and config files) equals the union of the plan's "Setup needed" cells; (d) the tier's tests run with that tier's command where the environment allows, and "Ran" otherwise records `not run: <reason>`. Tests found at a tier the plan does not list get their own row. Raise every finding from § Severity Ratings' Tier findings table.
 
 ### Step 7: Produce Audit Report
 
@@ -102,6 +103,9 @@ Change each item's status to: PASS, FAIL, PARTIAL. Add "Verified By" with a brie
 
 **Update the Test Coverage section**
 Change each item's status to: PASS, FAIL, MISSING. Add the test file path.
+
+**Add Tier Results**
+Inside `## Test Coverage`, immediately below the `### Test Plan` subsection (or at the top of the section if no plan exists), write (or rewrite in place — never append a second one) a `### Tier Results` table: one row per tier in the plan, plus one row per tier for which tests exist but that the plan does not list. Columns: Tier, Plan status, Tests found, Covers verified, Setup matches plan, Ran, Status, Finding. Status values are `PASS`, `PARTIAL`, `MISSING`, `FAIL` and `N/A`. Also log every finding in `## Audit Log` as usual.
 
 **Add Audit Log Entry**
 Add a row with today's date, this role's name, your finding summary, severity, and resolution recommendation.
@@ -131,6 +135,22 @@ Add a row with today's date, this role's name, your finding summary, severity, a
 - **HIGH**: Missing test coverage for a contract item, unhandled error condition.
 - **MEDIUM**: Minor deviation from spec, missing documentation.
 - **LOW**: Style inconsistency, minor improvement opportunity.
+
+**Tier findings** map onto the four buckets above, whose definitions are unchanged:
+
+| Condition | Severity | Rationale (existing bucket definition) |
+|---|---|---|
+| An integration or e2e test exists, but the plan is not `CONFIRMED` (absent, `PROPOSED` or `NOT REQUIRED`) | **HIGH** | Bypasses the human confirmation this pipeline requires. It is not a contract violation of the feature itself, so it does not block alone |
+| Setup present that the plan did not name (a dev dependency, config file or script), or setup performed under a plan that is not `CONFIRMED` | **HIGH** | Unconfirmed change to the project, the same class as the row above. A *runtime* dependency added this way is also an unspecified external package under the existing Dependencies check, and that check already rates it **CRITICAL** as a contract violation |
+| A tier in a `CONFIRMED` or `NOT REQUIRED` plan has no tests | **HIGH** | "Missing test coverage for a contract item" |
+| The plan is still `PROPOSED` at audit time | **HIGH** | Confirmation never happened, so the test scope was never agreed |
+| A `NOT REQUIRED` plan lists a non-unit tier or any setup (the confirmation rule was misapplied) | **HIGH** | Same effect as an unconfirmed plan |
+| An id listed in a tier's "Covers" cell has no test at any tier | **HIGH** | "Missing test coverage for a contract item" |
+| An id listed in a tier's "Covers" cell has no test at that tier, but is covered at another tier | **MEDIUM** | "Minor deviation from spec". Coverage exists, but not where the confirmed plan put it |
+| No `### Test Plan` exists, and only unit tests were written | **MEDIUM** | "Missing documentation". This is expected when specs predate the tier flow |
+| A planned tier could not be run by the auditor (no browser, no live service) | **LOW** | Red and green status for that tier is unverified. Recorded in "Ran" so the human sees it at the post-audit gate |
+
+No tier finding is CRITICAL on its own. If the test-writer's report began with the marker `TEST PLAN AWAITING CONFIRMATION` and the plan is still `PROPOSED`, cite both in the `PROPOSED` finding.
 
 ### Important Rules
 

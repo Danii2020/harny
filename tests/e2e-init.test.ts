@@ -1240,6 +1240,26 @@ describe('ci-workflow-root — npx harny doctor and the direct runner agree for 
  * red time the generator renders exactly the golden's bytes, so excluding the
  * file changes nothing that is asserted; the new re-assertion passes today and
  * is what keeps the file guarded once the bytes diverge.
+ *
+ * ## Golden regeneration (specs/test-tiers, TT-24, roadmap.md Phase 4 step 2)
+ *
+ * Seven paths per tree were regenerated from a fresh run of the **built** CLI
+ * (`node bin/harness.js init … --yes --tools claude-code --stack {typescript,python}`,
+ * each at a fresh `git init` root/subdirectory), and copied in byte-for-byte —
+ * no hand edits: `.claude/skills/harny-test/high-value-tests.md` (created),
+ * `.claude/skills/harny-test/SKILL.md`, `.claude/agents/sdd-test-writer.md`,
+ * `.claude/skills/sdd-conductor/SKILL.md`, `.claude/skills/README.md`,
+ * `.claude/skills/harny-audit/SKILL.md` and `.claude/agents/sdd-auditor.md`
+ * (modified) — 12 modified and 2 created across both trees, confirmed with
+ * `git status --short tests/fixtures/golden`. This is sanctioned because
+ * `templates/skills/harny-test/`, `templates/roles/sdd-test-writer.md`,
+ * `templates/conductor/sdd-conductor.md`, `templates/skills/harny-audit/SKILL.md`,
+ * `templates/roles/sdd-auditor.md` and `templates/skills/README.md` all changed as
+ * this feature's own delivery-layer scope (contract.md TT-24), and it does not widen
+ * the declared-exception mechanism above: the byte-comparison exception list
+ * (`.sdd/feedback/run-feedback.mjs`, `.sdd/doctor/run-doctor.mjs`,
+ * `.claude/settings.json`, the workflow file) is unchanged, and these seven paths are
+ * simply the new frozen baseline everything else is still compared against.
  */
 describe('golden-byte regression — a components-free install is byte-identical to the pre-feature capture, outside four contracted files (SC2, MC-5, SF-9) (T1, T2)', () => {
   /** `templates/` source → scaffolded destination, for the two runner files

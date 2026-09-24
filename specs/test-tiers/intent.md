@@ -31,6 +31,12 @@ Kiro, GitHub Copilot and Codex. That shipped test-writer has two gaps.
    (a `high-value-tests` reference), consult it". As a result the role and the skill
    disagree about where the rubric lives, and in practice it lives nowhere.
 
+3. **The shipped auditor is blind to test tiers.** `harny-audit` and `sdd-auditor.md`
+   check that every guarantee has "at least one test". They cannot tell whether
+   integration or e2e tests were agreed by a human, whether a planned tier was ever
+   written, or whether the test-writer installed setup no one confirmed. The human
+   brought this into scope at the post-specs gate (2026-09-24).
+
 Affected people: every downstream team that runs `npx harny init` and then the SDD
 pipeline. Their test-writer either loses its test-value rubric silently or looks for a
 file that does not exist. It also has no principled way to choose integration or e2e
@@ -54,7 +60,10 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
    confirms it. The confirmation goes through the orchestrator when the test-writer runs
    as a delegated sub-agent (which cannot pause mid-run to ask). It happens inline in
    the conversation when a human invokes `harny-test` directly. A plan that is unit-only
-   and needs no setup skips the confirmation and proceeds directly.
+   **and** needs no setup skips the confirmation and proceeds directly. A plan that
+   needs any setup (a dev dependency, a config file or a script) always asks, **even if
+   it is unit-only**. The human confirmed this at the post-specs gate on 2026-09-24
+   (answer to Q1).
 4. **G4 — Ship the rubric, close the dangling reference.** The high-value-tests rubric
    ships as a bundled resource of the `harny-test` skill
    (`templates/skills/harny-test/high-value-tests.md`, the same mechanism as
@@ -66,8 +75,20 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
    the confirmation checkpoint. The pipeline still has exactly three human gates, and
    the checkpoint is not a fourth one.
 6. **G6 — Demonstrable by the workshop.** Before 2026-09-27, the propose-then-confirm
-   flow has been walked through end-to-end on a scaffolded sample repository with a
-   frontend and an API, and the result is recorded.
+   flow has been walked through end-to-end **on Claude Code** (the human's priority,
+   decided at the post-specs gate on 2026-09-24) on a scaffolded sample repository with
+   a frontend and an API, and the result is recorded. The feature is still *delivered*
+   to all five tools through the generators, and that delivery is tested automatically.
+   Only the manual runtime walkthrough is limited to Claude Code.
+7. **G7 — The auditor takes test tiers into account.** *(Added at the post-specs gate,
+   2026-09-24, answer to Q2.)* The shipped auditor (`templates/skills/harny-audit/SKILL.md`
+   and `templates/roles/sdd-auditor.md`) reads the Test Plan, verifies that every tier
+   of a `CONFIRMED` (or `NOT REQUIRED` unit-only) plan has tests covering the spec items
+   listed for it, and flags the following: integration/e2e tests written without a
+   `CONFIRMED` plan, planned tiers with no tests, setup the plan did not name, and a
+   plan left at `PROPOSED`. Each finding goes into `harny-audit`'s existing
+   CRITICAL/HIGH/MEDIUM/LOW buckets, and per-tier results are recorded in a fixed place
+   in `audit.md`.
 
 ## Success Criteria
 
@@ -93,8 +114,9 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
   exact rule for when confirmation is required and the exact stop behavior. (G1, G2,
   G3)
 - [ ] **SC6** — The awaiting-confirmation marker and the three plan-status values are
-  byte-identical across the skill, the role and the conductor, so the orchestrator can
-  recognize a plan that is waiting for confirmation. (G3, G5)
+  byte-identical across the test-writer skill and role, the conductor, and the auditor
+  skill and role, so the orchestrator can
+  recognize a plan that is waiting for confirmation. (G3, G5, G7)
 - [ ] **SC7** — The shipped conductor still names exactly three human gates. It
   describes the tier-confirmation checkpoint as conditional, inside the test-writer
   stage, and not a gate. It keeps hard rules #1–#5 with their numbers. (G5)
@@ -105,17 +127,29 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
 - [ ] **SC9** — The whole test suite passes. The contracted file counts, the packaging
   manifest and the two `monorepo-mode` goldens are updated. Only the contracted golden
   files change. (G4)
-- [ ] **SC10** — Manual walkthroughs M1–M4 (audit.md) are performed and recorded before
-  2026-09-27: the delegated flow on a frontend+API sample, a unit-only feature that
-  proceeds without a pause, a direct invocation that asks inline, and a
-  missing-framework proposal that installs nothing before confirmation. (G1, G2, G3,
-  G6)
+- [ ] **SC10** — Manual walkthroughs M1–M5 (audit.md) are performed **on Claude Code**
+  and recorded before 2026-09-27: the delegated flow on a frontend+API sample, a
+  unit-only feature that proceeds without a pause, a direct invocation that asks
+  inline, a missing-framework proposal that installs nothing before confirmation, and
+  an audit that reports tier results and flags a seeded unconfirmed e2e test. (G1, G2,
+  G3, G6, G7)
+- [ ] **SC11** — The shipped `harny-audit` skill and `sdd-auditor` role both instruct
+  the auditor to read the Test Plan and record a `### Tier Results` table in
+  `audit.md` § Test Coverage. They name the same five tier findings with the same
+  severities, and use the TT-17 marker and status values identically. `harny-audit`
+  keeps its shape contract and `allowed-tools`, and goes to `metadata.version` "1.1".
+  (G7)
+- [ ] **SC12** — For each of the five generators, the rendered `sdd-test-writer`
+  and `sdd-auditor` role artifacts and the conductor artifact carry the TT-17
+  protocol tokens. Every tool's install carries the updated `harny-test` and
+  `harny-audit` skills. (G4, G5, G7)
 
 ## Non-Goals
 
 - **Modifying the dogfood copies.** `.agents/skills/harny-test/`,
-  `.agents/skills/README.md`, `.claude/skills/high-value-tests/`,
-  `.claude/skills/sdd-conductor/` and `.claude/agents/` are not touched. The shipped
+  `.agents/skills/harny-audit/`, `.agents/skills/README.md`,
+  `.claude/skills/high-value-tests/`, `.claude/skills/sdd-conductor/` and
+  `.claude/agents/` are not touched. The shipped
   `templates/skills/harny-test/SKILL.md` and the dogfood
   `.agents/skills/harny-test/SKILL.md` are identical today and diverge on purpose. The
   divergence is recorded in `tests/skills-fidelity.test.ts`'s `DIVERGENCE_TABLE`, which
@@ -125,8 +159,14 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
 - **Changing the spec schema.** `templates/spec-schema/audit.md` is not changed. The
   Test Plan is a subsection that the test-writer adds inside the existing
   `## Test Coverage` section, which it already owns.
-- **Changing the auditor.** `harny-audit` and `sdd-auditor.md` do not learn to check the
-  Test Plan (see open question Q2).
+- **Changing the auditor's verdict model.** The shipped auditor gains tier checks (G7),
+  but its severity buckets, their meanings and the verdict enum
+  (`APPROVED` / `APPROVED WITH RESERVATIONS` / `REJECTED`) are unchanged. Only the
+  spec-schema `audit.md` template stays untouched; the `### Tier Results` table is
+  added by the auditor inside the existing `## Test Coverage` section.
+- **Listing `high-value-tests.md` in the readiness check.** The human confirmed this
+  (Q3, 2026-09-24): the doctor's harness-file manifest keeps checking only `SKILL.md`
+  per skill, as it already does for `capability-template.md`.
 - **A fourth human gate.** The gate count and order stay fixed (pipeline-roles PR-6,
   invariant 2).
 - **Any `src/` change.** That means no new CLI flag, no new `SKILL_IDS` entry, no
@@ -146,8 +186,10 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
 ## Constraints
 
 - **Delivery layer only**: `templates/skills/harny-test/`, `templates/roles/sdd-test-writer.md`,
-  `templates/conductor/sdd-conductor.md`, `templates/skills/README.md` (one factual
-  sentence), plus `tests/**` and `tests/fixtures/golden/**` needed to verify them.
+  `templates/conductor/sdd-conductor.md`, `templates/skills/harny-audit/SKILL.md` and
+  `templates/roles/sdd-auditor.md` (added at the post-specs gate for G7),
+  `templates/skills/README.md` (one factual sentence), plus the `tests/**` and
+  `tests/fixtures/golden/**` changes needed to verify them.
 - **AGENTS.md § Coding standards S1–S7.** S4: no new runtime or dev dependency. S6:
   tests follow the high-value rubric, carry a `Spec:`/`Covers:` header, keep contract
   ids out of test names, and run offline by default. **S7**: tool-neutral content names
@@ -165,7 +207,10 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
   - **PR-3 / PR-7**: no Claude-only mechanic as the sole mechanism.
   - **PR-4**: roles that declare `docs-lookup` verify a library's API or setup via a
     docs-lookup MCP before pinning it.
-  - **PR-2**: `sdd-test-writer` stays `cost_tier: mid`.
+  - **PR-2**: `sdd-test-writer` stays `cost_tier: mid` and `sdd-auditor` stays
+    `most-capable`. AL-7: the auditor's scoped capability
+    `write-files (audit.md only)` is unchanged, and its tier checks write only to
+    `audit.md`.
   - **SL-1 / SL-3 / SL-4** and the `templates/skills/README.md` shape contract: six
     frontmatter keys, five body sections, `description` ≤ 1,024 characters (the
     Kiro/Copilot limit), `compatibility` ≤ 500 characters. Bundled resources are
@@ -177,15 +222,17 @@ tests. The human who owns harny plans to demonstrate the pipeline at a workshop 
   - **TG-7**: Copilot role body ≤ 30,000 characters. Codex role prose sits in a TOML
     multi-line literal, so it must not contain `'''`, a bare CR or control characters.
   - **ADR 0012 / D1**: `allowed-tools` is kept uniformly between the dogfood and shipped
-    copies (`tests/skills-fidelity.test.ts` asserts this). `harny-test`'s
-    `allowed-tools` line does not change.
+    copies (`tests/skills-fidelity.test.ts` asserts this). The `allowed-tools` lines of
+    `harny-test` and `harny-audit` do not change.
   - **ADR 0013**: template roles remain full-body, not thinned. The role restates the
     flow rather than pointing at the skill.
 - **Honesty about verification.** Automated tests verify *shipping* (the file lands,
   references resolve, the coupling tokens match, the gate count holds). They do not
   verify that an agent infers tiers well or stops when it should. That is verified by
-  the manual walkthroughs M1–M4, and it is recorded in advance as the planned audit
-  reservation TT-R1.
+  the manual walkthroughs M1–M5 on Claude Code, and it is recorded in advance as the
+  planned audit reservation TT-R1. The same behavior on Cursor, Kiro, GitHub Copilot
+  and Codex is delivered and tested for presence, but it is not walked through. That
+  gap is the named reservation TT-R2.
 - **Schedule**: the walkthroughs must be complete by Saturday 2026-09-26 so the
   Sunday 2026-09-27 workshop demo has a rehearsed, recorded run.
 

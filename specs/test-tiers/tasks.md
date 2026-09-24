@@ -23,9 +23,10 @@ ids are in parentheses.)
   citation in the skill and the role names an H2 of the rubric, and each file cites at
   least "The one question" and "Picking the right tier" (TT-5). The role no longer
   contains "vendors a dedicated rubric" (TT-5) — `tests/test-writer-templates.test.ts`
-- [ ] Task R.4 (Phase 2, 3): Protocol coupling. `TEST PLAN AWAITING CONFIRMATION` and
-  `**Plan status**:` followed by each of `PROPOSED`, `CONFIRMED` and `NOT REQUIRED`
-  appear in the skill, the role and the conductor (TT-17) —
+- [ ] Task R.4 (Phase 2, 3, 3b): Protocol coupling. `TEST PLAN AWAITING CONFIRMATION`
+  and `**Plan status**:` followed by each of `PROPOSED`, `CONFIRMED` and
+  `NOT REQUIRED` appear in the test-writer skill and role, the conductor, and the
+  auditor skill and role (TT-17) —
   `tests/test-writer-templates.test.ts`
 - [ ] Task R.5 (Phase 3): Three gates hold. The conductor's pipeline diagram contains
   exactly three `[HUMAN GATE` entries, and `documentation follows automatically`,
@@ -37,17 +38,28 @@ ids are in parentheses.)
 - [ ] Task R.7 (Phase 1): Neutrality. A `NEUTRALITY_CHECKS` entry for
   `harny-test/high-value-tests.md` with the TT-3 residue list (TT-3) —
   `tests/skills-templates.test.ts`
-- [ ] Task R.8 (Phase 2): Declared divergence. Change
-  `DIVERGENCE_TABLE['harny-test']` to `diverges` with the TT-22 needles, and update the
-  file's header docblock (TT-22) — `tests/skills-fidelity.test.ts`
+- [ ] Task R.8 (Phase 2, 3b): Declared divergence. Change
+  `DIVERGENCE_TABLE['harny-test']` to `diverges` with the TT-22 needles. Add the TT-22
+  `requiredInTemplate` needles to `DIVERGENCE_TABLE['harny-audit']`, keeping its
+  forbidden needle. Update the file's header docblock (TT-22) —
+  `tests/skills-fidelity.test.ts`
 - [ ] Task R.9 (Phase 4): Counts. `defaultSkillLibraryPaths` gains
   `harny-test/high-value-tests.md`. Change 38→39 (×5), 92→95 / 33→36, 98→101 / 39→42,
   and 89→92 / 30→33, with an explanatory comment (TT-23) — `tests/e2e-init.test.ts`
 - [ ] Task R.10 (Phase 4): Packaging manifest. Add
   `templates/skills/harny-test/high-value-tests.md` and change the count to 32
   (TT-23) — `tests/packaging.test.ts`
-- [ ] Task R.11 (Phase 3): T41 allowlist. Add `templates/roles/sdd-test-writer.md` by
-  exact match (TT-24) — `tests/canonical-fidelity.test.ts`
+- [ ] Task R.11 (Phase 3, 3b): T41 allowlist. Add `templates/roles/sdd-test-writer.md`
+  and `templates/roles/sdd-auditor.md` by exact match (TT-24) —
+  `tests/canonical-fidelity.test.ts`
+- [ ] Task R.13 (Phase 3b): Severity parity. The skill and the role each carry the
+  TT-28 table, and the (condition, level) pairs parsed from both are equal. Each of
+  the five named conditions (unconfirmed non-unit test, unnamed setup, tier with no
+  tests, plan left `PROPOSED`, misapplied `NOT REQUIRED`) appears at `HIGH` (TT-28) —
+  `tests/test-writer-templates.test.ts`
+- [ ] Task R.14 (Phase 3, 3b, 4): Five-tool delivery. For each of the five generators,
+  the rendered `sdd-test-writer`, `sdd-auditor` and conductor artifacts contain the
+  TT-17 marker and `**Plan status**:` (TT-30) — `tests/canonical-fidelity.test.ts`
 - [ ] Task R.12 (Phase 4): Run the suite. Confirm each new or changed assertion fails
   for the right reason (the rubric is missing, the dangling reference is still present,
   tokens are absent, or counts are off by one per root), and that the golden test still
@@ -62,7 +74,7 @@ ids are in parentheses.)
 
 ## Phase 2: The `harny-test` skill
 - [ ] Task 2.1: Frontmatter. Update `description`, `compatibility`, `metadata.version`
-  "2.0" and `metadata.harny-writes`, and leave `allowed-tools` byte-unchanged (TT-19) —
+  "1.1" and `metadata.harny-writes`, and leave `allowed-tools` byte-unchanged (TT-19) —
   `templates/skills/harny-test/SKILL.md`
 - [ ] Task 2.2: `## Inputs`. Add the bundled rubric and the relayed human decision
   (TT-11, TT-19) — `templates/skills/harny-test/SKILL.md`
@@ -85,10 +97,19 @@ ids are in parentheses.)
   verify step, and the per-tier gate summary (TT-15 to TT-18) —
   `templates/conductor/sdd-conductor.md`
 
+## Phase 3b: The auditor takes tiers into account
+- [ ] Task 3b.1: `harny-audit` skill. Add the tier-audit step, Tier Results in the
+  report step, the TT-28 table under the unchanged severity definitions, the TT-17
+  literals and `metadata.version` "1.1", leaving `allowed-tools` and `harny-writes`
+  byte-unchanged (TT-26 to TT-29) — `templates/skills/harny-audit/SKILL.md`
+- [ ] Task 3b.2: `sdd-auditor` role body. Add the Step 6 tier audit, the Step 7 Tier
+  Results table and the § Severity Ratings TT-28 table (identical rows), leaving
+  metadata byte-unchanged (TT-26 to TT-29) — `templates/roles/sdd-auditor.md`
+
 ## Phase 4: Shipping verification and fixtures
 - [ ] Task 4.1: Build and typecheck — `package.json` scripts (no edit)
-- [ ] Task 4.2: Regenerate exactly five golden paths per tree from the built CLI, and
-  confirm 8 modified and 2 new files under `tests/fixtures/golden` (TT-24) —
+- [ ] Task 4.2: Regenerate exactly seven golden paths per tree from the built CLI, and
+  confirm 12 modified and 2 new files under `tests/fixtures/golden` (TT-24) —
   `tests/fixtures/golden/monorepo-mode/ts-root/.claude/**`,
   `tests/fixtures/golden/monorepo-mode/py-sub/apps/api/.claude/**`
 - [ ] Task 4.3: Add the docblock paragraph recording the sanctioned regeneration
@@ -96,7 +117,7 @@ ids are in parentheses.)
 - [ ] Task 4.4: Run the full suite green. Confirm no change under `src/`, `bin/`,
   `package.json`, `.agents/` or `.claude/` (TT-21, TT-22) — repository root
 
-## Phase 5: Manual demo walkthrough (deadline 2026-09-26)
+## Phase 5: Manual demo walkthrough on Claude Code (deadline 2026-09-26)
 - [ ] Task 5.1: Scaffold the frontend+API sample repository with the built CLI (TT-25)
   — scratch directory outside the repository
 - [ ] Task 5.2: M1, delegated flow with the checkpoint (TT-9, TT-10, TT-11, TT-12,
@@ -107,12 +128,15 @@ ids are in parentheses.)
   `specs/test-tiers/audit.md` row M3
 - [ ] Task 5.5: M4, nothing installed before confirmation, and a declined tier is
   dropped (TT-11, TT-12) — `specs/test-tiers/audit.md` row M4
+- [ ] Task 5.6: M5, a tier-aware audit reports Tier Results and flags a seeded
+  deviation as HIGH (TT-26, TT-27, TT-28) — `specs/test-tiers/audit.md` row M5
 
 ## Blocked Items
 [None yet]
 
 ## Notes
-- **Do not touch** `.agents/skills/harny-test/`, `.agents/skills/README.md`,
+- **Do not touch** `.agents/skills/harny-test/`, `.agents/skills/harny-audit/`,
+  `.agents/skills/README.md`,
   `.claude/skills/high-value-tests/`, `.claude/skills/sdd-conductor/` or
   `.claude/agents/` (intent § Non-Goals). The dogfood rubric is read-only input for
   Task 1.1.
@@ -120,6 +144,8 @@ ids are in parentheses.)
   would contradict TT-21 and needs a contract amendment.
 - The golden test is expected to pass at red time and to fail after Phases 1–3, until
   Task 4.2 regenerates the goldens. That is the designed sequence, not a regression.
+- All walkthroughs run on Claude Code (the human's decision on Q4). The other four
+  tools are covered by automated delivery tests (R.1, R.14) and reservation TT-R2.
 - Four other feature branches (`commit-checks`, `component-level-docs`,
   `doctor-security-checks`, `permissions-baseline`) are approved but not archived. If
   the base moves, recompute TT-23's counts as +1 per skill root relative to the new

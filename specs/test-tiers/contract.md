@@ -38,10 +38,12 @@ export function buildSkillFiles(payload: HarnessPayload, roots: readonly string[
 | `templates/skills/harny-test/SKILL.md` | MODIFY | `<skillsDir>/harny-test/SKILL.md` (same roots) |
 | `templates/roles/sdd-test-writer.md` | MODIFY (metadata `invocation`/`handoff` + body) | `.claude/agents/sdd-test-writer.md`, `.cursor/agents/sdd-test-writer.md`, `.kiro/agents/sdd-test-writer.md`, `.github/agents/sdd-test-writer.agent.md`, `.codex/agents/sdd-test-writer.toml` |
 | `templates/conductor/sdd-conductor.md` | MODIFY (body) | `.claude/skills/sdd-conductor/SKILL.md`, `.cursor/skills/sdd-conductor/SKILL.md`, `.kiro/skills/sdd-conductor/SKILL.md`, `.github/skills/sdd-conductor/SKILL.md`, `.agents/skills/sdd-conductor/SKILL.md` (Codex) |
+| `templates/skills/harny-audit/SKILL.md` | MODIFY (tier audit step, Tier Results, severity mapping, `metadata.version` "1.1") | `<skillsDir>/harny-audit/SKILL.md` (same roots as `harny-test`) |
+| `templates/roles/sdd-auditor.md` | MODIFY (body only; metadata byte-unchanged) | `.claude/agents/sdd-auditor.md`, `.cursor/agents/sdd-auditor.md`, `.kiro/agents/sdd-auditor.md`, `.github/agents/sdd-auditor.agent.md`, `.codex/agents/sdd-auditor.toml` |
 | `templates/skills/README.md` | MODIFY (one factual sentence) | `<skillsDir>/README.md` |
 
-**Orchestrator↔test-writer protocol (shipped prompt content, identical in skill, role
-and conductor):**
+**Orchestrator↔test-writer protocol (shipped prompt content, identical in the
+test-writer skill and role, the conductor, and the auditor skill and role):**
 
 - **Awaiting marker**: the exact line `TEST PLAN AWAITING CONFIRMATION`, as the first
   line of the test-writer's final report when it stops for confirmation.
@@ -87,6 +89,27 @@ When confirmed, the status line becomes `**Plan status**: CONFIRMED (<YYYY-MM-DD
 the human, <in conversation | via the orchestrator>)`. For a unit-only plan with no
 setup it is `**Plan status**: NOT REQUIRED (unit-only, no setup)`.
 
+**The Tier Results record** (added at the post-specs gate, G7): a Markdown table
+that the **auditor** writes into `specs/<feature>/audit.md`, inside `## Test Coverage`,
+immediately below the `### Test Plan` subsection (or at the top of the section if no
+plan exists). There is exactly one row per tier in the plan, plus one row per tier for
+which tests exist but that the plan does not list. The shape is pinned:
+
+```markdown
+### Tier Results
+
+| Tier | Plan status | Tests found | Covers verified | Setup matches plan | Ran | Status | Finding |
+|---|---|---|---|---|---|---|---|
+| unit | CONFIRMED | `tests/format.test.ts` (4) | TT-1, TT-4, SC1: yes | n/a | yes, green | PASS | |
+| integration | CONFIRMED | `apps/api/tests/routes.int.test.ts` (2) | G7: yes; SC2: no | n/a | yes, green | PARTIAL | MEDIUM: SC2 listed for integration, covered only by a unit test |
+| e2e | CONFIRMED | none | — | `@playwright/test`, `playwright.config.ts`: yes | not run: no tests | MISSING | HIGH: confirmed tier has no tests |
+```
+
+The Status values are `PASS`, `PARTIAL`, `MISSING`, `FAIL` and `N/A`, which are the
+existing `harny-audit` Test Coverage vocabulary plus `PARTIAL` from its Requirements
+vocabulary. "Finding" gives the severity and a one-line reason, and each finding is
+also logged in `## Audit Log` as usual.
+
 **The rubric resource** `templates/skills/harny-test/high-value-tests.md`: plain
 Markdown with no YAML frontmatter. It has exactly one H1 and then these H2 sections, in
 this order, with these exact heading texts:
@@ -101,11 +124,12 @@ this order, with these exact heading texts:
 
 ### State Changes
 
-- **`templates/`**: 1 file created and 4 modified (see the manifest above). `src/` is
+- **`templates/`**: 1 file created and 6 modified (see the manifest above). `src/` is
   unchanged. `package.json` is unchanged.
 - **Downstream installs**: +1 file per distinct skill root. No other path changes.
 - **Downstream `specs/<feature>/audit.md`**, at test-writer run time: gains a
-  `### Test Plan` subsection inside `## Test Coverage`.
+  `### Test Plan` subsection inside `## Test Coverage`. At auditor run time it gains a
+  `### Tier Results` table right below that subsection.
 - **Downstream project manifest/config**, at test-writer run time: gains the dev
   dependencies, config files and scripts named in a *confirmed* plan's "Setup needed"
   column, and nothing else.
@@ -219,9 +243,13 @@ this order, with these exact heading texts:
    needed" is not `none`. Otherwise the test-writer records
    `**Plan status**: NOT REQUIRED (unit-only, no setup)` and continues to write the
    tests in the same invocation, with no stop and no marker. A unit-only plan that
-   would bootstrap a test framework (no test setup exists yet) therefore **does**
-   require confirmation. This supersedes the current unconditional "bootstrap the
-   standard one" instruction. Nothing is installed without confirmation.
+   would bootstrap a test framework (no test setup exists yet), or add any dev
+   dependency, config file or script, therefore **does** require confirmation. This
+   was confirmed by the human at the post-specs gate on 2026-09-24 (answer to Q1: "ask
+   the user as well"). The skill and the role state this case explicitly, in words,
+   not only as a consequence of the rule. It supersedes the current unconditional
+   "bootstrap the standard one" instruction. Nothing is installed without
+   confirmation.
 10. **TT-10 — Stop and ask, by invocation context.** *(G3)* When confirmation is
     required:
     - **Cannot wait for a human in this conversation** (running as a delegated role or
@@ -291,11 +319,12 @@ this order, with these exact heading texts:
     existing text. The checkpoint is added as hard rule #6. The strings
     `documentation follows automatically`, `auditor → documentation` and
     `confirms the archive landed` remain present.
-17. **TT-17 — Protocol tokens are identical in all three places.** *(G3, G5)* The
+17. **TT-17 — Protocol tokens are identical in all five places.** *(G3, G5, G7)* The
     literal `TEST PLAN AWAITING CONFIRMATION` and the three literals `PROPOSED`,
     `CONFIRMED` and `NOT REQUIRED` (each introduced by `**Plan status**:`) appear
     identically in `templates/skills/harny-test/SKILL.md`,
-    `templates/roles/sdd-test-writer.md` and `templates/conductor/sdd-conductor.md`.
+    `templates/roles/sdd-test-writer.md`, `templates/conductor/sdd-conductor.md`,
+    `templates/skills/harny-audit/SKILL.md` and `templates/roles/sdd-auditor.md`.
 18. **TT-18 — The post-red-tests gate shows tiers.** *(G1, G5)* At the existing test
     review gate, the conductor's summary includes the confirmed Test Plan (tiers,
     frameworks, setup performed) and each tier's red-verification status from TT-14,
@@ -310,8 +339,10 @@ this order, with these exact heading texts:
     proposes tiers first. `compatibility` stays ≤ 500 characters and no longer mentions
     a `high-value-tests` skill; it names the bundled `high-value-tests.md` instead.
     `allowed-tools` is byte-unchanged (`Read, Write, Edit, Bash, WebFetch, WebSearch`,
-    per D1). `metadata.version` becomes `"2.0"`, a breaking change for any orchestrator
-    because an invocation can now end without tests (TT-10). `metadata.harny-writes`
+    per D1). `metadata.version` becomes `"1.1"`, as the human decided at the post-specs
+    gate on 2026-09-24 (Q5). The conductor handles the new "ended without tests"
+    outcome (TT-15), and harny defines no semver semantics for skill versions, so a
+    minor step is enough. `metadata.harny-writes`
     becomes `test files; test-framework setup named in a confirmed Test Plan (dev
     dependencies, config files, scripts); specs/<feature>/audit.md Test Coverage
     (including its Test Plan)`. `## Inputs` lists `high-value-tests.md` (bundled, loaded
@@ -338,6 +369,10 @@ this order, with these exact heading texts:
     ``forbiddenInTemplate: ['Run the `high-value-tests` skill first']`` and
     `requiredInTemplate: ['high-value-tests.md', 'TEST PLAN AWAITING CONFIRMATION']`.
     Both needles are verified against the dogfood copy by the existing mechanism.
+    `DIVERGENCE_TABLE['harny-audit']` (already `diverges`) keeps
+    `forbiddenInTemplate: ['seven standards (S1']` and gains
+    `requiredInTemplate: ['### Tier Results', 'TEST PLAN AWAITING CONFIRMATION']`,
+    neither of which exists in the dogfood `harny-audit` copy.
     `harny-test/high-value-tests.md` has no dogfood counterpart and is not added to the
     "bundled resources default to byte-identical" block.
 23. **TT-23 — Install counts.** *(G4)* +1 file per distinct skill root:
@@ -347,30 +382,106 @@ this order, with these exact heading texts:
     - five tools, `--skills all`: 98 → **101**, skill-library 39 → **42**;
     - five tools, `--skills none`: 89 → **92**, skill-library 30 → **33**.
 
-    `defaultSkillLibraryPaths` gains `${rootDir}/harny-test/high-value-tests.md`. The
+    The auditor changes (TT-26 to TT-29) modify existing files only, so they add no
+    count. `defaultSkillLibraryPaths` gains `${rootDir}/harny-test/high-value-tests.md`. The
     packaging manifest gains `templates/skills/harny-test/high-value-tests.md`
     (`EXPECTED_TEMPLATE_FILES` 31 → 32).
-24. **TT-24 — Goldens: only the contracted files change.** *(G4)* In each of
+24. **TT-24 — Goldens: only the contracted files change.** *(G4, G7)* In each of
     `tests/fixtures/golden/monorepo-mode/ts-root/` and
-    `tests/fixtures/golden/monorepo-mode/py-sub/apps/api/`, exactly these five paths
-    change, and nothing else:
+    `tests/fixtures/golden/monorepo-mode/py-sub/apps/api/`, exactly these **seven**
+    paths change, and nothing else:
     `.claude/skills/harny-test/high-value-tests.md` (created),
     `.claude/skills/harny-test/SKILL.md`, `.claude/agents/sdd-test-writer.md`,
-    `.claude/skills/sdd-conductor/SKILL.md` and `.claude/skills/README.md` (modified).
+    `.claude/skills/sdd-conductor/SKILL.md`, `.claude/skills/README.md`,
+    `.claude/skills/harny-audit/SKILL.md` and `.claude/agents/sdd-auditor.md`
+    (modified). Across both trees that is 12 modified and 2 created.
     Each is copied byte-for-byte from a fresh run of the **built** CLI with the golden's
     own flags (`init <dir> --yes --tools claude-code --stack typescript` at a `git init`
     root; `init <repo>/apps/api --yes --tools claude-code --stack python` in a
     `git init` repo). No file is hand-edited. The golden test's declared-exception list
     does not grow. `tests/canonical-fidelity.test.ts` T41's `isContractedEntry` gains
-    `templates/roles/sdd-test-writer.md` by exact match (the conductor and
-    `templates/skills/**` are already allowlisted).
-25. **TT-25 — Honest verification boundary.** *(G6)* TT-6, TT-7, TT-9, TT-10, TT-11,
+    `templates/roles/sdd-test-writer.md` and `templates/roles/sdd-auditor.md` by exact
+    match (the conductor and `templates/skills/**` are already allowlisted).
+25. **TT-25 — Honest verification boundary.** *(G6, G7)* TT-6, TT-7, TT-9, TT-10, TT-11,
     TT-12, TT-14, TT-15 and TT-18 describe agent runtime behavior that follows from
-    prompt instructions. Automated tests verify only that the instructions ship, that
-    they are coherent (TT-4, TT-5, TT-17, TT-16's gate count), and that they reach every
-    tool. Runtime behavior is verified by manual walkthroughs M1–M4 (audit.md), recorded
-    before 2026-09-27. The unverifiable remainder is carried as planned reservation
-    TT-R1.
+    prompt instructions, and so do TT-26 to TT-28 for the auditor. Automated tests
+    verify only that the instructions ship, that they are coherent (TT-4, TT-5, TT-17,
+    TT-16's gate count, TT-28's severity parity), and that they reach every tool
+    (TT-1, TT-30). Runtime behavior is verified by manual walkthroughs M1–M5 (audit.md)
+    **on Claude Code only**, recorded before 2026-09-27. The unverifiable remainder is
+    carried as planned reservation TT-R1. The absence of walkthroughs on Cursor, Kiro,
+    GitHub Copilot and Codex is the named reservation TT-R2.
+
+### The auditor takes test tiers into account (G7, added at the post-specs gate)
+
+26. **TT-26 — The auditor reads the plan and records Tier Results.** *(G7)* The shipped
+    `harny-audit` skill (as a new step after the existing test coverage step, before the
+    `harny-standards` step) and `sdd-auditor` role (inside Step 6, Test Coverage Audit)
+    instruct the auditor to read `audit.md`'s `### Test Plan`. It then writes the
+    `### Tier Results` table in the pinned shape and location (contract § Data
+    Models). The auditor's write scope stays `audit.md` only. It never edits the Test
+    Plan, never changes its status, and never writes or deletes tests.
+27. **TT-27 — What is verified per tier.** *(G7)* For a plan whose status is
+    `CONFIRMED` or `NOT REQUIRED`, and for each tier in it, the auditor verifies four
+    things:
+    (a) at least one test of that tier exists, identified by the project's own
+    convention for that tier (location, naming, tag or separate config, as the plan's
+    "Default run" line records);
+    (b) every contract or intent id listed in that tier's "Covers" cell is exercised by
+    a test of that tier;
+    (c) the setup actually present (the dev dependencies, config files and scripts
+    added since the feature began, found by diffing the manifest, lockfile and config
+    files) equals the union of the plan's "Setup needed" cells;
+    (d) the tier's tests run with that tier's command where the environment allows,
+    and "Ran" otherwise records `not run: <reason>`.
+
+    Tests found at a tier the plan does not list get their own row.
+28. **TT-28 — Tier findings and their severities.** *(G7)* These map onto
+    `harny-audit`'s existing four buckets, whose definitions are unchanged. They are
+    listed identically (same conditions, same levels) in the skill and the role:
+
+    | Condition | Severity | Rationale (existing bucket definition) |
+    |---|---|---|
+    | An integration or e2e test exists, but the plan is not `CONFIRMED` (absent, `PROPOSED` or `NOT REQUIRED`) | **HIGH** | Bypasses the human confirmation this pipeline requires. It is not a contract violation of the feature itself, so it does not block alone |
+    | Setup present that the plan did not name (a dev dependency, config file or script), or setup performed under a plan that is not `CONFIRMED` | **HIGH** | Unconfirmed change to the project, the same class as the row above. A *runtime* dependency added this way is also an unspecified external package under the existing Dependencies check, and that check already rates it **CRITICAL** as a contract violation |
+    | A tier in a `CONFIRMED` or `NOT REQUIRED` plan has no tests | **HIGH** | "Missing test coverage for a contract item" |
+    | The plan is still `PROPOSED` at audit time | **HIGH** | Confirmation never happened, so the test scope was never agreed |
+    | A `NOT REQUIRED` plan lists a non-unit tier or any setup (the confirmation rule was misapplied) | **HIGH** | Same effect as an unconfirmed plan |
+    | An id listed in a tier's "Covers" cell has no test at any tier | **HIGH** | "Missing test coverage for a contract item" |
+    | An id listed in a tier's "Covers" cell has no test at that tier, but is covered at another tier | **MEDIUM** | "Minor deviation from spec". Coverage exists, but not where the confirmed plan put it |
+    | No `### Test Plan` exists, and only unit tests were written | **MEDIUM** | "Missing documentation". This is expected when specs predate the tier flow |
+    | A planned tier could not be run by the auditor (no browser, no live service) | **LOW** | Red and green status for that tier is unverified. Recorded in "Ran" so the human sees it at the post-audit gate |
+
+    No tier finding is CRITICAL on its own, and the verdict enum and its rules are
+    unchanged: a HIGH finding typically yields `APPROVED WITH RESERVATIONS` or
+    `REJECTED`, at the auditor's judgment as today. If the test-writer's report began
+    with the marker `TEST PLAN AWAITING CONFIRMATION` and the plan is still `PROPOSED`,
+    the auditor cites both in the `PROPOSED` finding.
+29. **TT-29 — The auditor artifacts keep their shape.** *(G7)*
+    `templates/skills/harny-audit/SKILL.md` keeps the six frontmatter keys, the five
+    body sections and `name: harny-audit`. `description` stays ≤ 1,024 characters (it
+    is 525 today) and may mention tier checks. `allowed-tools`
+    (`Glob, Grep, Read, Write, Edit, Bash`) and `metadata.harny-writes`
+    (`specs/<feature>/audit.md only`) are byte-unchanged. `metadata.version` goes from
+    `"1.0"` to `"1.1"` (a minor step, as the coordinator instructed after the gate).
+    The severity-rating guardrail keeps its four bucket definitions verbatim and gains
+    a pointer to the TT-28 table. Neither file uses the `harny-audit` neutrality
+    residue (`seven standards (S1`, `S1–S7`). `templates/roles/sdd-auditor.md` keeps
+    every Role Metadata value byte-unchanged (`cost_tier: most-capable`,
+    `capabilities: read-files, run-shell, write-files (audit.md only)`). Only its body
+    changes: Step 6 gains the tier audit, Step 7 gains the Tier Results table, and
+    § Severity Ratings gains the TT-28 table. The body stays under 30,000 characters
+    and contains no `'''`, bare CR or control character.
+30. **TT-30 — All five tools receive the tier content.** *(G4, G5, G7)* For each of the
+    five generators, rendering the real templates yields:
+    - `sdd-test-writer` and `sdd-auditor` role artifacts, and a conductor artifact,
+      that each contain `TEST PLAN AWAITING CONFIRMATION` and `**Plan status**:` (by
+      TG-3 body propagation, with no generator change);
+    - an install whose skill root carries the updated `harny-test/SKILL.md`,
+      `harny-test/high-value-tests.md` and `harny-audit/SKILL.md` (TT-1).
+
+    This is what "delivered to all five harnesses" means and is tested. Runtime
+    behavior on the four tools other than Claude Code is TT-R2.
 
 ## Error Handling Contract
 
@@ -386,9 +497,11 @@ downstream run time, except the last three rows, which are harny build-time beha
 | A tier cannot be run in the current environment (no browser, no live service) | Tests are written. Report says "not run: <reason>" for that tier (TT-14). It is never claimed red | Human knows red status is unverified for that tier at the post-red-tests gate |
 | Conductor sees the marker but `audit.md` does not read `PROPOSED` | Conductor does not present a stale or absent plan. It reports the mismatch to the human and re-invokes the test-writer to reconcile (hard rule #5) | Human is told the role's report and the record disagree |
 | No human is reachable (for example, an unattended run) | The conductor does not confirm on the human's behalf. The pipeline waits at the checkpoint, as it does at a gate. A human's explicit, recorded waiver is the only exception, and the conductor records it in the Test Plan's status line channel | Integration/e2e tests are never written by default without a human |
+| Auditor finds `### Tier Results` already present (a re-audit) | Rewrite the table in place, never append a second one. Earlier findings stay in `## Audit Log` | One current table and a full history |
+| Auditor cannot tell which tier a test belongs to (no convention recorded, ambiguous location) | Record the test under the tier its behavior matches (the rubric's § "Picking the right tier"), note the ambiguity in "Finding", and raise it as LOW | Human sees the classification call |
 | Build time: a shipped template names a skill harny does not ship, or a bundled file that is absent | The TT-4 guard test fails, naming the file and the reference | harny contributor fixes before merge |
 | Build time: the role or conductor would exceed a vendor limit or contain `'''` | The existing `HarnessError('TEMPLATE')` from the generator (TG-7), before any write | `init` fails loudly. It is caught by the existing e2e and generator tests |
-| Build time: goldens drift beyond the five contracted paths | The existing golden-byte test fails on path-set or byte mismatch | harny contributor investigates the unintended change |
+| Build time: goldens drift beyond the seven contracted paths per tree | The existing golden-byte test fails on path-set or byte mismatch | harny contributor investigates the unintended change |
 
 ## Dependencies
 
@@ -409,23 +522,30 @@ downstream run time, except the last three rows, which are harny build-time beha
 - **Conductor ↔ test-writer**: the TT-10 marker and the TT-8 status line in `audit.md`.
   The conductor's existing "Verify, don't trust" and "Prefer resuming an existing
   invocation" mechanics carry the checkpoint.
-- **Auditor (unchanged)**: reads `audit.md` whole, so it sees the Test Plan, but it is
-  not instructed to check it (see open question Q2).
+- **Auditor**: reads the Test Plan, writes `### Tier Results` and raises the TT-28
+  findings (TT-26 to TT-29). The verdict model is unchanged.
 - **Tests in this repository**:
-  - `tests/skills-fidelity.test.ts`: `DIVERGENCE_TABLE['harny-test']` (TT-22).
+  - `tests/skills-fidelity.test.ts`: `DIVERGENCE_TABLE['harny-test']` and
+    `DIVERGENCE_TABLE['harny-audit']` (TT-22).
   - `tests/skills-templates.test.ts`: a `NEUTRALITY_CHECKS` entry for
     `harny-test/high-value-tests.md` (TT-3). The existing shape tests keep covering
     TT-19 unchanged.
   - `tests/skills-placement.test.ts`: per-tool placement of every `harny-test` file
     (TT-1).
   - `tests/skill-references.test.ts` (new): TT-4 on a real install.
-  - `tests/test-writer-templates.test.ts` (new): TT-5 citations, TT-17 token coupling,
-    TT-16 gate count and preserved strings, and TT-3's rubric section structure.
+  - `tests/test-writer-templates.test.ts` (new): TT-5 citations, TT-17 token coupling
+    across all five template files, TT-16 gate count and preserved strings, TT-3's
+    rubric section structure, and TT-28 severity parity (the skill and role list the
+    same tier conditions at the same levels).
+  - `tests/canonical-fidelity.test.ts`: TT-30, protocol tokens in all five generators'
+    `sdd-test-writer`, `sdd-auditor` and conductor artifacts. This follows the existing
+    RC-11 per-generator pattern.
   - `tests/e2e-init.test.ts`: counts and `defaultSkillLibraryPaths` (TT-23), plus the
     golden docblock recording TT-24's regeneration.
   - `tests/packaging.test.ts`: the manifest entry (TT-23).
   - `tests/canonical-fidelity.test.ts`: the T41 allowlist entry (TT-24).
 - **Knowledge base (at archive time, via `harny-sync`)**: `pipeline-roles` gains a
   requirement for the conditional tier checkpoint and its not-a-gate status (PR-6 is
-  unchanged). `skill-library` gains a requirement that `harny-test` bundles the rubric
+  unchanged), plus a requirement that the auditor checks tiers with the TT-28
+  mapping. `skill-library` gains a requirement that `harny-test` bundles the rubric
   and that shipped templates carry no dangling skill references.

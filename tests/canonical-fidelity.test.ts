@@ -74,6 +74,17 @@
  * `ci-workflow-root`'s red phase and is retained as the historical record it
  * is; it is NOT a standing claim. The full reasoning, and the replacement
  * guards for everything retired, are on the two describe blocks themselves.
+ *
+ * ---
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-24, TT-30; intent.md SC8, SC12; audit.md Test
+ * Coverage T13, T16; tasks.md Tasks R.11, R.14. `isContractedEntry` above
+ * gains `templates/roles/sdd-test-writer.md` and
+ * `templates/roles/sdd-auditor.md` by exact match (TT-24); a new describe
+ * block at the bottom of this file exercises all five generators' rendered
+ * `sdd-test-writer`, `sdd-auditor` and conductor artifacts for the TT-17
+ * protocol tokens (TT-30) — see that block's own docblock for its red-phase
+ * reasoning.
  */
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
@@ -322,6 +333,15 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
     // § State Changes, RC-14) — the conductor now verifies the documentation
     // role's archive hand-off before declaring the pipeline complete, rather
     // than accepting that role's own report.
+    //
+    // (specs/test-tiers amendment round, TT-24.) Two more single-file
+    // allowances join by exact match, the same class as
+    // `templates/roles/sdd-documentation.md` above:
+    // `templates/roles/sdd-test-writer.md` and `templates/roles/sdd-auditor.md`
+    // both change body content (the tier-proposal and tier-audit flow), a
+    // contracted canonical-body edit, not a mutation this check exists to
+    // catch. `templates/conductor/sdd-conductor.md` and `templates/skills/**`
+    // are already allowlisted above and need no new entry (TT-24).
     const isContractedEntry = (relativePath: string): boolean =>
       CONTRACTED_BRIDGE_SYMLINKS.has(relativePath) ||
       relativePath.startsWith('templates/skills/') ||
@@ -332,6 +352,8 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
       relativePath.startsWith('templates/mcp/') ||
       relativePath === 'templates/roles/sdd-documentation.md' ||
       relativePath === 'templates/conductor/sdd-conductor.md' ||
+      relativePath === 'templates/roles/sdd-test-writer.md' ||
+      relativePath === 'templates/roles/sdd-auditor.md' ||
       relativePath === '.claude/settings.json';
 
     // (templates-skill-library-parity fix.) Each porcelain line is a fixed-width
@@ -996,6 +1018,65 @@ describe('this repository carries its own commit checks (commit-checks CC-9)', (
     const { stdout } = await execFileAsync('git', ['ls-files', '--stage', '--', '.sdd/git-hooks'], { cwd: REPO_ROOT });
     for (const shim of ['pre-commit', 'pre-push']) {
       expect(stdout, shim).toMatch(new RegExp(`^100755 \\S+ 0\\t\\.sdd/git-hooks/${shim}$`, 'm'));
+    }
+  });
+});
+
+/**
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-24 (T41 allowlist, above), TT-30; intent.md SC8,
+ * SC12; audit.md Test Coverage T13, T16; tasks.md Tasks R.11, R.14.
+ *
+ * `templates/roles/sdd-test-writer.md`, `templates/roles/sdd-auditor.md` and
+ * `templates/conductor/sdd-conductor.md` do not carry the TT-17 protocol
+ * tokens (`TEST PLAN AWAITING CONFIRMATION`, `**Plan status**:`) yet at red
+ * time, so every generator's rendered artifact below is expected to fail on a
+ * genuine missing substring — the same class of failure the RC-11 block
+ * above already uses, not a wrong assumption about `renderRole`'s or
+ * `renderConductor`'s canonical-body propagation mechanism (already proven
+ * correct by the T40/Task-4.1 blocks above; no generator change is needed or
+ * allowed for TT-30 to hold once the template text lands, per TT-21).
+ */
+describe('the TT-17 protocol tokens reach all five generators\' sdd-test-writer, sdd-auditor and conductor artifacts (TT-30) (T16)', () => {
+  const MARKER = 'TEST PLAN AWAITING CONFIRMATION';
+  const STATUS_PREFIX = '**Plan status**:';
+
+  it('every generator\'s rendered sdd-test-writer and sdd-auditor role artifacts contain both tokens', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      for (const roleId of ['sdd-test-writer', 'sdd-auditor'] as const) {
+        const template = templates.roles.get(roleId)!;
+        const generated = generator.renderRole({ template, tier: template.metadata.costTier });
+
+        expect(
+          generated.contents,
+          `${generator.id}'s ${roleId} artifact is missing "${MARKER}"`,
+        ).toContain(MARKER);
+        expect(
+          generated.contents,
+          `${generator.id}'s ${roleId} artifact is missing "${STATUS_PREFIX}"`,
+        ).toContain(STATUS_PREFIX);
+      }
+    }
+  });
+
+  it('every generator\'s rendered conductor artifact contains both tokens', async () => {
+    const templates = await loadRealTemplates();
+    const generators = await allGenerators();
+
+    for (const generator of generators) {
+      const generated = generator.renderConductor({ template: templates.conductor, project: SAMPLE_PROJECT });
+
+      expect(
+        generated.contents,
+        `${generator.id}'s conductor artifact is missing "${MARKER}"`,
+      ).toContain(MARKER);
+      expect(
+        generated.contents,
+        `${generator.id}'s conductor artifact is missing "${STATUS_PREFIX}"`,
+      ).toContain(STATUS_PREFIX);
     }
   });
 });

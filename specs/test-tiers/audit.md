@@ -53,22 +53,22 @@
 ## Test Coverage
 | ID | Test Description | Status | Test File |
 |---|---|---|---|
-| T1 | Each of the five tools, installed alone, writes every `harny-test` file (including `high-value-tests.md`) under its own skill root, byte-equal to the template | PENDING | `tests/skills-placement.test.ts` |
-| T2 | In a real five-tool `--skills all` install, every "`<name>` skill" reference resolves to a shipped skill, and every bundled `.md` reference in a `SKILL.md` exists beside it | PENDING | `tests/skill-references.test.ts` |
-| T3 | Every rubric citation in the skill and the role names an existing rubric heading; each cites "The one question" and "Picking the right tier"; the role no longer carries the vendoring conditional | PENDING | `tests/test-writer-templates.test.ts` |
-| T4 | The awaiting marker and the three plan-status values appear identically in the test-writer skill and role, the conductor, and the auditor skill and role | PENDING | `tests/test-writer-templates.test.ts` |
-| T5 | The conductor's pipeline diagram has exactly three human gates, and the three pre-existing load-bearing phrases survive | PENDING | `tests/test-writer-templates.test.ts` |
-| T6 | The rubric has one H1, the five pinned H2 headings in order, and no frontmatter | PENDING | `tests/test-writer-templates.test.ts` |
-| T7 | The rubric carries none of the dogfood domain residue | PENDING | `tests/skills-templates.test.ts` |
-| T8 | `harny-test` and `harny-audit` are declared divergences: the dangling-skill sentence is absent from shipped `harny-test`, and the rubric, the marker and `### Tier Results` are present in the shipped copies, all checked against the dogfood oracle | PENDING | `tests/skills-fidelity.test.ts` |
-| T9 | Install counts rise by one per skill root across the single-tool, five-tool and `--skills` scenarios | PENDING | `tests/e2e-init.test.ts` |
-| T10 | The default skill-library path list includes the rubric in every single-tool scenario | PENDING | `tests/e2e-init.test.ts` |
-| T11 | The npm package includes the rubric | PENDING | `tests/packaging.test.ts` |
-| T12 | The `monorepo-mode` golden trees match the built CLI, with only the seven contracted paths regenerated per tree | PENDING | `tests/e2e-init.test.ts` (existing golden test; fixtures regenerated) |
-| T13 | The templates non-mutation guard allows the two contracted role edits | PENDING | `tests/canonical-fidelity.test.ts` |
-| T14 | The auditor skill and role both name `### Tier Results` and carry the protocol tokens (part of T4's five-file coupling) | PENDING | `tests/test-writer-templates.test.ts` |
-| T15 | The auditor skill and role list the same tier conditions at the same severities, with the five contracted conditions at HIGH | PENDING | `tests/test-writer-templates.test.ts` |
-| T16 | Each of the five generators renders test-writer, auditor and conductor artifacts carrying the protocol tokens | PENDING | `tests/canonical-fidelity.test.ts` |
+| T1 | Each of the five tools, installed alone, writes every `harny-test` file (including `high-value-tests.md`) under its own skill root, byte-equal to the template | WRITTEN | `tests/skills-placement.test.ts` |
+| T2 | In a real five-tool `--skills all` install, every "`<name>` skill" reference resolves to a shipped skill, and every bundled `.md` reference in a `SKILL.md` exists beside it | WRITTEN | `tests/skill-references.test.ts` |
+| T3 | Every rubric citation in the skill and the role names an existing rubric heading; each cites "The one question" and "Picking the right tier"; the role no longer carries the vendoring conditional | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T4 | The awaiting marker and the three plan-status values appear identically in the test-writer skill and role, the conductor, and the auditor skill and role | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T5 | The conductor's pipeline diagram has exactly three human gates, and the three pre-existing load-bearing phrases survive | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T6 | The rubric has one H1, the five pinned H2 headings in order, and no frontmatter | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T7 | The rubric carries none of the dogfood domain residue | WRITTEN | `tests/skills-templates.test.ts` |
+| T8 | `harny-test` and `harny-audit` are declared divergences: the dangling-skill sentence is absent from shipped `harny-test`, and the rubric, the marker and `### Tier Results` are present in the shipped copies, all checked against the dogfood oracle | WRITTEN | `tests/skills-fidelity.test.ts` |
+| T9 | Install counts rise by one per skill root across the single-tool, five-tool and `--skills` scenarios | WRITTEN | `tests/e2e-init.test.ts` |
+| T10 | The default skill-library path list includes the rubric in every single-tool scenario | WRITTEN | `tests/e2e-init.test.ts` |
+| T11 | The npm package includes the rubric | WRITTEN | `tests/packaging.test.ts` |
+| T12 | The `monorepo-mode` golden trees match the built CLI, with only the seven contracted paths regenerated per tree | WRITTEN (passes at red time by design; regenerated at Task 4.2) | `tests/e2e-init.test.ts` (existing golden test; fixtures regenerated) |
+| T13 | The templates non-mutation guard allows the two contracted role edits | WRITTEN | `tests/canonical-fidelity.test.ts` |
+| T14 | The auditor skill and role both name `### Tier Results` and carry the protocol tokens (part of T4's five-file coupling) | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T15 | The auditor skill and role list the same tier conditions at the same severities, with the five contracted conditions at HIGH | WRITTEN | `tests/test-writer-templates.test.ts` |
+| T16 | Each of the five generators renders test-writer, auditor and conductor artifacts carrying the protocol tokens | WRITTEN | `tests/canonical-fidelity.test.ts` |
 
 **Manual verification on Claude Code (not automatable, contract TT-25; deadline 2026-09-26; the other four tools are TT-R2):**
 

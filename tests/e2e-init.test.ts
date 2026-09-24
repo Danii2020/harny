@@ -145,6 +145,27 @@
  * exceptions and gains its own re-assertion — see the amended
  * declared-exception docblock on that block for the full rationale and its
  * red-phase note.
+ *
+ * ---
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-1, TT-23; intent.md SC1; audit.md Test Coverage T9,
+ * T10; tasks.md Task R.9.
+ *
+ * `defaultSkillLibraryPaths` gains `harny-test/high-value-tests.md` (11 -> 12
+ * files per root); it is a core skill's bundled resource, so it is present
+ * under `--skills none` too (TT-1). Every single-tool `toHaveLength(38)`
+ * becomes 39, the five-tool default becomes 95 (skill-library 33 -> 36), the
+ * `--skills all` scenario becomes 101 (skill-library 39 -> 42), and the
+ * `--skills none` scenario becomes 92 (skill-library 30 -> 33). At red time
+ * `templates/skills/harny-test/high-value-tests.md` does not exist yet, so
+ * every amended count/path assertion below fails by omission — the actual
+ * written set is the old, pre-feature set, missing the new file — not by a
+ * wrong assumption about the CLI's behavior. The `monorepo-mode` golden-byte
+ * regression block is expected to still PASS at red time (TT-24's
+ * regeneration is Phase 4 executor work, not part of this red phase) and is
+ * expected to start failing once Phases 1-3 land, until Task 4.2 regenerates
+ * the golden fixtures — the designed sequence `tasks.md`'s Notes section
+ * documents, not a regression.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
@@ -335,6 +356,9 @@ function defaultSkillLibraryPaths(rootDir: string): string[] {
     `${rootDir}/harny-sync/SKILL.md`,
     `${rootDir}/harny-sync/capability-template.md`,
     `${rootDir}/harny-test/SKILL.md`,
+    // (test-tiers) the twelfth default-selection file: the bundled
+    // high-value-tests rubric ships beside harny-test/SKILL.md in every root.
+    `${rootDir}/harny-test/high-value-tests.md`,
   ];
 }
 
@@ -415,7 +439,7 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(38);
+    expect(files).toHaveLength(39);
   });
 });
 
@@ -546,7 +570,7 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(38);
+    expect(files).toHaveLength(39);
   });
 });
 
@@ -586,7 +610,7 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(38);
+    expect(files).toHaveLength(39);
   });
 });
 
@@ -626,7 +650,7 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(38);
+    expect(files).toHaveLength(39);
   });
 });
 
@@ -667,7 +691,7 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(38);
+    expect(files).toHaveLength(39);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -757,13 +781,15 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
 
     expect(code).toBe(0);
     const files = await listFilesRecursively(targetDir);
-    expect(files).toHaveLength(92);
+    // (test-tiers.) +3 skill-library files (harny-test/high-value-tests.md x 3
+    // roots, 33 -> 36) over the pre-test-tiers 92.
+    expect(files).toHaveLength(95);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
     expect(sharedFiles).toHaveLength(18);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(33);
+    expect(skillLibraryFiles).toHaveLength(36);
     expect(new Set(skillLibraryFiles.map((f) => f.split('/').slice(0, 2).join('/')))).toEqual(
       new Set(['.agents/skills', '.claude/skills', '.kiro/skills']),
     );
@@ -880,10 +906,12 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 86.
-    expect(files).toHaveLength(98);
+    // (test-tiers.) +3 skill-library files (harny-test/high-value-tests.md x 3
+    // roots, 39 -> 42) over the pre-test-tiers 98.
+    expect(files).toHaveLength(101);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(39);
+    expect(skillLibraryFiles).toHaveLength(42);
   });
 
   it('--tools all --skills none writes 27 skill-library artifacts (3 roots x 9 files) for 66 total, core skills still present', async () => {
@@ -911,10 +939,13 @@ describe('--skills all and --skills none amend the default skill-library artifac
     //
     // (context7-mcp.) +5 tool artifacts (one MCP config file per resolved
     // generator) over the pre-context7-mcp 77.
-    expect(files).toHaveLength(89);
+    // (test-tiers.) harny-test is core, so high-value-tests.md is present
+    // under --skills none too: +3 skill-library files (30 -> 33) over the
+    // pre-test-tiers 89.
+    expect(files).toHaveLength(92);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
-    expect(skillLibraryFiles).toHaveLength(30);
+    expect(skillLibraryFiles).toHaveLength(33);
     // Core skills are never deselectable (Gu 14): harny-sync must still be present.
     expect(skillLibraryFiles.some((f) => f.endsWith('harny-sync/SKILL.md'))).toBe(true);
     // The optional harny-standards must be absent under --skills none.

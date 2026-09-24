@@ -62,6 +62,35 @@
  * the vanished `src/gone.py` — rather than only the surviving `src/app.py`.
  * The test's exact-argv assertions are therefore expected to fail on that
  * extra, wrong path content, not a test-authoring bug.
+ *
+ * ---
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md § Interfaces (`stopWrapperScript(event)` /
+ * `stopCommand(runner, commands, event)`); Behavior Guarantees SF-1 (the same
+ * file, the same registration shape, nothing new), SF-2 (the same runner call
+ * plus `--keep-turn`, never `--whole-project`), SF-5 (Claude Code's row:
+ * `hooks.SubagentStop`, findings via `hookSpecificOutput.additionalContext`,
+ * non-blocking) and SF-6 (the emitted `hookEventName` matches the
+ * registration); intent.md SC1, SC2; roadmap.md Phase 2 step 1; audit.md Test
+ * Coverage T4, T7.
+ *
+ * `renderHook` registers only `PostToolUse` and `Stop` at red time, so the two
+ * pre-existing key-set assertions below (extended in place, per roadmap.md
+ * Phase 2's own File Change Map rather than duplicated into a new block) fail
+ * on a missing `SubagentStop` key, and the new describe blocks fail on
+ * `parsed.hooks.SubagentStop` being `undefined` — not on a wrong assumption
+ * about the nested wrapper shape, which the pre-existing assertions already
+ * prove for `Stop`.
+ *
+ * SF-6 is the one guarantee a structural assertion could not catch: the
+ * wrapper script is a string literal today with `"Stop"` hardcoded inside it,
+ * so a `SubagentStop` registration that reuses it renders a perfectly
+ * well-formed settings.json whose findings Claude Code silently drops. The
+ * block below therefore executes the generated `SubagentStop` command as a
+ * real subprocess (the same `fake-runner.mjs` harness the `Stop` block above
+ * uses) and reads the `hookEventName` the wrapper actually emits. The `Stop`
+ * half of SF-6 is already asserted by that pre-existing block and is
+ * deliberately not duplicated here.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -352,7 +381,9 @@ describe('renderHook — both registrations, nested wrapper shape (BG-2, V1) (Ta
     expect(generated!.contents.endsWith('\n\n')).toBe(false);
 
     const parsed = JSON.parse(generated!.contents);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+    // (subagent-feedback-hooks SF-1) The third registration lives in this same
+    // file, in this same shape — no new path and no new artifact.
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop', 'SubagentStop']);
 
     // PostToolUse: the accumulator, matched to Edit/Write only.
     const postToolUseEntry = parsed.hooks.PostToolUse[0];
@@ -366,6 +397,12 @@ describe('renderHook — both registrations, nested wrapper shape (BG-2, V1) (Ta
     expect(Array.isArray(stopEntry.hooks)).toBe(true);
     expect(stopEntry.hooks[0].type).toBe('command');
     expect(typeof stopEntry.hooks[0].command).toBe('string');
+
+    // SubagentStop: the subagent-completion runner, in the identical shape.
+    const subagentStopEntry = parsed.hooks.SubagentStop[0];
+    expect(Array.isArray(subagentStopEntry.hooks)).toBe(true);
+    expect(subagentStopEntry.hooks[0].type).toBe('command');
+    expect(typeof subagentStopEntry.hooks[0].command).toBe('string');
   });
 
   it('references the runner script via ${CLAUDE_PROJECT_DIR} in both registrations (V5)', async () => {
@@ -389,7 +426,106 @@ describe('renderHook — both registrations, nested wrapper shape (BG-2, V1) (Ta
 
     expect(generated).toBeDefined();
     const parsed = JSON.parse(generated!.contents);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop', 'SubagentStop']);
+  });
+});
+
+describe('renderHook — the SubagentStop registration is the Stop registration plus --keep-turn (SF-2, SF-5)', () => {
+  it('invokes the same runner in run mode with the same inline --commands payload, adds --keep-turn, and never passes --whole-project', async () => {
+    const { claudeCodeGenerator } = await import('../../src/generators/claude-code.js');
+    const runnerContents = await loadRunnerContents();
+
+    // A marker payload rather than a real stack profile, so "the same
+    // --commands payload as the Stop registration" is observable as one
+    // distinctive token rather than inferred from two long identical strings.
+    const payload = fakeHookPayload(undefined, runnerContents);
+    payload.commands = [
+      {
+        id: 'subagent-marker-command',
+        kind: 'lint',
+        argv: ['node', 'subagent-marker-command-argv-token'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+    ];
+
+    const parsed = JSON.parse(claudeCodeGenerator.renderHook(payload)!.contents);
+    const stopCommand: string = parsed.hooks.Stop[0].hooks[0].command;
+    const subagentStopCommand: string = parsed.hooks.SubagentStop[0].hooks[0].command;
+
+    expect(subagentStopCommand).toContain('${CLAUDE_PROJECT_DIR}');
+    expect(subagentStopCommand).toContain('run-feedback.mjs');
+    expect(subagentStopCommand).toContain('--commands');
+    expect(subagentStopCommand).toContain('subagent-marker-command-argv-token');
+    expect(subagentStopCommand).toContain('--keep-turn');
+
+    // SF-2's two-way rule: the flag is on the subagent registration only, and
+    // the CI-only flag is on neither.
+    expect(stopCommand).not.toContain('--keep-turn');
+    expect(subagentStopCommand).not.toContain('--whole-project');
+  });
+});
+
+describe('renderHook — SubagentStop findings arrive via hookSpecificOutput with the SubagentStop event name (SF-5, SF-6)', () => {
+  const FAKE_RUNNER_PATH = path.join(TESTS_DIR, 'fixtures', 'hooks', 'fake-runner.mjs');
+  const tempDirs: string[] = [];
+
+  async function makeFakeProjectDir(): Promise<string> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harny-claude-subagent-stop-hook-'));
+    tempDirs.push(dir);
+    const runnerDir = path.join(dir, '.sdd', 'feedback');
+    await fs.mkdir(runnerDir, { recursive: true });
+    await fs.copyFile(FAKE_RUNNER_PATH, path.join(runnerDir, 'run-feedback.mjs'));
+    return dir;
+  }
+
+  function runHookCommand(
+    command: string,
+    projectDir: string,
+    env: Record<string, string>,
+  ): Promise<{ code: number | null; stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = spawn('sh', ['-c', command], {
+        cwd: projectDir,
+        env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir, ...env },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => (stdout += chunk));
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+      child.stdin.write(JSON.stringify({ session_id: 'wrapper-test-session', stop_hook_active: false }));
+      child.stdin.end();
+    });
+  }
+
+  it('emits hookEventName "SubagentStop", not the Stop wrapper\'s "Stop", and still exits 0 without forcing a continuation', async () => {
+    const { claudeCodeGenerator } = await import('../../src/generators/claude-code.js');
+    const { STACK_PROFILES } = await import('../../src/feedback.js');
+    const runnerContents = await loadRunnerContents();
+    const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+
+    const generated = claudeCodeGenerator.renderHook(fakeHookPayload(profile, runnerContents))!;
+    const command: string = JSON.parse(generated.contents).hooks.SubagentStop[0].hooks[0].command;
+
+    const projectDir = await makeFakeProjectDir();
+    try {
+      const result = await runHookCommand(command, projectDir, {
+        FAKE_EXIT_CODE: '2',
+        FAKE_STDOUT: 'finding from `tsc` (exit 2):\nsrc/foo.ts:1:1 - error TS1234: oops\n',
+      });
+
+      expect(result.code).toBe(0);
+
+      const parsed = JSON.parse(result.stdout.trim());
+      // A mismatched event name is a silent drop: Claude Code discards the
+      // block rather than rejecting it, so nothing else here would catch it.
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('SubagentStop');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('TS1234');
+    } finally {
+      await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+    }
   });
 });
 

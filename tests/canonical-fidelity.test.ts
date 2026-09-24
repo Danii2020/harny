@@ -717,6 +717,58 @@ describe('this repository\'s own .sdd/feedback/run-feedback.mjs tracks its templ
 });
 
 /**
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md Behavior Guarantee SF-9 (this repository's own
+ * `.claude/settings.json` and `.sdd/feedback/run-feedback.mjs` are regenerated,
+ * so FC-13 still holds); intent.md § Constraints ("FC-13 and CLI-14 hold");
+ * roadmap.md Phase 3 step 2; tasks.md Task 3.2.
+ *
+ * The runner half of FC-13 is already guarded by the block immediately above
+ * and is deliberately not duplicated. This is the other half, and the half no
+ * existing test covered: the hook CONFIG this repo actually runs under. It is
+ * a generated file (`src/generators/claude-code.ts` `renderHook`) rendered from
+ * a config this repo tracks (`.sdd/harness.json`), so "the live file equals
+ * what the generator renders for this repo's own config today" is a claim that
+ * never goes stale — it says "whenever the generator changes, this install is
+ * regenerated in the same change", which is exactly the dogfood regression
+ * FC-13 exists to prevent, and exactly the one a frozen golden cannot express.
+ *
+ * Red-phase note — a declared PASS exception, the same posture the
+ * `run-feedback.mjs` block above and the T1/T2 golden block in
+ * `tests/e2e-init.test.ts` record for themselves. This test passes at red
+ * time, because neither side of the pair has moved yet: the generator still
+ * renders exactly the bytes this repo committed. It turns RED the moment
+ * Phase 2 adds the `SubagentStop` registration to `renderHook`, and green
+ * again only when Task 3.2 regenerates `.claude/settings.json` — which is
+ * precisely the regression FC-13/SF-9 exist to prevent, and which no other
+ * test in this suite would have caught.
+ */
+describe('this repository\'s own .claude/settings.json tracks its generator (FC-13, SF-9 dogfood fidelity)', () => {
+  it('is byte-identical to what the Claude Code generator renders for this repo\'s .sdd/harness.json', async () => {
+    const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
+    const { validateConfig } = await import('../src/config.js');
+    const { buildPayload, buildCommandsPayload } = await import('../src/engine.js');
+
+    const harnessJson = await fs.readFile(path.join(REPO_ROOT, '.sdd', 'harness.json'), 'utf8');
+    const config = validateConfig(JSON.parse(harnessJson), '.sdd/harness.json');
+    const payload = buildPayload(config, await loadRealTemplates());
+
+    // The same HookPayload `runInit` composes (src/init.ts) — never a fixture,
+    // so this compares the real install against the real rendering path.
+    const generated = claudeCodeGenerator.renderHook({
+      project: payload.conductor.project,
+      profile: payload.conductor.project.stackProfile,
+      runner: payload.hookRunner!,
+      commands: buildCommandsPayload(payload.conductor.project.components),
+    })!;
+
+    expect(generated.path).toBe('.claude/settings.json');
+    const live = await fs.readFile(path.join(REPO_ROOT, '.claude', 'settings.json'), 'utf8');
+    expect(live).toBe(generated.contents);
+  });
+});
+
+/**
  * Spec: specs/documentation-role-completion
  * Covers: contract.md § Interfaces items 2, 3; Behavior Guarantees RC-7,
  * RC-8, RC-9, RC-10, RC-11, RC-14, RC-17; intent.md SC5, SC6, SC9, SC10,

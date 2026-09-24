@@ -187,6 +187,14 @@
  * guards MC-5 exists to be: once per-component dispatch lands, these are what
  * prove it changed nothing for the one-`.`-component case and left the
  * runner's existing tolerant posture intact.
+ *
+ * ---
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md § Data Models (`parseRunArgs`'s `keepTurn`), § State
+ * Changes, Behavior Guarantees SF-3, SF-4, SF-8, and the Error Handling
+ * Contract's "`--keep-turn` passed with `--whole-project`" row; intent.md SC2;
+ * audit.md Test Coverage T1-T3. See the dedicated section comment at the end
+ * of this file for its red-phase note and its one declared PASS exception.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -1886,5 +1894,150 @@ describe('single-component output text stays byte-identical to today — no comp
     expect(result.stdout).toContain('finding from `failing`');
     // No "(component ...)"/"[component ...]" style suffix on the finding line.
     expect(result.stdout).not.toMatch(/\(apps|\[apps|\(\.\)|\[\.\]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// specs/subagent-feedback-hooks — `run --keep-turn`
+//
+// Covers: contract.md § Data Models (`parseRunArgs`'s third field), § State
+// Changes (the turn file is not deleted under the flag), Behavior Guarantees
+// SF-3 (a boolean on `run`, never a third mode; inert under `--whole-project`),
+// SF-4 (at-least-once: a subagent-stop run never consumes a finding the
+// parent's own run still has to report) and SF-8 (a subagent-stop run is an
+// ordinary run — same exit-code convention through the identical code path);
+// intent.md SC2, G3; roadmap.md Phase 1 and Phase 4 step 1; audit.md Test
+// Coverage T1-T3.
+//
+// `parseRunArgs` does not recognize `--keep-turn` at red time — today's argument
+// loop silently ignores any unknown token, so `runRunMode` reaches its
+// unconditional `fs.rmSync(file, { force: true })` exactly as it does without
+// the flag. Both tests in the first two blocks below therefore fail on a turn
+// file that is GONE where the flag requires it to survive (and, in the second,
+// on the consequential "the next run has nothing left to report"), not on a
+// test-authoring bug: every other assertion in them describes today's behavior
+// and passes today.
+//
+// The `--whole-project` block is the documented exception, expected to PASS
+// already at red time — the same posture the PH-7/PH-8 blocks above record.
+// `runWholeProject` returns before any turn state is read or written, so the
+// flag is inert there today for the trivial reason that it is inert
+// everywhere. It stays live as the regression guard that proves the Phase 1
+// implementation kept it that way (the Error Handling Contract's
+// "`--keep-turn` passed with `--whole-project`" row).
+// ---------------------------------------------------------------------------
+
+describe('run --keep-turn leaves the turn file in place for a later run (SF-3, SF-4)', () => {
+  it('the turn file survives a --keep-turn run and the next plain run still sees the same paths, then deletes it', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'keep-turn-session';
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const file = await writeFile(repoDir, 'src/edited.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const turnFile = turnFilePath(repoDir, sessionId);
+    expect(await pathExists(turnFile)).toBe(true);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      { id: 'lint', kind: 'lint', argv: ['node', RECORD_SCRIPT, 'LINT'], pathMode: 'per-file', requires: {} },
+    ]);
+
+    // The subagent's own stop: the turn's paths are checked, and left behind.
+    const subagentRun = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile, '--keep-turn'],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(subagentRun.code).toBe(0);
+    expect(await pathExists(turnFile)).toBe(true);
+
+    // The parent's own turn-completion run, with no flag: the same path is
+    // still there to check (SF-4's "never reported zero times"), and the file
+    // is deleted afterwards exactly as it is today.
+    const parentRun = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+    expect(parentRun.code).toBe(0);
+    expect(await pathExists(turnFile)).toBe(false);
+
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations.map((inv) => inv.argv)).toEqual([
+      ['LINT', file],
+      ['LINT', file],
+    ]);
+  });
+});
+
+describe('--keep-turn changes nothing else about a run — findings still block (SF-3, SF-8)', () => {
+  it('a failing mapped command still exits 2 under --keep-turn, and the surviving turn file still blocks on the next run', async () => {
+    const repoDir = await makeTempRepo();
+    const sessionId = 'keep-turn-finding-session';
+    const file = await writeFile(repoDir, 'src/broken.ts');
+
+    const acc = await runRunner('accumulate', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, tool_input: { file_path: file } },
+    });
+    expect(acc.code).toBe(0);
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      { id: 'failing-check', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'FAIL'], pathMode: 'per-file', requires: {} },
+    ]);
+
+    const subagentRun = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile, '--keep-turn'],
+      env: { FAKE_EXIT_CODE: '1' },
+    });
+
+    // Identical in every respect except the delete: the exit-2 convention and
+    // the finding line are the ones the no-flag run already produces.
+    expect(subagentRun.code).toBe(2);
+    expect(subagentRun.stdout).toContain('finding from `failing-check`');
+
+    // The same finding is still reachable for the parent's run — a
+    // consumed-and-dropped turn file would make this second run a silent no-op
+    // (exit 0, nothing printed), which is exactly SF-4's failure mode.
+    const parentRun = await runRunner('run', {
+      cwd: repoDir,
+      stdin: { session_id: sessionId, stop_hook_active: false },
+      args: ['--commands', commandsFile],
+      env: { FAKE_EXIT_CODE: '1' },
+    });
+    expect(parentRun.code).toBe(2);
+    expect(parentRun.stdout).toContain('finding from `failing-check`');
+  });
+});
+
+describe('--keep-turn is inert under --whole-project, which reads no turn state at all (SF-3)', () => {
+  it('runs the mapped command and still never creates or reads .sdd/feedback/.turns — already true by construction; a live regression guard', async () => {
+    const repoDir = await makeTempRepo();
+    const invocationLog = path.join(repoDir, 'invocations.log');
+    const turnsDir = path.join(repoDir, '.sdd', 'feedback', '.turns');
+
+    const commandsFile = await writeCommandsFile(repoDir, [
+      { id: 'ci-check', kind: 'typecheck', argv: ['node', RECORD_SCRIPT, 'CI_CHECK'], pathMode: 'whole-project', requires: {} },
+    ]);
+
+    const result = await runRunner('run', {
+      cwd: repoDir,
+      stdin: null,
+      args: ['--whole-project', '--keep-turn', '--commands', commandsFile],
+      env: { INVOCATION_LOG: invocationLog },
+    });
+
+    expect(result.code).toBe(0);
+    expect((await readInvocations(invocationLog)).map((inv) => inv.argv)).toEqual([['CI_CHECK']]);
+    expect(await pathExists(turnsDir)).toBe(false);
   });
 });

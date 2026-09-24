@@ -107,6 +107,12 @@ function runnerInvocation(): string {
   return `\${CLAUDE_PROJECT_DIR}/${FEEDBACK_RUNNER_PATH}`;
 }
 
+/** The two Claude Code events this generator registers the runner on: the main
+ *  agent's own turn completion, and a subagent's (SF-5). Claude Code's
+ *  `hookSpecificOutput` union pins `hookEventName` per event, so the name is a
+ *  wrapper parameter rather than a shared literal (SF-6). */
+type ClaudeStopEvent = 'Stop' | 'SubagentStop';
+
 /**
  * The `Stop` hook's inline wrapper (V4/BG-6): spawns the shared runner in `run`
  * mode, forwarding this process's own stdin (the tool's raw hook event JSON) so
@@ -119,11 +125,17 @@ function runnerInvocation(): string {
  *
  * - Runner exit `2` (a blocking-worthy finding): the wrapper captures the
  *   runner's combined stdout/stderr and prints exactly one line of JSON —
- *   `{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"…"}}` —
- *   to its **own** stdout, then exits `0`. Claude Code treats this as
+ *   `{"hookSpecificOutput":{"hookEventName":"<event>","additionalContext":"…"}}`
+ *   — to its **own** stdout, then exits `0`. Claude Code treats this as
  *   non-blocking informational context (V4's non-blocking channel), never a
  *   forced continuation (BG-6).
  * - Runner exit `0` (clean pass or skip-only): no output, exit `0`.
+ *
+ * The emitted `hookEventName` is `event`, the same name the registration is
+ * filed under (SF-6): Claude Code's `hookSpecificOutput` union pins the field
+ * per event, and a mismatch is a silent drop rather than an error — so the
+ * `SubagentStop` registration gets its own rendering of this script rather than
+ * reusing the `Stop` one.
  *
  * `--input-type=commonjs` pins the inline script's module system regardless of
  * the target repo's own `package.json` `"type"` field — this script is never
@@ -132,26 +144,32 @@ function runnerInvocation(): string {
  * no ambiguity survives this string's three layers of embedding (TS source ->
  * shell argument -> `node -e` source).
  */
-const STOP_WRAPPER_SCRIPT = [
-  'const cp=require("child_process");',
-  'const fs=require("fs");',
-  'const runner=process.argv[1];',
-  'const commands=process.argv[2];',
-  'let input;',
-  'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
-  'const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});',
-  'if(r.status===2){',
-  'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
-  'const context=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
-  'process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"Stop",additionalContext:context}})+String.fromCharCode(10));',
-  '}',
-  'process.exit(0);',
-].join('');
+function stopWrapperScript(event: ClaudeStopEvent): string {
+  return [
+    'const cp=require("child_process");',
+    'const fs=require("fs");',
+    'const runner=process.argv[1];',
+    'const commands=process.argv[2];',
+    'let input;',
+    'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
+    `const r=cp.spawnSync("node",[runner,"run","--commands",commands${event === 'SubagentStop' ? ',"--keep-turn"' : ''}],{input});`,
+    'if(r.status===2){',
+    'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
+    'const context=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
+    `process.stdout.write(JSON.stringify({hookSpecificOutput:{hookEventName:"${event}",additionalContext:context}})+String.fromCharCode(10));`,
+    '}',
+    'process.exit(0);',
+  ].join('');
+}
 
-function stopCommand(runner: string, commands: unknown): string {
+/** The runner invocation for one of the two stop-family events. `SubagentStop`
+ *  is the `Stop` command plus `--keep-turn` and its own `hookEventName` — same
+ *  runner, same `run` mode, same inline `--commands` payload, never
+ *  `--whole-project` (SF-2). */
+function stopCommand(runner: string, commands: unknown, event: ClaudeStopEvent): string {
   const commandsJson = JSON.stringify(commands);
   return (
-    `node --input-type=commonjs -e ${wrapPosixShellArg(STOP_WRAPPER_SCRIPT)} ` +
+    `node --input-type=commonjs -e ${wrapPosixShellArg(stopWrapperScript(event))} ` +
     `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
   );
 }
@@ -171,6 +189,11 @@ function stopCommand(runner: string, commands: unknown): string {
  * returns exactly one `GeneratedFile` (contract.md § Interfaces). The `Stop`
  * command itself is `stopCommand`'s non-blocking wrapper (V4/BG-6), not a bare
  * runner invocation.
+ *
+ * A third registration, `SubagentStop`, joins the same file in the same shape
+ * (SF-1): the identical runner call and `--commands` payload plus
+ * `--keep-turn`, so a subagent's own completion checks the turn's paths without
+ * consuming them — the enclosing `Stop` still sees every one of them (SF-4).
  */
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
@@ -190,7 +213,17 @@ function renderHook(payload: HookPayload): GeneratedFile {
           hooks: [
             {
               type: 'command',
-              command: stopCommand(runner, commands),
+              command: stopCommand(runner, commands, 'Stop'),
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: stopCommand(runner, commands, 'SubagentStop'),
             },
           ],
         },

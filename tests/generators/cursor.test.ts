@@ -35,6 +35,29 @@
  * alone, which is exactly why `tests/generators/registry.test.ts`'s sibling
  * assertions and this repo's `tsc` build are what actually prove the member
  * exists; this test only pins the declared value once it does.
+ *
+ * ---
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md § Interfaces (`stopCommand(runner, commands, keepTurn)`);
+ * Behavior Guarantees SF-1, SF-2 and SF-5 (Cursor's row: `hooks.subagentStop`,
+ * findings via `followup_message`, suppressed at or above `loop_count`);
+ * intent.md SC1; roadmap.md Phase 2 step 2; audit.md Test Coverage T5, T7.
+ *
+ * `renderHook` registers only `afterFileEdit` and `stop` at red time, so the
+ * two pre-existing key-set assertions below (extended in place per roadmap.md
+ * Phase 2's File Change Map, rather than duplicated into a new block) fail on
+ * a missing `subagentStop` key, and the new block fails on
+ * `parsed.hooks.subagentStop` being `undefined` — not on a wrong assumption
+ * about the entry shape, which the pre-existing assertions already prove for
+ * `stop`.
+ *
+ * Cursor reuses its existing `stop` wrapper verbatim (contract.md § Interfaces:
+ * "wrappers unchanged; only the extra `--keep-turn` argument differs"), so the
+ * `followup_message` channel and its `loop_count` suppression are already
+ * covered behaviorally by the `stop` block below and are deliberately not
+ * re-driven as a subprocess here. What the new block asserts instead is the
+ * part that can actually diverge: the event key, the shared timeout, the same
+ * `--commands` payload, and the one flag that differs.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -356,9 +379,11 @@ describe('renderHook — both registrations, .cursor/hooks.json wrapper shape (B
 
     const parsed = JSON.parse(generated!.contents);
     expect(parsed.version).toBe(1);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop']);
+    // (subagent-feedback-hooks SF-1) The third registration lives in this same
+    // file, in this same entry shape — no new path and no new artifact.
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop', 'subagentStop']);
 
-    for (const key of ['afterFileEdit', 'stop']) {
+    for (const key of ['afterFileEdit', 'stop', 'subagentStop']) {
       const entry = parsed.hooks[key][0];
       expect(entry.type).toBe('command');
       expect(typeof entry.command).toBe('string');
@@ -375,7 +400,51 @@ describe('renderHook — both registrations, .cursor/hooks.json wrapper shape (B
 
     expect(generated).toBeDefined();
     const parsed = JSON.parse(generated!.contents);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop']);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['afterFileEdit', 'stop', 'subagentStop']);
+  });
+});
+
+describe('renderHook — the subagentStop registration is the stop registration plus --keep-turn (SF-2, SF-5)', () => {
+  it('reuses the followup_message wrapper and the stop timeout, carries the same --commands payload plus --keep-turn, and never passes --whole-project', async () => {
+    const { cursorGenerator } = await import('../../src/generators/cursor.js');
+    const runnerContents = await loadRunnerContents();
+
+    // A marker payload rather than a real stack profile, so "the same
+    // --commands payload as the stop registration" is observable as one
+    // distinctive token rather than inferred from two long identical strings.
+    const payload = fakeHookPayload(undefined, runnerContents);
+    payload.commands = [
+      {
+        id: 'subagent-marker-command',
+        kind: 'lint',
+        argv: ['node', 'subagent-marker-command-argv-token'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+    ];
+
+    const parsed = JSON.parse(cursorGenerator.renderHook(payload)!.contents);
+    const stopEntry = parsed.hooks.stop[0];
+    const subagentStopEntry = parsed.hooks.subagentStop[0];
+
+    expect(subagentStopEntry.timeout).toBe(stopEntry.timeout);
+
+    const stopCommand: string = stopEntry.command;
+    const subagentStopCommand: string = subagentStopEntry.command;
+
+    // The same wrapper, therefore the same findings channel and the same
+    // loop_count suppression (SF-5's Cursor row).
+    expect(subagentStopCommand).toContain('followup_message');
+    expect(subagentStopCommand).toContain('loop_count');
+    expect(subagentStopCommand).toContain('run-feedback.mjs');
+    expect(subagentStopCommand).toContain('--commands');
+    expect(subagentStopCommand).toContain('subagent-marker-command-argv-token');
+    expect(subagentStopCommand).toContain('--keep-turn');
+
+    // SF-2's two-way rule: the flag is on the subagent registration only, and
+    // the CI-only flag is on neither.
+    expect(stopCommand).not.toContain('--keep-turn');
+    expect(subagentStopCommand).not.toContain('--whole-project');
   });
 });
 

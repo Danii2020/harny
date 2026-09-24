@@ -48,6 +48,14 @@
  *   path is identical to normal `run` mode (BG-9). `stop_hook_active` is never
  *   read or honored under this flag — CI has no re-entry/loop-guard concept, so a
  *   finding always exits 2 (BG-19).
+ * - `run --keep-turn` (SF-3) is the same `run` mode with one more boolean flag
+ *   set, never a third mode. It is identical in every respect — the same turn
+ *   key, the same commands, the same filters, the same probes, the same exit
+ *   codes — except that the turn file is NOT deleted at the end. A later run
+ *   without the flag reads the same paths again and deletes the file as usual,
+ *   so a check made early (at a subagent's own completion) can never consume a
+ *   finding the enclosing turn still has to report (SF-4). It is inert under
+ *   `--whole-project`, which reads no turn state at all.
  *
  * Exit code convention for `run`: `0` when the turn produced no blocking-worthy
  * findings (a clean pass, a skip-only outcome, or an empty turn); `2` when a mapped
@@ -115,15 +123,18 @@ function runAccumulate(cwd) {
 function parseRunArgs(argv) {
   let commandsPath;
   let wholeProject = false;
+  let keepTurn = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--commands') {
       commandsPath = argv[i + 1];
       i += 1;
     } else if (argv[i] === '--whole-project') {
       wholeProject = true;
+    } else if (argv[i] === '--keep-turn') {
+      keepTurn = true;
     }
   }
-  return { commandsPath, wholeProject };
+  return { commandsPath, wholeProject, keepTurn };
 }
 
 /**
@@ -424,7 +435,7 @@ function runWholeProject(components, cwd) {
  * naming it (`componentDirMissingNotice`) — visible, non-fatal, never spawned into.
  */
 function runRunMode(cwd) {
-  const { commandsPath, wholeProject } = parseRunArgs(process.argv.slice(3));
+  const { commandsPath, wholeProject, keepTurn } = parseRunArgs(process.argv.slice(3));
   const components = readCommands(commandsPath);
 
   if (wholeProject) {
@@ -522,8 +533,12 @@ function runRunMode(cwd) {
   }
 
   // Delete the turn file so a turn key reused across turns cannot leak this
-  // turn's paths into the next one, regardless of outcome above.
-  fs.rmSync(file, { force: true });
+  // turn's paths into the next one, regardless of outcome above — unless
+  // `--keep-turn` asked for it to survive (SF-3/SF-4), in which case the next
+  // run without the flag deletes it exactly as this one would have.
+  if (!keepTurn) {
+    fs.rmSync(file, { force: true });
+  }
 
   // BG-5: re-entry never drives a tool's runaway guard — suppress the blocking
   // response on re-entry even when a mapped command failed.

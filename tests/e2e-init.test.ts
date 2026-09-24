@@ -135,6 +135,16 @@
  * `.sdd/doctor/run-doctor.mjs` it generated, in a fixture where the install
  * root and `apps/web` give opposite probe answers. Expected red until
  * `buildDoctorChecks` stops gating `dir` on `components.length > 1`.
+ *
+ * ---
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md Behavior Guarantee SF-9 (CLI-14 unaffected in substance;
+ * regenerating `tests/fixtures/golden/` is the only sanctioned golden change);
+ * roadmap.md Phase 3 step 3; audit.md Test Coverage T9. Only the T1/T2 golden
+ * block changes: `.claude/settings.json` joins the declared byte-comparison
+ * exceptions and gains its own re-assertion — see the amended
+ * declared-exception docblock on that block for the full rationale and its
+ * red-phase note.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
@@ -246,15 +256,19 @@ async function assertTreesByteIdentical(
     compared += 1;
   }
 
-  // Non-vacuity, two ways. The exception list may not grow past the three
+  // Non-vacuity, two ways. The exception list may not grow past the four
   // files roadmap.md's File Change Map contracts without someone re-reading
   // this docblock, and the tree that remains under byte comparison must still
   // be a real tree — an exception list that swallowed the install would leave
   // a guard that looks like coverage and is not.
+  //
+  // (specs/subagent-feedback-hooks.) The cap moved from three to four for the
+  // fourth contracted file, the Claude Code hook config — see the amended
+  // declared-exception docblock on the describe block below.
   expect(
     contractedExceptions.length,
-    'more than three files are excluded from byte comparison; see the declared-exception docblock',
-  ).toBeLessThanOrEqual(3);
+    'more than four files are excluded from byte comparison; see the declared-exception docblock',
+  ).toBeLessThanOrEqual(4);
   expect(compared, 'almost nothing was byte-compared').toBeGreaterThan(20);
 }
 
@@ -1142,8 +1156,34 @@ describe('ci-workflow-root — npx harny doctor and the direct runner agree for 
  * Everything else — 28 of 31 files per tree — stays under the original
  * frozen-golden byte comparison, and `assertTreesByteIdentical` still asserts
  * full path-set equality across all 31 plus a cap of three exceptions.
+ *
+ * ## Declared exception, amended (specs/subagent-feedback-hooks, SF-9)
+ *
+ * A fourth file per tree now legitimately differs, and it is again exactly one
+ * `roadmap.md`'s File Change Map contracts as carrying that feature's changes:
+ *
+ *   - the Claude Code hook config (`.claude/settings.json`) — SF-1/SF-5's
+ *     `SubagentStop` registration, written into the file the generator already
+ *     writes.
+ *
+ * It is handled the same way as the two runners rather than by re-baselining
+ * the goldens here: excluded from the tree-wide byte comparison and re-asserted
+ * individually, by `assertGeneratedHookConfigMatchesGenerator` below, which
+ * pins the excluded file's bytes to `claudeCodeGenerator.renderHook`'s output
+ * for the install's OWN `.sdd/harness.json`. That is the real invariant for a
+ * generated file — "the installed bytes are the generator's bytes" — and,
+ * unlike a comparison against the golden, it neither goes stale nor needs
+ * editing when `tests/fixtures/golden/monorepo-mode/{ts-root/.claude,
+ * py-sub/apps/api/.claude}/settings.json` are regenerated (roadmap.md Phase 3
+ * step 3). The generated config's own contents remain covered by
+ * `tests/generators/claude-code.test.ts` and `tests/generators/registry.test.ts`.
+ *
+ * Red-phase note: this exception is inert until the implementation lands — at
+ * red time the generator renders exactly the golden's bytes, so excluding the
+ * file changes nothing that is asserted; the new re-assertion passes today and
+ * is what keeps the file guarded once the bytes diverge.
  */
-describe('golden-byte regression — a components-free install is byte-identical to the pre-feature capture, outside three contracted files (SC2, MC-5) (T1, T2)', () => {
+describe('golden-byte regression — a components-free install is byte-identical to the pre-feature capture, outside four contracted files (SC2, MC-5, SF-9) (T1, T2)', () => {
   /** `templates/` source → scaffolded destination, for the two runner files
    *  excluded from the byte comparison above. `init` copies each verbatim, so
    *  this pins the excluded file's bytes to a file that IS under review. */
@@ -1163,7 +1203,34 @@ describe('golden-byte regression — a components-free install is byte-identical
     }
   }
 
-  it('--stack typescript at a git repository root matches the ts-root golden, byte for byte, outside the three contracted files', async () => {
+  /** (specs/subagent-feedback-hooks, SF-9.) The hook config's analogue of
+   *  `assertScaffoldedRunnersMatchTemplates`: an installed `.claude/settings.json`
+   *  must be exactly what the generator renders for that install's own resolved
+   *  config. Re-renders through the same composition `runInit` uses, so the
+   *  excluded file's bytes stay pinned to code that IS under review. */
+  async function assertGeneratedHookConfigMatchesGenerator(installDir: string): Promise<void> {
+    const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
+    const { validateConfig } = await import('../src/config.js');
+    const { buildPayload, buildCommandsPayload } = await import('../src/engine.js');
+    const { loadCanonicalTemplates } = await import('../src/templates.js');
+
+    const harnessJson = await fs.readFile(path.join(installDir, '.sdd', 'harness.json'), 'utf8');
+    const config = validateConfig(JSON.parse(harnessJson), '.sdd/harness.json');
+    const payload = buildPayload(config, await loadCanonicalTemplates(REAL_TEMPLATES_ROOT));
+    const generated = claudeCodeGenerator.renderHook({
+      project: payload.conductor.project,
+      profile: payload.conductor.project.stackProfile,
+      runner: payload.hookRunner!,
+      commands: buildCommandsPayload(payload.conductor.project.components),
+    })!;
+
+    const installed = await fs.readFile(path.join(installDir, '.claude', 'settings.json'), 'utf8');
+    expect(installed, '.claude/settings.json is not what claudeCodeGenerator.renderHook produces').toBe(
+      generated.contents,
+    );
+  }
+
+  it('--stack typescript at a git repository root matches the ts-root golden, byte for byte, outside the four contracted files', async () => {
     const repoDir = await makeTempDir();
     execFileSync('git', ['init', '-q'], { cwd: repoDir });
     const goldenRoot = path.join(TESTS_DIR, 'fixtures', 'golden', 'monorepo-mode', 'ts-root');
@@ -1175,10 +1242,12 @@ describe('golden-byte regression — a components-free install is byte-identical
     await assertTreesByteIdentical(repoDir, goldenRoot, [
       '.sdd/feedback/run-feedback.mjs',
       '.sdd/doctor/run-doctor.mjs',
+      '.claude/settings.json',
       workflowRelative,
     ]);
 
     await assertScaffoldedRunnersMatchTemplates(repoDir);
+    await assertGeneratedHookConfigMatchesGenerator(repoDir);
     assertDiffersOnlyByInsertedCommentLines(
       await fs.readFile(path.join(repoDir, ...workflowRelative.split('/')), 'utf8'),
       await fs.readFile(path.join(goldenRoot, ...workflowRelative.split('/')), 'utf8'),
@@ -1186,7 +1255,7 @@ describe('golden-byte regression — a components-free install is byte-identical
     );
   });
 
-  it('--stack python at a subdirectory of a git repository matches the py-sub golden, byte for byte, from the repository root down, outside the three contracted files', async () => {
+  it('--stack python at a subdirectory of a git repository matches the py-sub golden, byte for byte, from the repository root down, outside the four contracted files', async () => {
     const repoDir = await makeTempDir();
     execFileSync('git', ['init', '-q'], { cwd: repoDir });
     const installDir = path.join(repoDir, 'apps', 'api');
@@ -1200,10 +1269,12 @@ describe('golden-byte regression — a components-free install is byte-identical
     await assertTreesByteIdentical(repoDir, goldenRoot, [
       'apps/api/.sdd/feedback/run-feedback.mjs',
       'apps/api/.sdd/doctor/run-doctor.mjs',
+      'apps/api/.claude/settings.json',
       workflowRelative,
     ]);
 
     await assertScaffoldedRunnersMatchTemplates(installDir);
+    await assertGeneratedHookConfigMatchesGenerator(installDir);
     assertDiffersOnlyByInsertedCommentLines(
       await fs.readFile(path.join(repoDir, ...workflowRelative.split('/')), 'utf8'),
       await fs.readFile(path.join(goldenRoot, ...workflowRelative.split('/')), 'utf8'),

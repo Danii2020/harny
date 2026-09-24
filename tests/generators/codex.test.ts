@@ -31,6 +31,29 @@
  * reads as `undefined` — a bare value check could not distinguish "declared
  * undefined" (Codex's own root file *is* `AGENTS.md`, per AR-9) from "not
  * declared at all" (the red-phase gap).
+ *
+ * ---
+ * Spec: specs/subagent-feedback-hooks
+ * Covers: contract.md § Interfaces (`stopCommand(runner, commands, keepTurn)`);
+ * Behavior Guarantees SF-1, SF-2 and SF-5 (Codex's row: `hooks.SubagentStop`,
+ * findings via `systemMessage`, with the same registration `timeout` as
+ * `Stop`); intent.md SC1; roadmap.md Phase 2 step 3; audit.md Test Coverage
+ * T6, T7.
+ *
+ * `renderHook` registers only `PostToolUse` and `Stop` at red time, so the two
+ * pre-existing key-set assertions below (extended in place per roadmap.md
+ * Phase 2's File Change Map, rather than duplicated into a new block) fail on
+ * a missing `SubagentStop` key, and the new block fails on
+ * `parsed.hooks.SubagentStop` being `undefined` — not on a wrong assumption
+ * about the nested wrapper shape, which the pre-existing assertions already
+ * prove for `Stop`.
+ *
+ * Codex reuses its existing `Stop` wrapper verbatim (contract.md § Interfaces:
+ * "wrappers unchanged; only the extra `--keep-turn` argument differs"), so the
+ * `systemMessage` channel is already covered behaviorally by the `Stop` block
+ * below and is deliberately not re-driven as a subprocess here. Note also that
+ * `turn_id`'s behavior across a subagent boundary is contract.md's open
+ * question 1, answered by a live probe rather than by any test in this suite.
  */
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -581,7 +604,9 @@ describe('renderHook — both registrations, hooks.json nested wrapper shape ide
     expect(generated!.contents.endsWith('\n\n')).toBe(false);
 
     const parsed = JSON.parse(generated!.contents);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+    // (subagent-feedback-hooks SF-1) The third registration lives in this same
+    // file, in this same shape — no new path and no new artifact.
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop', 'SubagentStop']);
 
     const postToolUseEntry = parsed.hooks.PostToolUse[0];
     expect(Array.isArray(postToolUseEntry.hooks)).toBe(true);
@@ -592,6 +617,11 @@ describe('renderHook — both registrations, hooks.json nested wrapper shape ide
     expect(Array.isArray(stopEntry.hooks)).toBe(true);
     expect(stopEntry.hooks[0].type).toBe('command');
     expect(typeof stopEntry.hooks[0].command).toBe('string');
+
+    const subagentStopEntry = parsed.hooks.SubagentStop[0];
+    expect(Array.isArray(subagentStopEntry.hooks)).toBe(true);
+    expect(subagentStopEntry.hooks[0].type).toBe('command');
+    expect(typeof subagentStopEntry.hooks[0].command).toBe('string');
   });
 
   it('still registers both PostToolUse and Stop, same nested shape, in the escape-hatch (no resolved profile) case (BG-8)', async () => {
@@ -602,7 +632,50 @@ describe('renderHook — both registrations, hooks.json nested wrapper shape ide
 
     expect(generated).toBeDefined();
     const parsed = JSON.parse(generated!.contents);
-    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop']);
+    expect(Object.keys(parsed.hooks).sort()).toEqual(['PostToolUse', 'Stop', 'SubagentStop']);
+  });
+});
+
+describe('renderHook — the SubagentStop registration is the Stop registration plus --keep-turn (SF-2, SF-5)', () => {
+  it('reuses the systemMessage wrapper and the Stop timeout, carries the same --commands payload plus --keep-turn, and never passes --whole-project', async () => {
+    const { codexGenerator } = await import('../../src/generators/codex.js');
+    const runnerContents = await loadRunnerContents();
+
+    // A marker payload rather than a real stack profile, so "the same
+    // --commands payload as the Stop registration" is observable as one
+    // distinctive token rather than inferred from two long identical strings.
+    const payload = fakeHookPayload(undefined, runnerContents);
+    payload.commands = [
+      {
+        id: 'subagent-marker-command',
+        kind: 'lint',
+        argv: ['node', 'subagent-marker-command-argv-token'],
+        pathMode: 'per-file',
+        requires: {},
+      },
+    ];
+
+    const parsed = JSON.parse(codexGenerator.renderHook(payload)!.contents);
+    const stopHook = parsed.hooks.Stop[0].hooks[0];
+    const subagentStopHook = parsed.hooks.SubagentStop[0].hooks[0];
+
+    expect(subagentStopHook.timeout).toBe(stopHook.timeout);
+
+    const stopCommand: string = stopHook.command;
+    const subagentStopCommand: string = subagentStopHook.command;
+
+    // The same wrapper, therefore the same non-blocking findings channel
+    // (SF-5's Codex row).
+    expect(subagentStopCommand).toContain('systemMessage');
+    expect(subagentStopCommand).toContain('run-feedback.mjs');
+    expect(subagentStopCommand).toContain('--commands');
+    expect(subagentStopCommand).toContain('subagent-marker-command-argv-token');
+    expect(subagentStopCommand).toContain('--keep-turn');
+
+    // SF-2's two-way rule: the flag is on the subagent registration only, and
+    // the CI-only flag is on neither.
+    expect(stopCommand).not.toContain('--keep-turn');
+    expect(subagentStopCommand).not.toContain('--whole-project');
   });
 });
 

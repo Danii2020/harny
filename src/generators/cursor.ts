@@ -177,6 +177,12 @@ function accumulateCommand(runner: string): string {
  * `CURSOR_LOOP_LIMIT`, so this hook can never itself drive Cursor's own
  * runaway-loop override (BG-5, R3). The runner's own `stop_hook_active` check
  * still applies underneath (forwarded stdin, unmodified).
+ *
+ * One wrapper serves both the `stop` and the `subagentStop` registration (SF-2):
+ * any argument after the commands payload is forwarded to the runner verbatim,
+ * so the two generated commands differ by exactly the trailing `--keep-turn`
+ * and nothing else — no second script, and no event name baked in (unlike
+ * Claude Code, Cursor's `followup_message` channel names no event).
  */
 const CURSOR_STOP_WRAPPER_SCRIPT = [
   'const cp=require("child_process");',
@@ -187,7 +193,7 @@ const CURSOR_STOP_WRAPPER_SCRIPT = [
   'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
   'let loopCount=0;',
   'try{const parsed=JSON.parse(input.toString()||"{}");loopCount=Number(parsed.loop_count)||0;}catch(e){}',
-  `const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});`,
+  `const r=cp.spawnSync("node",[runner,"run","--commands",commands].concat(process.argv.slice(3)),{input});`,
   `if(r.status===2&&loopCount<${CURSOR_LOOP_LIMIT}){`,
   'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
   'const message=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
@@ -196,11 +202,11 @@ const CURSOR_STOP_WRAPPER_SCRIPT = [
   'process.exit(0);',
 ].join('');
 
-function stopCommand(runner: string, commands: unknown): string {
+function stopCommand(runner: string, commands: unknown, keepTurn: boolean): string {
   const commandsJson = JSON.stringify(commands);
   return (
     `node --input-type=commonjs -e ${wrapPosixShellArg(CURSOR_STOP_WRAPPER_SCRIPT)} ` +
-    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
+    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}${keepTurn ? ' --keep-turn' : ''}`
   );
 }
 
@@ -210,6 +216,11 @@ function stopCommand(runner: string, commands: unknown): string {
  * `{"version":1,"hooks":{"<event>":[{"command":…,"type":"command","timeout":…}]}}`
  * shape (V1), via `renderJson`. The escape hatch (BG-8) registers the identical
  * shape with a zero-command `run` invocation — inert, never absent.
+ *
+ * A third registration, `subagentStop`, joins the same file in the same entry
+ * shape and with the same timeout (SF-1/SF-5): the identical runner call and
+ * `--commands` payload plus `--keep-turn`, so a subagent's own completion
+ * checks the turn's paths without consuming them (SF-4).
  */
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
@@ -222,7 +233,10 @@ function renderHook(payload: HookPayload): GeneratedFile {
       afterFileEdit: [
         { command: accumulateCommand(runner), type: 'command', timeout: CURSOR_HOOK_TIMEOUT_SECONDS },
       ],
-      stop: [{ command: stopCommand(runner, commands), type: 'command', timeout: CURSOR_HOOK_TIMEOUT_SECONDS }],
+      stop: [{ command: stopCommand(runner, commands, false), type: 'command', timeout: CURSOR_HOOK_TIMEOUT_SECONDS }],
+      subagentStop: [
+        { command: stopCommand(runner, commands, true), type: 'command', timeout: CURSOR_HOOK_TIMEOUT_SECONDS },
+      ],
     },
   };
 

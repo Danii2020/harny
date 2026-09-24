@@ -487,6 +487,87 @@ describe('renderHook is component-blind by construction — reads payload.comman
   });
 });
 
+// ---------------------------------------------------------------------------
+// specs/subagent-feedback-hooks
+//
+// Covers: contract.md Behavior Guarantees SF-1 (no new artifact: the subagent
+// registration joins the hook file each generator already writes), SF-2 (the
+// subagent registration is the same runner call plus `--keep-turn`), SF-5 (the
+// per-tool "Event registered" column) and SF-7 (Kiro and GitHub Copilot are
+// deliberately not wired); intent.md SC1, SC3; audit.md Test Coverage T7, T8.
+//
+// This is the one place the five-tool wiring TOPOLOGY is asserted — which tool
+// registers which events, and which two register no subagent event at all. The
+// per-generator test files own the per-tool registration details (entry shape,
+// timeout, findings channel, and for Claude Code the emitted `hookEventName`),
+// so nothing here is re-asserted there and nothing there is re-asserted here.
+//
+// Red-phase note: no generator registers a subagent event at red time, so the
+// three wired rows fail on a two-element event list where a three-element one
+// is required, and on a rendered config containing no `--keep-turn`. The two
+// unwired rows are expected to PASS already — they are the standing guard that
+// SF-7 held, the same posture the `--whole-project` gate above documents for
+// itself.
+// ---------------------------------------------------------------------------
+
+describe('the subagent-completion wiring topology — three tools wired, two deliberately not (SF-1, SF-2, SF-5, SF-7)', () => {
+  /** The registered event names of a rendered hook config, for both wrapper
+   *  families harny ships: an object keyed by event name, and Kiro's array of
+   *  `{trigger}` entries. Deliberately shape-driven, not id-driven, so this
+   *  helper never encodes which tool uses which family. */
+  function registeredEventNames(contents: string): string[] {
+    const hooks = JSON.parse(contents).hooks;
+    const names: string[] = Array.isArray(hooks)
+      ? hooks.map((entry: { trigger: string }) => entry.trigger)
+      : Object.keys(hooks);
+    return [...names].sort();
+  }
+
+  const EXPECTED = [
+    { id: 'claude-code', events: ['PostToolUse', 'Stop', 'SubagentStop'], wired: true },
+    { id: 'cursor', events: ['afterFileEdit', 'stop', 'subagentStop'], wired: true },
+    { id: 'codex', events: ['PostToolUse', 'Stop', 'SubagentStop'], wired: true },
+    { id: 'kiro', events: ['agentStop', 'postToolUse'], wired: false },
+    { id: 'github-copilot', events: ['agentStop', 'postToolUse'], wired: false },
+  ] as const;
+
+  it.each(EXPECTED)(
+    '$id registers exactly its documented events, and passes --keep-turn only when it is wired for subagent completion',
+    async ({ id, events, wired }) => {
+      const { generators } = await import('../../src/generators/index.js');
+      const { STACK_PROFILES } = await import('../../src/feedback.js');
+      const profile = STACK_PROFILES.find((p) => p.id === 'typescript');
+      const generator = generators.get(id as any) as any;
+
+      const rendered = generator.renderHook(fakeHookPayload(profile));
+      expect(rendered, `${id} emits no hook artifact`).toBeDefined();
+
+      expect(registeredEventNames(rendered.contents)).toEqual([...events]);
+      expect(
+        rendered.contents.includes('--keep-turn'),
+        wired
+          ? `${id} is wired for subagent completion but passes no --keep-turn (SF-2)`
+          : `${id} is deliberately not wired (SF-7) but its hook config carries --keep-turn`,
+      ).toBe(wired);
+    },
+  );
+
+  function fakeHookPayload(profile: unknown) {
+    return {
+      project: {
+        enabledRoles: [],
+        gates: [],
+        specSchemaDir: '.sdd/spec-schema',
+        reducedGates: false,
+        stack: (profile as { id?: string } | undefined)?.id,
+        stackProfile: profile,
+      },
+      profile,
+      runner: { name: 'run-feedback.mjs', contents: '#!/usr/bin/env node\n', sourcePath: 'hooks/run-feedback.mjs' },
+    } as any;
+  }
+});
+
 describe('SC14 grep gate — component vocabulary under src/generators/** is confined to one function in one file (SC14, MC-16, T28)', () => {
   async function collectFiles(dir: string): Promise<string[]> {
     const entries = await fs.readdir(dir, { withFileTypes: true });

@@ -190,6 +190,12 @@ function accumulateCommand(runner: string): string {
  * documented non-blocking channel on `Stop` (V4), so a clean run costs no
  * extra turn — mirroring Claude Code's `additionalContext` wrapper closely,
  * per contract.md's own note that the two are structurally alike.
+ *
+ * One wrapper serves both the `Stop` and the `SubagentStop` registration
+ * (SF-2): any argument after the commands payload is forwarded to the runner
+ * verbatim, so the two generated commands differ by exactly the trailing
+ * `--keep-turn` and nothing else — no second script, and no event name baked in
+ * (unlike Claude Code, Codex's `systemMessage` channel names no event).
  */
 const CODEX_STOP_WRAPPER_SCRIPT = [
   'const cp=require("child_process");',
@@ -198,7 +204,7 @@ const CODEX_STOP_WRAPPER_SCRIPT = [
   'const commands=process.argv[2];',
   'let input;',
   'try{input=fs.readFileSync(0);}catch(e){input=Buffer.from("");}',
-  'const r=cp.spawnSync("node",[runner,"run","--commands",commands],{input});',
+  'const r=cp.spawnSync("node",[runner,"run","--commands",commands].concat(process.argv.slice(3)),{input});',
   'if(r.status===2){',
   'const out=((r.stdout?r.stdout.toString():"")+(r.stderr?r.stderr.toString():"")).trim();',
   'const message=out.length>0?out:"harny-feedback: a mapped command reported a finding.";',
@@ -207,11 +213,11 @@ const CODEX_STOP_WRAPPER_SCRIPT = [
   'process.exit(0);',
 ].join('');
 
-function stopCommand(runner: string, commands: unknown): string {
+function stopCommand(runner: string, commands: unknown, keepTurn: boolean): string {
   const commandsJson = JSON.stringify(commands);
   return (
     `node --input-type=commonjs -e ${wrapPosixShellArg(CODEX_STOP_WRAPPER_SCRIPT)} ` +
-    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}`
+    `-- "${runner}" ${wrapPosixShellArg(commandsJson)}${keepTurn ? ' --keep-turn' : ''}`
   );
 }
 
@@ -223,6 +229,11 @@ function stopCommand(runner: string, commands: unknown): string {
  * cited there (secondary sources claiming root-level event names are wrong).
  * The escape hatch (BG-8) registers the identical shape with a zero-command
  * `run` invocation — inert, never absent.
+ *
+ * A third registration, `SubagentStop`, joins the same file in the same shape
+ * and with the same `timeout` (SF-1/SF-5): the identical runner call and
+ * `--commands` payload plus `--keep-turn`, so a subagent's own completion
+ * checks the turn's paths without consuming them (SF-4).
  */
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
@@ -244,7 +255,18 @@ function renderHook(payload: HookPayload): GeneratedFile {
           hooks: [
             {
               type: 'command',
-              command: stopCommand(runner, commands),
+              command: stopCommand(runner, commands, false),
+              timeout: CODEX_HOOK_TIMEOUT_SECONDS,
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: stopCommand(runner, commands, true),
               timeout: CODEX_HOOK_TIMEOUT_SECONDS,
             },
           ],

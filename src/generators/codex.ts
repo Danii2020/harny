@@ -20,6 +20,8 @@ import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import { CONTEXT7_MCP_URL } from '../mcp.js';
+import { PERMISSIONS_GUARD_PATH } from '../permissions.js';
+import { emitJson, guardCommand } from './guard.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -221,6 +223,24 @@ function stopCommand(runner: string, commands: unknown, keepTurn: boolean): stri
   );
 }
 
+/** (NEW — permissions-baseline, PB-8.) Codex's `PreToolUse` channel:
+ *  `hookSpecificOutput.permissionDecision`. Codex accepts `deny` but treats `ask`
+ *  as unsupported and fails open (verified 2026-09-24 in openai/codex
+ *  `codex-rs/hooks/src/events/pre_tool_use.rs`), so an ask rule is answered with a
+ *  deny that says human approval is required — fail closed, never silently open.
+ *  Codex has no separate file-read tool; secret reads are judged from `Bash`. */
+function codexGuardDecision(reason: string): string {
+  return emitJson(
+    `{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:${reason}}}`,
+  );
+}
+
+const CODEX_GUARD_CHANNEL = {
+  deny: codexGuardDecision('reason'),
+  ask: codexGuardDecision('"requires human approval: "+reason'),
+  allow: '',
+};
+
 /**
  * `hooks.json`, carrying both registrations BG-2 requires: a `PostToolUse`
  * accumulator and a `Stop` runner, in the nested
@@ -240,8 +260,27 @@ function renderHook(payload: HookPayload): GeneratedFile {
   const runner = runnerInvocation();
   const commands = payload.commands ?? (profile ? profile.commands : []);
 
+  // (NEW — permissions-baseline.) Absent without a permissions payload (PB-12).
+  const guard = payload.permissions
+    ? {
+        PreToolUse: [
+          {
+            matcher: 'Bash',
+            hooks: [
+              {
+                type: 'command',
+                command: guardCommand(PERMISSIONS_GUARD_PATH, CODEX_GUARD_CHANNEL),
+                timeout: CODEX_HOOK_TIMEOUT_SECONDS,
+              },
+            ],
+          },
+        ],
+      }
+    : {};
+
   const settings = {
     hooks: {
+      ...guard,
       PostToolUse: [
         {
           matcher: 'apply_patch',

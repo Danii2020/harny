@@ -11,6 +11,8 @@ import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import { CONTEXT7_MCP_URL } from '../mcp.js';
+import { PERMISSIONS_GUARD_PATH } from '../permissions.js';
+import { emitJson, guardCommand } from './guard.js';
 import type { FrontmatterField } from './markdown-yaml.js';
 import {
   renderFrontmatter,
@@ -222,14 +224,48 @@ function stopCommand(runner: string, commands: unknown, keepTurn: boolean): stri
  * `--commands` payload plus `--keep-turn`, so a subagent's own completion
  * checks the turn's paths without consuming them (SF-4).
  */
+/** (NEW — permissions-baseline, PB-8.) Cursor's permission-hook channel: a
+ *  `{"permission":…}` object on stdout. Cursor blocks a permission hook whose
+ *  output is not valid JSON, so allow is printed explicitly rather than left
+ *  silent. `beforeShellExecution` admits `ask`; `beforeReadFile`'s `ask` was not
+ *  confirmed, so a read-side `ask` is answered with `deny` — fail closed. */
+function cursorGuardChannel(askDecision: 'ask' | 'deny') {
+  return {
+    deny: emitJson('{permission:"deny",user_message:reason,agent_message:reason}'),
+    ask: emitJson(`{permission:"${askDecision}",user_message:reason,agent_message:reason}`),
+    allow: emitJson('{permission:"allow"}'),
+  };
+}
+
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
   const runner = runnerInvocation();
   const commands = payload.commands ?? (profile ? profile.commands : []);
 
+  // (NEW — permissions-baseline.) Absent without a permissions payload (PB-12).
+  const guard = payload.permissions
+    ? {
+        beforeShellExecution: [
+          {
+            command: guardCommand(PERMISSIONS_GUARD_PATH, cursorGuardChannel('ask')),
+            type: 'command',
+            timeout: CURSOR_HOOK_TIMEOUT_SECONDS,
+          },
+        ],
+        beforeReadFile: [
+          {
+            command: guardCommand(PERMISSIONS_GUARD_PATH, cursorGuardChannel('deny')),
+            type: 'command',
+            timeout: CURSOR_HOOK_TIMEOUT_SECONDS,
+          },
+        ],
+      }
+    : {};
+
   const settings = {
     version: 1,
     hooks: {
+      ...guard,
       afterFileEdit: [
         { command: accumulateCommand(runner), type: 'command', timeout: CURSOR_HOOK_TIMEOUT_SECONDS },
       ],

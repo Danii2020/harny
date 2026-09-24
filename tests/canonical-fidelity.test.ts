@@ -748,6 +748,7 @@ describe('this repository\'s own .claude/settings.json tracks its generator (FC-
     const { claudeCodeGenerator } = await import('../src/generators/claude-code.js');
     const { validateConfig } = await import('../src/config.js');
     const { buildPayload, buildCommandsPayload } = await import('../src/engine.js');
+    const { parsePermissionPolicy } = await import('../src/permissions.js');
 
     const harnessJson = await fs.readFile(path.join(REPO_ROOT, '.sdd', 'harness.json'), 'utf8');
     const config = validateConfig(JSON.parse(harnessJson), '.sdd/harness.json');
@@ -760,11 +761,21 @@ describe('this repository\'s own .claude/settings.json tracks its generator (FC-
       profile: payload.conductor.project.stackProfile,
       runner: payload.hookRunner!,
       commands: buildCommandsPayload(payload.conductor.project.components),
+      // (permissions-baseline, PB-13.) As `runInit` adds it.
+      permissions: { policy: parsePermissionPolicy(payload.permissionsPolicy!.contents) },
     })!;
 
     expect(generated.path).toBe('.claude/settings.json');
     const live = await fs.readFile(path.join(REPO_ROOT, '.claude', 'settings.json'), 'utf8');
     expect(live).toBe(generated.contents);
+  });
+
+  it('carries the permissions guard and policy byte-identical to their canonical templates (permissions-baseline PB-13)', async () => {
+    for (const name of ['run-guard.mjs', 'policy.json']) {
+      const live = await fs.readFile(path.join(REPO_ROOT, '.sdd', 'permissions', name), 'utf8');
+      const canonical = await fs.readFile(path.join(REPO_ROOT, 'templates', 'permissions', name), 'utf8');
+      expect(live, name).toBe(canonical);
+    }
   });
 });
 

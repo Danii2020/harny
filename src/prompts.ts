@@ -291,3 +291,19 @@ export async function confirmWrite(plan: WritePlan, _io: InitIO): Promise<boolea
   }
   return true;
 }
+
+/** **(NEW — commit-checks, CC-6.)** Consent to activate the git hooks, asked after
+ *  the write confirmation. Skipped under `--yes` and `--no-git-hooks`. */
+export async function confirmGitHooks(_io: InitIO): Promise<boolean> {
+  const answer = await confirm({
+    message:
+      'Activate the commit checks (git pre-commit/pre-push hooks)? This sets core.hooksPath ' +
+      'unless another hook setup is already in place.',
+    initialValue: true,
+  });
+  if (isCancel(answer)) {
+    cancel('Cancelled.');
+    throw new HarnessError('CANCELLED', 'The git hooks confirmation was cancelled by the user.');
+  }
+  return answer === true;
+}

@@ -66,6 +66,10 @@ export interface GeneratedFile {
    *  non-default capability is a single greppable token. Exactly one expression
    *  in all of `src/` assigns it (WR-5). */
   readonly root?: 'repo';
+  /** **(NEW — commit-checks.)** Written with mode `0o755` when `true` — the git hook
+   *  shims, which git ignores unless executable. `true | undefined` like `merge` and
+   *  `root`: absent for every artifact before this feature. */
+  readonly executable?: true;
 }
 
 export interface CapabilityMapping {

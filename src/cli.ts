@@ -45,6 +45,8 @@ interface InitCommandOptions {
   readonly yes?: boolean;
   readonly dryRun?: boolean;
   readonly force?: boolean;
+  /** (specs/commit-checks.) `false` under `--no-git-hooks`; commander defaults it to `true`. */
+  readonly gitHooks?: boolean;
 }
 
 function collectModel(value: string, previous: readonly string[]): readonly string[] {
@@ -153,6 +155,7 @@ async function runInitCommand(target: string, opts: InitCommandOptions, io: Init
     interactive,
     dryRun: Boolean(opts.dryRun),
     force: Boolean(opts.force),
+    gitHooks: opts.gitHooks,
     io,
   });
 
@@ -210,6 +213,7 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('-y, --yes', 'Accept defaults, skip all prompts and the final confirmation')
     .option('--dry-run', 'Print the write plan; write nothing')
     .option('--force', 'Overwrite existing files')
+    .option('--no-git-hooks', 'Write the commit-check git hooks but do not activate them (core.hooksPath)')
     .action(async (target: string, cmdOptions: InitCommandOptions) => {
       await runInitCommand(target, cmdOptions, io);
     });

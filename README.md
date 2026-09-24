@@ -12,18 +12,37 @@ sdd-architect
      |
 [HUMAN GATE: review the 5 specs]
      |
-sdd-test-writer   (red phase - tests that must fail for the right reason)
+sdd-test-writer   (red phase - proposes unit/integration/e2e tests, then checkpoint*)
      |
 [HUMAN GATE: confirm the tests fail for the right reason]
      |
 sdd-executor      (green phase - implements until tests pass)
      |
-sdd-auditor       (verifies the contract + confirms the per-turn hook fired and CI is green)
+sdd-auditor       (verifies the contract, tier coverage + confirms the per-turn hook fired and CI is green)
      |
 [HUMAN GATE: review the final verdict]
      |
 sdd-documentation (automatic, non-gated - runs only on an approved verdict)
 ```
+
+\* The shipped `sdd-test-writer` picks tests at the `unit`, `integration` and/or `e2e`
+tier — only where the feature's nature makes that tier suitable — and infers a
+framework per tier from the repository's own evidence (manifests, config, existing
+tests), never from a hard-coded table. It records the proposal as a Test Plan in
+`audit.md`. If the plan needs any tier beyond `unit`, or any setup at all (a dev
+dependency, a config file or a script), it stops and asks for confirmation before
+writing a test or installing anything — routed through the conductor when the
+test-writer runs as a delegated sub-agent, asked inline when a human invokes it
+directly. A unit-only plan with no setup skips the checkpoint and proceeds straight to
+writing tests. This checkpoint is conditional, not a fourth human gate: the pipeline
+still has exactly three (specs, tests, audit). The rubric behind "is this test worth
+writing" ships as a bundled `harny-test/high-value-tests.md` resource, and the
+shipped `sdd-auditor` reads the confirmed Test Plan and records the results per tier
+as a `### Tier Results` table in `audit.md` § Test Coverage, flagging (for example) an
+unconfirmed non-unit test or a confirmed tier with no tests. This repository's own
+dogfood pipeline (`.claude/skills/harny-test/` and `.claude/skills/harny-audit/`, via
+the `.agents/skills/` bridge) intentionally does not run this tier flow yet — it keeps
+proposing tests without tiers or a confirmation checkpoint.
 
 Each feature gets a 5-file spec under `specs/<feature-name>/`:
 
@@ -239,6 +258,38 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 
 **Default MCP server wiring:** Each selected tool now gets a default Context7 MCP server entry written into its own native MCP configuration file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`), so the `docs-lookup` capability's canonical tool tokens (`mcp__context7__resolve-library-id` and `mcp__context7__query-docs` on Claude Code, `@context7` on Kiro) resolve to a real, connected server out of the box. The endpoint harny writes is Context7's OAuth variant (`/mcp/oauth`), which requires clients to implement the MCP OAuth specification. This was chosen because the plain `/mcp` endpoint was observed not to work correctly in practice, despite Context7's own per-client documentation still showing it. These five files are repo-scoped configuration and are tracked in version control; they are never deleted or rewritten whole-file, only extended to add the Context7 entry if absent. The first time an agent calls a Context7 tool, that tool's own native first-use approval prompt remains the approval gate — harny writes the configuration only, never auto-approves or widens permissions. No credential, credential placeholder, or environment-variable reference is ever written alongside the endpoint.
 
+**Sub-agent feedback:** On Claude Code, Cursor and Codex, the generated hook config also registers the tool's sub-agent completion event (`SubagentStop` / `subagentStop` / `SubagentStop`) beside the turn-completion one. It runs the same feedback runner over the same touched files, plus `--keep-turn`, so a sub-agent such as `sdd-executor` sees lint/type-check findings on its own work before it hands back, and the file list is left in place for the parent agent's own turn-end run. Delivery is at-least-once: a finding may be reported twice (to the sub-agent, then to the parent) but is never dropped by the earlier check. Kiro and GitHub Copilot are deliberately not wired for this; their hook files are unchanged. Still open: whether Cursor's `afterFileEdit` fires inside a sub-agent, and whether a Codex sub-agent's edits and its stop share one `turn_id`. On either tool the registration may therefore be inert; it is never wrong.
+
+## Permissions baseline
+
+Every `harny init` also installs a permissions baseline: `.sdd/permissions/policy.json`, an editable list of what the agent may not do, and `.sdd/permissions/run-guard.mjs`, a tool-neutral guard that each selected tool's "before a tool runs" hook calls. The default baseline:
+
+- **Denies** reading `.env`, `.env.*` (except `.env.example`, `.env.sample` and `.env.template`), `*.pem`, `*.key` and `secrets/**`.
+- **Denies** `git push --force` (and `-f`, `--force-with-lease`, `+refspec`), `--no-verify` on commit and push, and `rm -rf`.
+- **Denies** committing or pushing to a protected branch (`main`, `master`, `production`, `release/*` by default) by any spelling. Commits and pushes on every other branch are allowed.
+- **Asks** before deploys, database migrations and resets, piping a download into a shell, and adding a package.
+
+| Tool | Hook | Deny | Ask |
+|---|---|---|---|
+| Claude Code | `PreToolUse`, plus static `permissions.deny`/`ask` in `.claude/settings.json` | yes | yes |
+| Cursor | `beforeShellExecution`, `beforeReadFile` | yes | shell only; a read-side ask is denied |
+| GitHub Copilot | `preToolUse` | yes | yes |
+| Codex CLI | `PreToolUse` (`Bash`) | yes | denied with "requires human approval" (Codex has no ask) |
+| Kiro | `preToolUse` | yes | denied with "requires human approval" (Kiro has no ask); not yet verified live |
+
+The guard judges the command text the agent writes, so it is a floor, not a wall. For branches that must never be pushed to directly, also enable **server-side branch protection** on your remote (GitHub: *Settings → Rules → Rulesets*); only the remote can make that rule unbypassable. `templates/permissions/README.md` covers the behavior, the failure modes and the per-tool details.
+
+## Commit checks
+
+`harny init` also installs git hooks at `.sdd/git-hooks/`. Hooks are the one checkpoint every committer passes through, so they apply to every agent on all five tools, and to people:
+
+- **`pre-commit`** blocks a commit to a protected branch (the same `git.protectedBranches` list as the permissions baseline; a repository's first commit is exempt). It also blocks a secret in the staged changes, via `gitleaks git --pre-commit --staged` when gitleaks is installed, and a lint finding on the staged files, via the feedback runner's new `run --staged` mode (per-file commands only; whole-project checks such as `tsc` stay in CI). An existing `.git/hooks/pre-commit` is chained.
+- **`pre-push`** blocks a push to a protected branch by any refspec, including deleting one.
+
+With your consent (asked interactively; the default under `--yes`), `harny init` activates the hooks by setting `core.hooksPath`. It never does so over husky, lefthook, pre-commit or an existing `core.hooksPath`; instead it prints the line to add to that setup. Pass `--no-git-hooks` to write the hooks without activating them.
+
+Hooks are local configuration, so a fresh clone, including a cloud agent's checkout, has none active. The generated CI workflow is the backstop: it downloads a pinned gitleaks release, verifies its checksum, and scans each pull request's or push's commits for secrets. `git commit --no-verify` still skips the hooks for people; the permissions baseline denies it to agents. See `templates/git-hooks/README.md` for the details and limits.
+
 ## Checking whether a repository is ready
 
 `npx harny doctor` runs the scaffolded readiness check against a target repository —
@@ -262,9 +313,36 @@ node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
 node /path/to/target-repo/.sdd/doctor/run-doctor.mjs --only spec-state
 ```
 
+The **repo readiness** family also checks **component-level docs**. It discovers the
+repository's components (directories with their own package manifest, declared
+monorepo components, and domain directories under `src/`, `lib/` or `app/`) and
+warns when a component has no `AGENTS.md`. Cursor, GitHub Copilot and Codex read a
+nested `AGENTS.md` on their own. Claude Code and Kiro need a small bridge file, and
+`harny init` writes it for every component that already has an `AGENTS.md`, never over
+an existing file:
+- **Claude Code:** `<dir>/CLAUDE.md` containing `@AGENTS.md`, because Claude Code skips
+  a nested `AGENTS.md` whenever a `CLAUDE.md` exists above it.
+- **Kiro:** a `.kiro/steering/component-<slug>.md` steering file with
+  `inclusion: fileMatch`.
+
+The documentation role writes the component `AGENTS.md` itself for the components a
+feature touched.
+
+The **security** family reports, as warnings only (never a failure, never a changed
+exit code), whether:
+- the permissions baseline is installed and each selected tool's hook config calls its
+  guard;
+- git actually ignores `.env` and `.env.local` (asked of `git check-ignore`, not by
+  reading `.gitignore`);
+- the commit-check hooks exist and `core.hooksPath` points at them;
+- gitleaks is installed locally;
+- the CI workflow still carries its secret-scan step.
+
+Each warning names its fix. Run it alone with `--only security`.
+
 The direct runner invocation also accepts an optional `--only <family>` selector —
-one of `environment`, `harness`, `repo-readiness`, `spec-state`, or `tests` — that
-evaluates that single family alone instead of all five, and spawns no command from
+one of `environment`, `harness`, `repo-readiness`, `security`, `spec-state`, or
+`tests` — that evaluates that single family alone instead of all six, and spawns no command from
 the `tests` family unless `tests` itself is the selected family. An unrecognized
 value or a value-less `--only` is a usage error (exit `1`), never a silently-empty,
 falsely-ready run. This is what makes it cheap enough for the `sdd-documentation`

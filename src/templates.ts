@@ -121,6 +121,21 @@ export interface CanonicalTemplates {
    *  byte-for-byte (BG-11, BG-20). Tolerated absent for the same reason as
    *  `hookRunner`. */
   readonly sharedProbes?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/run-guard.mjs`, read
+   *  byte-for-byte (PB-2). Tolerated absent for the same reason as `hookRunner`. */
+  readonly permissionsGuard?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/policy.json`, read
+   *  byte-for-byte (PB-1, PB-2). Tolerated absent for the same reason as
+   *  `hookRunner`. */
+  readonly permissionsPolicy?: SkillResource;
+  /** **(NEW — commit-checks.)** `templates/git-hooks/{pre-commit,pre-push,run-git-hook.mjs}`,
+   *  read byte-for-byte (CC-1). Tolerated absent for the same reason as `hookRunner`. */
+  readonly gitHooksPreCommit?: SkillResource;
+  readonly gitHooksPrePush?: SkillResource;
+  readonly gitHooksRunner?: SkillResource;
+  /** **(NEW — component-level-docs.)** `templates/shared/components.mjs`, read
+   *  byte-for-byte (CL-1). Tolerated absent for the same reason as `hookRunner`. */
+  readonly sharedComponents?: SkillResource;
 }
 
 const METADATA_HEADING_RE = /^##\s+(Role )?Metadata\s*$/;
@@ -387,6 +402,12 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
   const doctorRunner = await loadOptionalResource(templatesRoot, 'doctor/run-doctor.mjs', 'run-doctor.mjs');
   const doctorReadme = await loadOptionalResource(templatesRoot, 'doctor/README.md', 'README.md');
   const sharedProbes = await loadOptionalResource(templatesRoot, 'shared/probes.mjs', 'probes.mjs');
+  const permissionsGuard = await loadOptionalResource(templatesRoot, 'permissions/run-guard.mjs', 'run-guard.mjs');
+  const permissionsPolicy = await loadOptionalResource(templatesRoot, 'permissions/policy.json', 'policy.json');
+  const gitHooksPreCommit = await loadOptionalResource(templatesRoot, 'git-hooks/pre-commit', 'pre-commit');
+  const gitHooksPrePush = await loadOptionalResource(templatesRoot, 'git-hooks/pre-push', 'pre-push');
+  const gitHooksRunner = await loadOptionalResource(templatesRoot, 'git-hooks/run-git-hook.mjs', 'run-git-hook.mjs');
+  const sharedComponents = await loadOptionalResource(templatesRoot, 'shared/components.mjs', 'components.mjs');
 
   return {
     root: templatesRoot,
@@ -400,6 +421,12 @@ export async function loadCanonicalTemplates(root?: string): Promise<CanonicalTe
     doctorRunner,
     doctorReadme,
     sharedProbes,
+    permissionsGuard,
+    permissionsPolicy,
+    gitHooksPreCommit,
+    gitHooksPrePush,
+    gitHooksRunner,
+    sharedComponents,
   };
 }
 

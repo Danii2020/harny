@@ -22,11 +22,14 @@ import {
 import type { HookPayload } from './engine.js';
 import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
+import { buildPermissionsFiles, parsePermissionPolicy } from './permissions.js';
+import { activateGitHooks, buildGitHooksFiles } from './git-hooks.js';
+import { COMPONENT_DISCOVERY, buildNestedGuidanceBridgeFiles, loadDiscovery } from './component-docs.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
 import { applyWrites, displayPath, planWrites } from './writer.js';
-import { confirmWrite, runInitPrompts } from './prompts.js';
+import { confirmGitHooks, confirmWrite, runInitPrompts } from './prompts.js';
 import { GATE_IDS } from './vocabulary.js';
 import type { ToolId } from './vocabulary.js';
 import { CI_WORKFLOW_PATH, STACK_PROFILE_IDS } from './feedback.js';
@@ -48,6 +51,10 @@ export interface InitOptions {
   readonly interactive: boolean;
   readonly dryRun: boolean;
   readonly force: boolean;
+  /** **(NEW — commit-checks.)** `false` (`--no-git-hooks`) never activates the git
+   *  hooks. Otherwise they are activated after a successful write — after a
+   *  confirmation when `interactive` (CC-6). */
+  readonly gitHooks?: boolean;
   readonly io: InitIO;
 }
 
@@ -299,6 +306,12 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
       profile: payload.conductor.project.stackProfile,
       runner: payload.hookRunner,
       commands: buildCommandsPayload(payload.conductor.project.components),
+      // (NEW — permissions-baseline.) Parsed once here, so a malformed canonical
+      // policy is a TEMPLATE error before anything is written, and every generator
+      // derives from the same value (PB-1).
+      ...(payload.permissionsGuard && payload.permissionsPolicy
+        ? { permissions: { policy: parsePermissionPolicy(payload.permissionsPolicy.contents) } }
+        : {}),
     };
     for (const generator of resolvedGenerators) {
       const hookFile = generator.renderHook(hookPayload);
@@ -307,6 +320,12 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
       }
     }
     files.push(...buildFeedbackFiles(payload, { prefix: location.prefix }));
+    // (NEW — permissions-baseline.) The guard and its policy, tool-neutral, exactly
+    // once per run, in this same render step (PB-2, CLI-1).
+    files.push(...buildPermissionsFiles(payload));
+    // (NEW — commit-checks.) The git hooks and the commands they lint staged files
+    // with — the same payload the per-turn hooks serialize — once per run (CC-1).
+    files.push(...buildGitHooksFiles(payload, hookPayload.commands));
   }
 
   // (NEW — readiness-doctor.) The readiness runner + generated checks.json,
@@ -333,6 +352,21 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     io.warn(warning);
   }
 
+  // (NEW — component-level-docs, CL-5.) Bridges for tools that do not read a nested
+  // AGENTS.md, for components that already have one. Like the MCP step it reads
+  // targetDir, and like it it never produces a conflict: an existing bridge path is
+  // left alone (warned about when it lacks the include).
+  if (payload.sharedComponents) {
+    const discovery = await loadDiscovery(templates.root);
+    const declared = payload.conductor.project.components.map((component) => component.path);
+    const components = discovery.discoverComponents(targetDir, { ...COMPONENT_DISCOVERY, declared });
+    const bridges = await buildNestedGuidanceBridgeFiles(targetDir, components, resolvedGenerators, discovery);
+    files.push(...bridges.files);
+    for (const warning of bridges.warnings) {
+      io.warn(warning);
+    }
+  }
+
   // 12. Plan writes.
   const plan = await planWrites(files, targetDir, location.repoRoot);
   const planned = plan.files.map((file) => displayPath(file, targetDir, plan.repoRoot));
@@ -351,6 +385,21 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
 
   const written = await applyWrites(plan, { force: options.force });
+
+  // (NEW — commit-checks, CC-6.) Activation is the one consented side effect outside
+  // the write plan: a single git config key, set only after the files it points at
+  // exist, and never over another hook setup.
+  if (options.gitHooks !== false && payload.gitHooksRunner) {
+    const consented = options.interactive ? await confirmGitHooks(io) : true;
+    if (consented) {
+      const outcome = await activateGitHooks(targetDir, location.insideRepo ? location.repoRoot : undefined);
+      if (outcome.kind === 'skipped') {
+        io.warn(`Git hooks not activated: ${outcome.reason}`);
+      } else {
+        io.log(`Git hooks active: core.hooksPath = ${outcome.hooksPath}`);
+      }
+    }
+  }
 
   return { config, planned, written, skippedTools, dryRun: false };
 }

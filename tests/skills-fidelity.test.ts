@@ -120,6 +120,22 @@
  * (`requiredInTemplate: ['rather than assuming any prior history exists']`)
  * is untouched and the exhaustive sweep above stays green once the bullet
  * lands.
+ *
+ * Spec: specs/test-tiers
+ * Covers: contract.md TT-22; intent.md § Non-Goals ("Modifying the dogfood
+ * copies"); audit.md Test Coverage T8; tasks.md Task R.8.
+ *
+ * `DIVERGENCE_TABLE['harny-test']` changes from `byte-identical` to
+ * `diverges` (its first-ever divergence), and `DIVERGENCE_TABLE['harny-audit']`
+ * gains a `requiredInTemplate` list alongside its existing
+ * `forbiddenInTemplate` one. The dogfood tree is untouched by this feature
+ * (non-goal), so every `forbiddenInTemplate`/`requiredInTemplate` assumption
+ * check against the dogfood oracle continues to hold; the shipped copies do
+ * not carry the new content yet at red time, so the `harny-test` and
+ * `harny-audit` cases in "declared-divergence fidelity, exhaustive over every
+ * pair" fail on the missing `requiredInTemplate` needles and the
+ * still-present `forbiddenInTemplate` needle, not on a stale assumption about
+ * the dogfood tree.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -215,17 +231,33 @@ type DivergenceExpectation = ByteIdenticalExpectation | DivergesExpectation;
 
 const DIVERGENCE_TABLE: Readonly<Record<string, DivergenceExpectation>> = {
   // Byte-identical today (contract.md's corrected divergence table): no DC-1/
-  // DC-2/DC-3 edit was needed for these three.
+  // DC-2/DC-3 edit was needed for this one.
   'harny-propose': { kind: 'byte-identical' },
-  'harny-test': { kind: 'byte-identical' },
+
+  // (specs/test-tiers TT-22.) `harny-test` diverges from byte-identical for
+  // the first time: the shipped copy proposes tiers, records a Test Plan and
+  // stops for confirmation, and cites the bundled `high-value-tests.md`
+  // rubric instead of the dogfood-only `high-value-tests` skill the dogfood
+  // copy still points at (a divergence this feature's Non-Goals deliberately
+  // leaves in the dogfood copy — reservation TT-R3).
+  'harny-test': {
+    kind: 'diverges',
+    forbiddenInTemplate: ['Run the `high-value-tests` skill first'],
+    requiredInTemplate: ['high-value-tests.md', 'TEST PLAN AWAITING CONFIRMATION'],
+  },
 
   // DC-1 (corrected post-audit, AL-P1): harny-audit's own compliance-check
   // step named the standard count and ids directly ("seven standards
   // (S1–S7)") — the exact DC-1 material the divergence table's own preamble
   // names, mis-classified pre-audit as "DC-2 only."
+  //
+  // (specs/test-tiers TT-22.) Gains the tier-audit divergence: the shipped
+  // copy reads the Test Plan and records `### Tier Results`, which the
+  // dogfood copy does not (reservation TT-R3).
   'harny-audit': {
     kind: 'diverges',
     forbiddenInTemplate: ['seven standards (S1'],
+    requiredInTemplate: ['### Tier Results', 'TEST PLAN AWAITING CONFIRMATION'],
   },
   // DC-1 (corrected post-audit, AL-P1): both "S1–S6" occurrences named
   // harny's own standard ids directly, mis-classified pre-audit as

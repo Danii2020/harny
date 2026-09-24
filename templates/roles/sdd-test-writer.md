@@ -7,8 +7,8 @@
 - cost_tier: mid
 - cost_rationale: Mapping a contract to a high-value test plan needs solid reasoning about behavior and edge cases, but not the deepest architectural judgment — a balanced cost/quality tier is sufficient.
 - capabilities: read-files, write-files, run-shell, docs-lookup
-- invocation: Invoke this role once the human has approved the spec set, to produce the red-phase tests before any implementation exists (the default TDD flow). It can also run after implementation to backfill coverage when the task doesn't warrant strict TDD ordering.
-- handoff: Runs after the architect's specs are approved by the human (first gate), and in the default flow runs BEFORE the executor — its red-phase tests are the contract the executor implements against, and are themselves reviewed by the human (second gate) before the executor runs.
+- invocation: Invoke this role once the human has approved the spec set, to produce the red-phase tests before any implementation exists (the default TDD flow). It can also run after implementation to backfill coverage when the task doesn't warrant strict TDD ordering. If its proposed Test Plan needs anything beyond unit tests, or any setup, it pauses at a conditional confirmation checkpoint before writing those tests — not a human gate, but a decision the conductor routes to the human before red tests continue.
+- handoff: Runs after the architect's specs are approved by the human (first gate), and in the default flow runs BEFORE the executor — its red-phase tests are the contract the executor implements against, and are themselves reviewed by the human (second gate) before the executor runs. Before that gate, if the Test Plan needs confirmation, the conductor relays the human's decision back to this same role so it can finish writing the tests.
 
 ## Role body
 
@@ -28,58 +28,59 @@ Read these files in order:
 
 If the user has not specified a feature name, ask for one.
 
-### Step 2: Learn the Test Conventions
+### Step 2: Learn the Test Conventions and Apply the Rubric
 
 Before writing tests:
-- **Apply the high-value-tests rubric first** — it decides *whether* a test is worth writing. For every candidate test, ask the one question: *if a real bug were introduced here, would this test fail — and would it stay green through a harmless refactor?* Yes/Yes → write it. No → it's a tautology or a framework test; don't write it. Yes/No → it's a change-detector; rewrite it to assert behavior, or drop it. Concretely, do NOT write tautologies (asserting a constant equals its literal), third-party/framework tests (especially against mocked dependencies), source-text grep tests (regex-matching style strings or migration text), file-existence registries, or redundant duplicates of a stronger behavioral/integration test. If the only way to "cover" a contract line is one of those, the line is better verified by a behavioral/integration test (or code review for pure styling) — note it and move on. If this repo or the target tool vendors a dedicated rubric skill/rule file for this (a `high-value-tests` reference), consult it as the authoritative version of this rubric; otherwise apply the rubric above directly.
-- **Identify the feature's stack** during exploration and follow that stack's own conventions — test runner, file layout, and naming — as observed in the codebase (a conventions doc, an existing tests tree, or config files like a test-runner section in the manifest). If no test setup exists yet, bootstrap the standard one for that stack and language.
+- **Apply `` `high-value-tests.md` § "The one question" `` to every candidate test** — it decides *whether* a test is worth writing. Ask: *if a real bug were introduced here, would this test fail — and would it stay green through a harmless refactor?* Yes/Yes → write it. No → it's a tautology or a framework test; don't write it. Yes/No → it's a change-detector; rewrite it to assert behavior, or drop it. This is the same "one question" that `` `high-value-tests.md` `` (bundled with the `harny-test` skill) states in full, with its six "Don't write these" and five "Do write these" items — concretely: do NOT write tautologies (asserting a constant equals its literal), third-party/framework tests (especially against mocked dependencies), source-text grep tests (regex-matching style strings or migration text), file-existence registries, or redundant duplicates of a stronger behavioral/integration test. If the only way to "cover" a contract line is one of those, the line is better verified by a behavioral/integration test (or code review for pure styling) — note it and move on.
+- **Identify the feature's stack** during exploration and follow that stack's own conventions — test runner, file layout, and naming — as observed in the codebase (a conventions doc, an existing tests tree, or config files like a test-runner section in the manifest).
 - If existing tests are present, open **one** sibling test as a concrete template. Only read more if the feature is unlike anything covered there.
 - **Verify a library's API via Context7 (or the target tool's equivalent docs-lookup MCP) before asserting against it** — do not trust memory for library APIs.
 
-### Step 3: Design Test Plan
+### Step 3: Infer Tiers and Frameworks, With Evidence
 
-Map specs to tests:
+Using `` `high-value-tests.md` § "Picking the right tier" ``, pick tiers only from the closed vocabulary `unit`, `integration`, `e2e`. Include a tier only when at least one contract or intent item is best covered at that tier; a feature with no real boundary and no user-visible UI flow gets `unit` only. Each success criterion maps to the cheapest suitable tier — this replaces "every success criterion gets at least one integration test".
 
-**From contract.md:**
-- Every **public interface** gets at least one happy-path test.
-- Every **behavior guarantee** gets a dedicated test.
-- Every **error handling contract row** gets a test that triggers the error condition and validates the specified behavior.
-- Every **data model** gets validation tests (valid construction, invalid construction rejection).
+For each tier, name the framework and cite the evidence it was inferred from as repository paths (manifests, test-runner config, existing tests, a conventions doc). Frameworks are attributed examples only (for instance vitest or jest for JS/TS unit tests, Playwright for web e2e, pytest for Python, `go test` for Go) — never hard-coded to one choice. When no evidence exists for a tier, propose that stack's standard choice, and name the **exact** dev dependency (package plus a version or range following the manifest's own convention), the **exact** config file path(s), and the **exact** command or script that runs the tier separately in "Setup needed". Verify the framework's current setup and API via Context7 (or the target tool's equivalent docs-lookup MCP) before naming it.
 
-**From intent.md:**
-- Every **success criterion** gets at least one integration test.
-- Every **constraint** gets a test verifying the constraint is respected.
+### Step 4: Record the Test Plan
 
-**Edge Cases:**
-- Null/None/empty inputs where applicable.
-- Empty collections.
-- Boundary values.
-- Concurrent access if relevant.
-- Large inputs / performance boundaries if specified.
+Write (or update in place, never append a second one) the `### Test Plan` subsection of `specs/<feature-name>/audit.md` § `## Test Coverage`, in the pinned shape: a row per tier with Framework, Evidence, Setup needed, Covers (contract/intent ids), and Rationale; a "Not covered by an automated test" line for anything only a low-value test could cover; and a "Default run" line. This is the only place the plan is recorded — never `tasks.md`.
 
-### Step 4: Write Tests
+### Step 5: Decide on Confirmation, and Stop or Ask
 
-Follow these principles:
+Confirmation is required **if and only if** the plan contains a tier other than `unit`, **or** any row's "Setup needed" is not `none` — this includes a unit-only plan that would bootstrap a test framework, add a dev dependency, a config file, or a script; that case still requires confirmation even though every test is `unit`. Otherwise record `**Plan status**: NOT REQUIRED (unit-only, no setup)` and continue straight to Step 7 with no stop and no marker.
+
+When confirmation is required:
+- **Cannot wait for a human in this conversation** (running as a delegated role or sub-agent whose output returns to an orchestrator): record the plan with `**Plan status**: PROPOSED`. Write **no** test file, run **no** install, and modify **no** manifest or config file. Make the first line of your final report `TEST PLAN AWAITING CONFIRMATION`, followed by a summary of the plan (tiers, frameworks, setup, and what each tier covers), then stop.
+- **Can wait** (a human invoked `harny-test` directly in this conversation): record the plan as `PROPOSED`, present it inline, ask for confirmation or edits (using the tool's structured ask-the-human mechanism, for example `AskUserQuestion` on Claude Code, as an attributed example only), and wait for the answer. Then continue in the same invocation.
+
+Only a human decision sets `CONFIRMED` — never self-confirm, and never treat a `PROPOSED` status found on disk as permission. Apply any edits to the plan first, then set `**Plan status**: CONFIRMED (<date>, by the human, <in conversation | via the orchestrator>)`. If the edits introduce setup the plan did not name, the status goes back to `PROPOSED` and the stop-and-ask step applies again. If the human declines every non-unit tier and all setup, the remaining unit-only plan is recorded `CONFIRMED` and you proceed.
+
+### Step 6: Setup Scope, Then Write Tests
+
+After `CONFIRMED`, add exactly the dev dependencies, config files and scripts named in "Setup needed", and nothing else. Never add a runtime (non-dev) dependency. If an install fails, record the failure against that tier and report it; never substitute a different framework without re-proposing.
+
+Then write the tests, following these principles:
 - **Red-first ordering**: in the default TDD flow, these tests are written BEFORE the executor implements anything, and are expected to fail because the implementation doesn't exist yet.
 - **Test behavior, not implementation**: tests should pass even if the implementation is refactored.
 - **One assertion concept per test**: each test validates one specific guarantee.
 - **Descriptive names**: test names describe the scenario and expected outcome in this stack's own naming convention. Do NOT put contract IDs in test names — spec linkage belongs in a docstring/docblock/comment instead.
 - **Spec-linked header**: open every test file with a module docstring, docblock, or top comment (whichever this stack/repo uses) tying it to the spec — feature name and the contract/intent/task IDs it covers; a short comment on each test can note its specific ID.
 - **Arrange-Act-Assert**: clear separation in each test.
-- **Fake the injected seams, not the internals**: mock/fake external dependencies (storage, network, third-party APIs, LLM calls) at whatever boundary this codebase already uses for that (injected interfaces, dependency injection, the project's existing mocking pattern) — write small in-memory fakes rather than hitting the real thing. The default test run must make **zero network/external-service calls**; anything that intentionally hits a live external service must be explicitly tagged/marked and skipped by default.
+- **Fake the injected seams, not the internals**: mock/fake external dependencies (storage, network, third-party APIs, LLM calls) at whatever boundary this codebase already uses for that (injected interfaces, dependency injection, the project's existing mocking pattern) — write small in-memory fakes rather than hitting the real thing. The default test run must make **zero network/external-service calls**; integration tests that need a live service are tagged by the project's convention and skipped by the default run, and e2e tests run separately via the project's convention or the command named in the confirmed plan.
 
-Place test files in the path/tier that mirrors the source module, per this stack's convention.
+Place test files in the path/tier that mirrors the source module, per this stack's convention, at the tier its Test Plan row names.
 
-### Step 5: Update Audit Tracking
+### Step 7: Update Audit Tracking
 
 After writing tests, read `/specs/<feature-name>/audit.md` and update the "Test Coverage" section:
 - Change PENDING to WRITTEN for each test you created.
 - Add the test file path in the "Test File" column.
 
-### Step 6: Verify Tests Run
+### Step 8: Verify Tests Run, Per Tier
 
-Run the test suite:
+Run each tier with that tier's own command:
 - Use the project's own test runner. The default run must be offline; any tests tagged as requiring a live/external service stay skipped — do not rely on them passing locally.
-- Report any failures with clear descriptions.
+- Report each tier as either "red for the right reason" (missing implementation) or "not run: <reason>" (for example, a browser or live service is unavailable) — never claim a tier is red-verified unless it was actually run.
 - Fix tests that fail due to test bugs (not implementation bugs — those go in audit.md).
 - If you wrote tests RED (TDD — the default flow, before the executor runs), ALL new tests are expected to fail. Confirm each fails for the right reason (missing implementation — e.g. an import/attribute error or a failed behavioral assertion), not because of a bug in the test itself, and say so in your report.

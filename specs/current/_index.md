@@ -1,18 +1,18 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-23 by monorepo-mode (archive mode: feature archived, capability docs updated, ADRs 0038–0042 registered)
+> Last synced: 2026-09-24 by test-tiers (archive mode: feature archived, capability docs updated, ADRs 0046–0050 registered)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
 | spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
-| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
+| skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
 | cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
-| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/) |
-| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
+| tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
+| feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
 | readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/), [monorepo-mode](../archived/monorepo-mode/) |
 
 ## Keyword lookup
@@ -90,6 +90,14 @@
 | --only / family selector | readiness-checks |
 | completion precondition / archive verification | pipeline-roles |
 | shipped stamp / marker matching / bolded marker | readiness-checks |
+| SubagentStop / subagentStop / sub-agent feedback | feedback-controls, tool-generators |
+| --keep-turn / at-least-once delivery | feedback-controls |
+| test tier / unit / integration / e2e | pipeline-roles |
+| Test Plan / Plan status | pipeline-roles |
+| TEST PLAN AWAITING CONFIRMATION | pipeline-roles |
+| Tier Results | pipeline-roles |
+| high-value-tests.md | skill-library |
+| tier-confirmation checkpoint | pipeline-roles |
 
 ## Synchronized Changes
 
@@ -109,6 +117,8 @@
 | dogfood-quick-fixes | [specs/archived/dogfood-quick-fixes/](../archived/dogfood-quick-fixes/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [cli-init.md](./cli-init.md), [tool-generators.md](./tool-generators.md), [feedback-controls.md](./feedback-controls.md) |
 | documentation-role-completion | [specs/archived/documentation-role-completion/](../archived/documentation-role-completion/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [readiness-checks.md](./readiness-checks.md) |
 | monorepo-mode | [specs/archived/monorepo-mode/](../archived/monorepo-mode/) | [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
+| subagent-feedback-hooks | [specs/archived/subagent-feedback-hooks/](../archived/subagent-feedback-hooks/) | [feedback-controls.md](./feedback-controls.md), [tool-generators.md](./tool-generators.md) |
+| test-tiers | [specs/archived/test-tiers/](../archived/test-tiers/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [tool-generators.md](./tool-generators.md) |
 
 ## Decisions (ADR registry)
 
@@ -156,6 +166,14 @@
 | 0040 | The component list travels on the payload, not as a new `CiPlacement` field | Accepted | cli-init | `specs/archived/monorepo-mode/decisions/0040-component-list-on-payload-not-ciplacement.md` |
 | 0041 | A `whole-project` command runs once per component with an assigned touched path | Accepted | feedback-controls | `specs/archived/monorepo-mode/decisions/0041-whole-project-per-affected-component.md` |
 | 0042 | Component scoping for readiness is a `dir` field on the generated checks entry, never on `CommandSpec` | Accepted | readiness-checks | `specs/archived/monorepo-mode/decisions/0042-dir-on-generated-checks-entry.md` |
+| 0043 | A sub-agent's stop runs the ordinary runner with `--keep-turn`, giving at-least-once delivery | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0043-keep-turn-flag-at-least-once-delivery.md` |
+| 0044 | Wire a sub-agent completion event only where first-party documentation confirms it | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0044-wire-only-documented-subagent-events.md` |
+| 0045 | Claude Code's wrapper takes the event name as a parameter; Cursor and Codex share one argv-forwarding wrapper | Accepted | tool-generators | `specs/archived/subagent-feedback-hooks/decisions/0045-event-name-is-a-wrapper-parameter.md` |
+| 0046 | Any setup requires confirmation, even for a unit-only plan | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0046-any-setup-requires-confirmation-even-unit-only.md` |
+| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0047-test-plan-lives-only-in-audit-md.md` |
+| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0048-tier-checkpoint-conditional-not-a-fourth-gate.md` |
+| 0049 | Tier findings map onto the auditor's existing severity buckets | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0049-tier-findings-reuse-existing-severity-buckets.md` |
+| 0050 | The test-value rubric ships as a bundled harny-test resource, not a skill | Accepted | skill-library | `specs/archived/test-tiers/decisions/0050-rubric-ships-as-bundled-harny-test-resource.md` |
 
 ## Open reservations
 
@@ -174,7 +192,7 @@
 | R5 | Kiro's and GitHub Copilot's post-edit payload field shape is assumed but not cited. AL-30 class: wrong field name exits 0 recording nothing. | MEDIUM (human-gated) | `specs/archived/agent-feedback-controls/audit.md` R5 | feedback-controls |
 | R6 | Python profile CI gate is deliberately probe-skip-only (no install, both ruff/mypy skip on stock runner). Closeable only by a future feature adding `ciInstall`. | MEDIUM (scope, deliberate) | `specs/archived/agent-feedback-controls/audit.md` R6 | feedback-controls |
 | R7 | TypeScript install candidates cover npm only; pnpm/Yarn-Berry can re-enter F1. Needs `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | `specs/archived/agent-feedback-controls/audit.md` R7 | feedback-controls |
-| R8 | Only `Stop` is hooked, never `SubagentStop` — Stop fires only for the main conversation, so in a conductor-orchestrated pipeline the check only runs when the conductor's own turn ends, never while a subagent is working; a mid-implementation broken state inside a subagent's own turn is never caught live. Whether `PostToolUse` accumulation still attributes subagent edits to the same turn key as the conductor (so they're swept up at that next `Stop`) is plausible but not independently confirmed. Never examined when `agent-feedback-controls` shipped. | MEDIUM (design, unexamined) | `specs/current/feedback-controls.md` R8 — context7-mcp dogfood observation, 2026-09-15 | feedback-controls |
+| R8 | Narrowed by subagent-feedback-hooks: `SubagentStop` is wired on Claude Code, and a sub-agent's edits were confirmed live to share the parent's turn key. Still open: Codex sub-agent `turn_id` and Cursor `afterFileEdit` inside a sub-agent (see SF-R1) | MEDIUM (narrowed) | `specs/current/feedback-controls.md` R8; `specs/archived/subagent-feedback-hooks/contract.md` § Open questions | feedback-controls |
 | AL-S16 | The T41 filter is status-blind and hardcodes eight skill names. A modification of a tracked bridge symlink may escape detection, and a ninth `harny-*` skill causes false positive. Must filter on `?? ` + `harny-` discovery pattern. | MEDIUM | `specs/archived/sdd-skill-library/audit.md` AL-S16 | skill-library |
 | CR-1 | Live discovery of a symlinked skill and warning-free `skills:` preloading are unverified in-session (require a Claude Code restart) | MEDIUM | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
 | CR-2 | The entire live pipeline depends on the `.agents`↔`.claude` symlink bridge surviving | LOW | `specs/archived/sdd-skill-library/audit.md` "Carried reservations" | skill-library |
@@ -223,6 +241,17 @@
 | MR-F13 | The "N is always 0" regression test lacks a positive control: it would also pass on a runner that dispatched nothing. Weak rather than vacuous. | LOW (test quality) | `specs/archived/monorepo-mode/audit.md` F13, A5 | feedback-controls |
 | MR-MC20 | The readiness id suffix `:<path>` follows the `isSingleRootComponent` boundary, so a lone non-`.` component gets `npm-test:apps/web` where MC-20's original wording implied a bare id. Recorded so the gap is not rediscovered as a defect. | LOW (wording) | `specs/archived/monorepo-mode/audit.md` C20 | readiness-checks |
 | MR-S5 | The single-repo predicate is duplicated as an inline expression at `src/generators/markdown-yaml.ts:62`, because an ESM import is top-level and would fail the component-vocabulary grep gate over `src/generators/**`. Ruled the correct disposition, but unguarded: nothing turns red if `src/engine.ts`'s predicate changes and that line does not. Deleted by MR-F4's fix. | LOW (residual) | `specs/archived/monorepo-mode/audit.md` round-2 Audit Log ruling, S5 | cli-init |
+| SF-R1 | The live `.turns/` probe was never run, so the Codex and Cursor sub-agent registrations may be inert (never wrong) | MEDIUM (human-gated) | `specs/archived/subagent-feedback-hooks/audit.md` F7 | feedback-controls |
+| SF-R2 | Kiro and GitHub Copilot are not wired for sub-agent completion; Copilot's first-party docs also disagree with harny's shipped hook shape | MEDIUM (human-gated) | `specs/archived/subagent-feedback-hooks/contract.md` § Open questions 3–4 | feedback-controls |
+| SF-F1 | No test executes the Cursor/Codex sub-agent wrapper, so the argv forwarding that carries `--keep-turn` is unguarded | HIGH (coverage) | `specs/archived/subagent-feedback-hooks/audit.md` F1 | feedback-controls |
+| SF-F4 | Two regenerated `.claude/settings.json` goldens are excluded from byte comparison, so a Claude Code hook-config drift would pass | LOW (test quality) | `specs/archived/subagent-feedback-hooks/audit.md` F4 | feedback-controls |
+| TT-AL1 | `templates/roles/sdd-test-writer.md`'s Step 5 sends a `NOT REQUIRED` plan to "continue straight to Step 7"; the step that writes the tests is Step 6, not Step 7 | HIGH | `specs/archived/test-tiers/audit.md` AL-1 | pipeline-roles |
+| TT-AL2 | Four Error Handling Contract rows are missing from the shipped `harny-test`/`harny-audit` prompts (no-plan re-invocation, ambiguous evidence, unclassifiable tier, no human reachable) | HIGH | `specs/archived/test-tiers/audit.md` AL-2 | pipeline-roles |
+| TT-AL3 | The pinned Test Plan shape and position are not shipped; the skill's "(contract § Data Models)" pointer resolves to nothing downstream | MEDIUM | `specs/archived/test-tiers/audit.md` AL-3 | pipeline-roles |
+| TT-AL4 | The prior spec-to-test mapping instructions (error-handling rows, constraints, edge cases) were dropped without contract authority | MEDIUM | `specs/archived/test-tiers/audit.md` AL-4 | pipeline-roles |
+| TT-R1 | Tier inference, confirmation, stop/ask, setup scope and per-tier red reporting are prompt instructions unverifiable by automated tests; 3 of 5 manual Claude Code walkthroughs were only PARTIAL | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-5, TT-R1 | pipeline-roles |
+| TT-R2 | Tier proposal, confirmation and tier-aware audit are delivered and tested for presence on Cursor, Kiro, GitHub Copilot and Codex, but walked through at runtime only on Claude Code | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-6, TT-R2 | tool-generators |
+| TT-R3 | The dogfood `harny-test`/`harny-audit` intentionally lack the tier flow and tier audit; dogfood `harny-test` still points at the dogfood-only `high-value-tests` skill | LOW (design, deliberate) | `specs/archived/test-tiers/audit.md` TT-R3 | skill-library |
 
 ## Notes
 

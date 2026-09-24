@@ -6,6 +6,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The shipped test-writer now proposes tests at the right tier, with a human
+  confirmation checkpoint, and ships the rubric it was already pointing at
+  (`test-tiers`).** `templates/skills/harny-test/SKILL.md` and
+  `templates/roles/sdd-test-writer.md` previously thought in one tier only and
+  referenced a `high-value-tests` skill that harny never shipped — every downstream
+  install carried that dangling reference. The shipped test-writer now picks from the
+  closed vocabulary `unit` / `integration` / `e2e`, only where a spec item is best
+  covered at that tier, infers a framework per tier from repository evidence it cites
+  (never a hard-coded table), and records the proposal as a `### Test Plan` in
+  `audit.md` § Test Coverage. Confirmation is required whenever the plan contains a
+  tier beyond `unit`, or any setup at all — even a unit-only plan that would install
+  something. When required, a delegated test-writer stops with the first line
+  `TEST PLAN AWAITING CONFIRMATION` and the conductor relays the human's decision;
+  a directly invoked test-writer asks inline. A unit-only plan with no setup proceeds
+  straight to writing tests, with no pause. The rubric ships as a bundled resource,
+  `templates/skills/harny-test/high-value-tests.md`, landing beside `SKILL.md` in
+  every tool's skill root — closing the dangling reference. The shipped
+  `templates/skills/harny-audit/SKILL.md` and `templates/roles/sdd-auditor.md` now
+  read a feature's Test Plan and record a `### Tier Results` table in `audit.md` §
+  Test Coverage, raising findings (in the existing CRITICAL/HIGH/MEDIUM/LOW buckets)
+  for an integration/e2e test written without a `CONFIRMED` plan, a confirmed tier
+  with no tests, setup the plan never named, or a plan still left `PROPOSED`. The
+  conductor's pipeline diagram still shows exactly three human gates (specs, tests,
+  audit); the tier-confirmation checkpoint is described as conditional, inside the
+  test-writer stage, and is explicitly not a fourth gate.
+
+  This is the **shipped delivery layer only** — reaching all five generators
+  (Claude Code, Cursor, Kiro, GitHub Copilot, Codex) with no `src/` change. This
+  repository's own dogfood copies (`.agents/skills/harny-test/`,
+  `.agents/skills/harny-audit/`, bridged to `.claude/skills/`) intentionally diverge
+  and were not touched: the dogfood test-writer still points at its own dogfood-only
+  `high-value-tests` skill and has no tier or confirmation flow, and the dogfood
+  auditor has no tier-results step. This repository's own pipeline therefore does not
+  itself produce a Test Plan while building a feature. The divergence is declared in
+  `tests/skills-fidelity.test.ts`'s `DIVERGENCE_TABLE` and tracked as reservation
+  TT-R3.
+
+  Shipped with the human's approval **with reservations** at the post-audit gate
+  (2026-09-24). Known issues carried forward, to be fixed in a follow-up change
+  rather than blocking this ship:
+  - **HIGH — `templates/roles/sdd-test-writer.md`'s Step 5 sends a `NOT REQUIRED`
+    plan to "continue straight to Step 7"; the role's own numbering makes the step
+    that writes the tests Step 6, not Step 7.** As written, the literal instruction
+    tells a unit-only, no-setup plan to skip writing its own tests. It held at
+    runtime in the one observed case (a delegated sub-agent wrote the tests anyway),
+    but the shipped text itself is wrong and propagates to all five tools.
+  - **HIGH — four Error Handling Contract rows never made it into the shipped
+    prompts**: a re-invocation whose confirmed decision has no matching Test Plan on
+    disk; ambiguous framework evidence across two candidates; the auditor being
+    unable to classify a test's tier; and no human being reachable to confirm.
+  - **MEDIUM — the pinned Test Plan shape and its position above the Test Coverage
+    table are not actually shipped**; the skill's own pointer ("contract § Data
+    Models") resolves to nothing in a downstream install. Observed at runtime: the
+    Test Plan landed below the table instead of above it.
+  - **MEDIUM — the previous spec-to-test mapping instructions (every error-handling
+    row, every constraint, the edge-case list) were dropped** without a contract
+    line authorizing the removal; the shipped auditor still expects every contract
+    guarantee to have at least one test.
+  - **MEDIUM (carried) — only three of five manual walkthroughs on Claude Code fully
+    passed** (delegated propose/confirm/write end-to-end, unit-only with no pause,
+    and the tier-aware audit); the other two were partial. Never exercised at
+    runtime: an actual e2e proposal, an edit relayed through the conductor, the
+    decline-a-tier path, the inline continue-after-answer path, and a tier verified
+    "red for the right reason" (every walkthrough's `npm install` was blocked by the
+    sample's own permission rule, so every tier was honestly reported "not run").
+  - **MEDIUM (carried) — the equivalent behavior on Cursor, Kiro, GitHub Copilot and
+    Codex is delivered and tested for presence only; it was not walked through
+    on any of those four tools.**
+
+  See `specs/archived/test-tiers/audit.md` for the full requirements/contract/test
+  tables, the walkthrough evidence, and the complete list of lower-severity findings.
+
 ### Fixed
 
 - **`harny doctor`'s shipped-but-unarchived check now sees the stamp it was built to
@@ -88,6 +162,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   n = 1, not confirmation that RC-R1 is closed. (Shipped 2026-09-23.)
 
 ### Added
+
+- **Sub-agent feedback hooks** (`subagent-feedback-hooks`). Claude Code, Cursor and
+  Codex now register their sub-agent completion event (`SubagentStop`, `subagentStop`,
+  `SubagentStop`) in the hook file they already generate, beside the turn-completion
+  event. The new registration runs the same runner, `run` mode and inline `--commands`
+  payload, plus a new boolean flag, `--keep-turn`. It never passes `--whole-project`.
+  `--keep-turn` is identical to a normal `run` except that the turn file is not
+  deleted; it has no effect under `--whole-project`. A sub-agent therefore sees its
+  findings at its own stop, and the parent's turn-completion run still sees the same
+  paths and clears them. Delivery is at-least-once: a finding may be reported twice,
+  and is never consumed and dropped by the earlier check.
+  - Claude Code's wrapper now takes the event name as a parameter, so it emits
+    `hookEventName: "SubagentStop"` for the new registration (a mismatch would be
+    silently dropped).
+  - The Cursor and Codex wrappers stay one shared script that now forwards trailing
+    arguments to the runner.
+  - Kiro and GitHub Copilot hook files are unchanged. No new artifact, path or
+    `Generator` member was added.
+  - `templates/hooks/README.md` gains an eighth tool-neutral behavior property and
+    dated per-tool examples.
+  - This repo's own `.claude/settings.json` and two golden fixtures were regenerated.
+
+  Audit verdict: **APPROVED WITH RESERVATIONS**. The auditor drove all three tools'
+  generated sub-agent commands end to end against the real runner. The suite is
+  841/841. Open reservations:
+  - **F1 (HIGH):** no test executes the Cursor or Codex sub-agent wrapper, so the
+    argument forwarding that carries `--keep-turn` on those two tools has no
+    regression guard. It works today.
+  - **F4 (LOW):** the two regenerated `.claude/settings.json` goldens are excluded from
+    byte comparison.
+  - **F6 (LOW):** contract IDs appear in test names (the standing AL-4 class).
+  - **F7 (LOW):** the live `.turns/` probe was not run. Whether Codex sub-agent edits
+    share the stop's `turn_id`, and whether Cursor's `afterFileEdit` fires inside a
+    sub-agent, remain open, so on those tools the registration may be inert.
+
+  (Shipped 2026-09-24.)
 
 - **One install, many components (`monorepo-mode`)** — a single harny install can now
   declare `components: [{ path, stack }]` in `.sdd/harness.json` instead of one `stack`,

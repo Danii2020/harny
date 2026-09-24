@@ -33,7 +33,7 @@
  *
  * Five check families run in this fixed order, every time, so two runs of the same
  * repo state produce identical output (BG-1, amended by ai-sdlc-readiness from four
- * families to five — see `templates/doctor/README.md`):
+ * families to five, and doctor-security-checks to six — see `templates/doctor/README.md`):
  *
  * 1. **environment** — the running Node version is reported (always `ok`); when the
  *    supplied `commands` list is empty (an unresolved/blank stack, BG-8), a single
@@ -44,7 +44,11 @@
  *    `evaluateEntry` as family 2 — a different question (is the target repo itself
  *    legible to an agent) from family 2 (is harny's own harness installed), so it
  *    gets its own labelled section rather than more entries in family 2.
- * 4. **spec state** — every `specs/<feature>/` directory (excluding the configured
+ * 4. **security** — one line per `security` entry, evaluated by the same
+ *    `evaluateEntry`, every entry `recommended`. An entry may carry an `assert` in
+ *    place of its `anyOf` presence check: `probe` (the shared ToolProbe evaluator),
+ *    `gitIgnored`, `gitConfig` (both skip outside a git work tree) or `fileContains`.
+ * 5. **spec state** — every `specs/<feature>/` directory (excluding the configured
  *    `reservedDirs`) is checked for the configured `schemaFiles`, and for the
  *    shipped-but-unarchived condition (BOTH a `shippedMarker` header line in
  *    `intent.md` AND an `approvedVerdicts` match in `audit.md`) — reported by feature
@@ -53,7 +57,7 @@
  *    list-item, blockquote and heading punctuation (`STAMP_LEADING_MARKUP`), so the
  *    bolded `**Shipped: <date>**` stamp the documentation role writes is seen as
  *    readily as a bare one — but prose that merely names the marker is not.
- * 5. **tests** — one line per `commands` entry: its `requires` probe is evaluated
+ * 6. **tests** — one line per `commands` entry: its `requires` probe is evaluated
  *    first (a false probe is `skip`, never a failure); when it passes, the command is
  *    spawned once and its exit status becomes `ok`/`fail`.
  *
@@ -81,6 +85,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { probeSatisfied as requirementMet } from '../shared/probes.mjs';
 
+/** The shared component-discovery module (component-level-docs CL-1), imported
+ *  dynamically so an install that predates it still runs every other family (CL-4). */
+const componentsModule = await import(new URL('../shared/components.mjs', import.meta.url).href).catch(() => undefined);
+
 /** The runner's own default location for its checks data, relative to `cwd`. Not a
  *  value this script receives via `--checks` — a hard-coded convention of the
  *  runner's own invocation, the same way `run-feedback.mjs` hard-codes its own
@@ -98,12 +106,13 @@ const DEFAULT_CHECKS_PATH = path.join('.sdd', 'doctor', 'checks.json');
  *  `checks.json`, so an older checks file keeps working unchanged. */
 const STAMP_LEADING_MARKUP = /^[*_~>#\s-]+/;
 
-/** The five check families, in the fixed order `main` runs them below. Structural —
+/** The six check families, in the fixed order `main` runs them below (the fourth,
+ *  security, added by doctor-security-checks). Structural —
  *  which code paths exist in this script — not data that arrives via `--checks`, so
  *  it follows `DEFAULT_CHECKS_PATH`'s precedent of being a hard-coded convention of
  *  the runner's own invocation (contract.md § Interfaces item 1). `--only`'s value
  *  must be a member of this array. */
-const FAMILY_TOKENS = ['environment', 'harness', 'repo-readiness', 'spec-state', 'tests'];
+const FAMILY_TOKENS = ['environment', 'harness', 'repo-readiness', 'security', 'spec-state', 'tests'];
 
 function fail(message) {
   console.error(`run-doctor.mjs: ${message}`);
@@ -176,6 +185,44 @@ function anyPathExists(paths, cwd) {
   return (paths ?? []).some((p) => fs.existsSync(path.join(cwd, p)));
 }
 
+/** Runs git from `cwd`; `{ status, stdout }`, with status `null` when git is absent. */
+function runGit(args, cwd) {
+  const result = spawnSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
+  return { status: result.error ? null : result.status, stdout: result.stdout ? result.stdout.toString() : '' };
+}
+
+function insideGitWorkTree(cwd) {
+  const { status, stdout } = runGit(['rev-parse', '--is-inside-work-tree'], cwd);
+  return status === 0 && stdout.trim() === 'true';
+}
+
+/**
+ * An entry's `assert` (doctor-security-checks DS-3), when it has one: `'ok'`,
+ * `'miss'`, or `{ skip: reason }`. Git-backed kinds skip outside a git work tree
+ * (DS-4). `git check-ignore` answers "any of these is ignored", so each path gets
+ * its own call. An unknown kind is a miss that names it, never a crash.
+ */
+function evaluateAssertion(assert, cwd) {
+  if (assert.kind === 'probe') {
+    return requirementMet(assert.probe, cwd) ? 'ok' : 'miss';
+  }
+  if (assert.kind === 'fileContains') {
+    const contents = safeRead(path.join(cwd, assert.path));
+    return contents !== undefined && contents.includes(assert.text) ? 'ok' : 'miss';
+  }
+  if (assert.kind === 'gitIgnored' || assert.kind === 'gitConfig') {
+    if (!insideGitWorkTree(cwd)) {
+      return { skip: 'not a git repository' };
+    }
+    if (assert.kind === 'gitIgnored') {
+      return (assert.paths ?? []).every((p) => runGit(['check-ignore', '-q', '--', p], cwd).status === 0) ? 'ok' : 'miss';
+    }
+    const { status, stdout } = runGit(['config', '--get', assert.key], cwd);
+    return status === 0 && stdout.trim() === assert.equals ? 'ok' : 'miss';
+  }
+  return { unknown: assert.kind };
+}
+
 function main() {
   const { checksArg, onlyArg } = parseArgs(process.argv.slice(2));
   const checks = readChecks(checksArg);
@@ -213,7 +260,12 @@ function main() {
       emit(entry.id, 'skip', 'requirement not met, skipping');
       return;
     }
-    if (anyPathExists(entry.anyOf, cwdForEntry)) {
+    const outcome = entry.assert ? evaluateAssertion(entry.assert, cwdForEntry) : undefined;
+    if (outcome && outcome.skip) {
+      emit(entry.id, 'skip', outcome.skip);
+    } else if (outcome && outcome.unknown !== undefined) {
+      emit(entry.id, 'warn', `unknown assertion kind "${outcome.unknown}"; re-run npx harny init`);
+    } else if (outcome ? outcome === 'ok' : anyPathExists(entry.anyOf, cwdForEntry)) {
       emit(entry.id, 'ok');
     } else if (entry.tier === 'recommended') {
       emit(entry.id, 'warn', entry.remediation);
@@ -252,9 +304,52 @@ function main() {
     for (const entry of checks.repoReadiness ?? []) {
       evaluateEntry(entry, cwd);
     }
+    // (component-level-docs, CL-3.) One doc entry per discovered component, then one
+    // entry per bridged tool once the doc exists — all recommended.
+    const componentDocs = checks.componentDocs;
+    if (componentDocs && componentsModule) {
+      const { discoverComponents, fillComponentTemplate } = componentsModule;
+      for (const dir of discoverComponents(cwd, componentDocs.discovery ?? {})) {
+        const docPath = `${dir}/${componentDocs.docName}`;
+        if (!fs.existsSync(path.join(cwd, docPath))) {
+          emit(
+            `repo-readiness:component-doc:${dir}`,
+            'warn',
+            `add ${docPath} describing this component's purpose, key files, local commands and conventions`,
+          );
+          continue;
+        }
+        emit(`repo-readiness:component-doc:${dir}`, 'ok');
+        for (const bridge of componentDocs.bridges ?? []) {
+          const bridgePath = fillComponentTemplate(bridge.path, dir);
+          const marker = fillComponentTemplate(bridge.marker, dir);
+          const contents = safeRead(path.join(cwd, bridgePath));
+          if (contents !== undefined && contents.includes(marker)) {
+            emit(`repo-readiness:component-bridge:${bridge.tool}:${dir}`, 'ok');
+          } else {
+            const fix =
+              contents === undefined
+                ? `create ${bridgePath} (it must include "${marker}") containing exactly: ${JSON.stringify(fillComponentTemplate(bridge.contents, dir))}`
+                : `add "${marker}" to ${bridgePath}`;
+            emit(`repo-readiness:component-bridge:${bridge.tool}:${dir}`, 'warn', `${fix} (or run npx harny init)`);
+          }
+        }
+      }
+    }
   }
 
-  // 4. spec state.
+  // 4. security (doctor-security-checks DS-1). Same tolerance as family 3: a checks
+  // file without `security`/`securityLabel` contributes no lines (DS-8).
+  if (selected('security')) {
+    if (checks.securityLabel) {
+      lines.push(`-- ${checks.securityLabel} --`);
+    }
+    for (const entry of checks.security ?? []) {
+      evaluateEntry(entry, cwd);
+    }
+  }
+
+  // 5. spec state.
   if (selected('spec-state')) {
     const specs = checks.specs ?? {};
     const specsDir = specs.dir;
@@ -314,7 +409,7 @@ function main() {
     }
   }
 
-  // 5. tests. (specs/monorepo-mode, MC-21.) Each command's working directory AND
+  // 6. tests. (specs/monorepo-mode, MC-21.) Each command's working directory AND
   // its `requires` probe are resolved from `command.dir ?? '.'`, relative to the
   // runner's own `cwd` — `path.resolve(cwd, '.')` is `path.resolve(cwd)`, so a
   // `checks.json` generated before this feature (no `dir` anywhere) produces

@@ -484,3 +484,35 @@ describe('confirmWrite — the final write confirmation', () => {
     }
   });
 });
+
+/**
+ * Spec: specs/commit-checks
+ * Covers: contract.md CC-6 (activation only after an interactive confirmation), audit
+ * finding CC-F1.
+ */
+describe('confirmGitHooks — consent to activate the commit checks', () => {
+  it('returns true on yes and false on no, defaulting the question to yes', async () => {
+    const { confirmGitHooks } = await import('../src/prompts.js');
+    const io = { log: () => {}, warn: () => {} };
+    clackMocks.confirm.mockResolvedValueOnce(true);
+    expect(await confirmGitHooks(io)).toBe(true);
+    expect(clackMocks.confirm.mock.calls.at(-1)![0]).toMatchObject({ initialValue: true });
+    clackMocks.confirm.mockResolvedValueOnce(false);
+    expect(await confirmGitHooks(io)).toBe(false);
+  });
+
+  it('throws HarnessError(CANCELLED) when the prompt is cancelled', async () => {
+    const { confirmGitHooks } = await import('../src/prompts.js');
+    const { isHarnessError } = await import('../src/errors.js');
+    const cancelled = Symbol('cancel');
+    clackMocks.confirm.mockResolvedValueOnce(cancelled);
+    clackMocks.isCancel.mockImplementationOnce((value: unknown) => value === cancelled);
+    try {
+      await confirmGitHooks({ log: () => {}, warn: () => {} });
+      expect.unreachable('expected confirmGitHooks to throw CANCELLED');
+    } catch (err) {
+      expect(isHarnessError(err)).toBe(true);
+      expect((err as any).code).toBe('CANCELLED');
+    }
+  });
+});

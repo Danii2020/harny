@@ -56,6 +56,13 @@
  *   so a check made early (at a subagent's own completion) can never consume a
  *   finding the enclosing turn still has to report (SF-4). It is inert under
  *   `--whole-project`, which reads no turn state at all.
+ * - `run --staged` (commit-checks CC-2) is the same `run` mode with a third boolean
+ *   flag, never a new mode. Its paths come from git instead of a turn file: the files
+ *   staged for the next commit (Added, Copied, Modified, Renamed; never deleted). It
+ *   runs per-file commands only, since whole-project checks stay in CI where a slow
+ *   type-check cannot push people into bypassing the commit hook. It reads no stdin,
+ *   ignores `stop_hook_active`, and exits 2 on any finding, so a git `pre-commit`
+ *   hook that calls it blocks the commit.
  *
  * Exit code convention for `run`: `0` when the turn produced no blocking-worthy
  * findings (a clean pass, a skip-only outcome, or an empty turn); `2` when a mapped
@@ -67,7 +74,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { probeSatisfied as requirementMet } from '../shared/probes.mjs';
 
 /** Where the runner accumulates one turn's touched paths, repo-relative
@@ -124,6 +131,7 @@ function parseRunArgs(argv) {
   let commandsPath;
   let wholeProject = false;
   let keepTurn = false;
+  let staged = false;
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--commands') {
       commandsPath = argv[i + 1];
@@ -132,9 +140,11 @@ function parseRunArgs(argv) {
       wholeProject = true;
     } else if (argv[i] === '--keep-turn') {
       keepTurn = true;
+    } else if (argv[i] === '--staged') {
+      staged = true;
     }
   }
-  return { commandsPath, wholeProject, keepTurn };
+  return { commandsPath, wholeProject, keepTurn, staged };
 }
 
 /**
@@ -418,47 +428,12 @@ function runWholeProject(components, cwd) {
 }
 
 /**
- * (specs/monorepo-mode, MC-9/MC-11/MC-12/MC-17/MC-18.) Partitions the turn's
- * deduped, absolute touched paths across `components` (payload order) by
- * longest-segment-prefix match, then iterates components in that same order:
- * a component with NO assigned path runs nothing at all — not its per-file
- * commands, and not its whole-project commands (MC-17). A surviving component's
- * commands run with `cwd` = that component's own directory (MC-12); per-file
- * commands receive their assigned, extension-filtered, still-existing paths,
- * `whole-project` commands receive none, exactly as today's single-component
- * loop did. A touched path matching no declared component is dropped and
- * counted; when that count is nonzero, exactly one stderr notice names it
- * (MC-11) — for today's single `.` component this count is always 0, so the
- * notice is never printed (MC-5). The component label is added to finding/skip
- * lines only when more than one component is present. A surviving component whose
- * declared directory is absent on disk is itself skipped, with one stderr notice
- * naming it (`componentDirMissingNotice`) — visible, non-fatal, never spawned into.
+ * The turn path's dispatch, shared by `run` and `run --staged`: assigns each touched
+ * path to its component, then runs that component's commands over its share
+ * (MC-11, MC-17, PH-5). `skipWholeProject` drops whole-project commands entirely
+ * (commit-checks CC-2). Returns whether any command reported a finding.
  */
-function runRunMode(cwd) {
-  const { commandsPath, wholeProject, keepTurn } = parseRunArgs(process.argv.slice(3));
-  const components = readCommands(commandsPath);
-
-  if (wholeProject) {
-    runWholeProject(components, cwd);
-    return;
-  }
-
-  const payload = readStdinJson();
-  const turnKey = resolveTurnKey(payload);
-  const stopHookActive = Boolean(payload.stop_hook_active);
-
-  if (!turnKey) {
-    process.exit(0);
-  }
-
-  const file = turnFilePath(cwd, turnKey);
-  const contents = readTurnFile(file);
-  if (contents === undefined) {
-    // BG-4: no turn file means the turn touched no files. No-op, no output.
-    process.exit(0);
-  }
-
-  const touchedPaths = dedupedTouchedPaths(contents);
+function dispatchTouchedPaths(components, touchedPaths, cwd, { skipWholeProject = false } = {}) {
   const multiComponent = components.length > 1;
   const dirs = components.map((component) => component.dir);
 
@@ -499,6 +474,10 @@ function runRunMode(cwd) {
         continue;
       }
 
+      if (skipWholeProject && command.pathMode !== 'per-file') {
+        continue;
+      }
+
       let paths = assignedPaths;
       if (command.pathMode === 'per-file') {
         paths = perFilePathsFor(command, assignedPaths);
@@ -531,6 +510,85 @@ function runRunMode(cwd) {
   if (components.length > 0 && unassignedCount > 0) {
     console.error(`harny-feedback: ${unassignedCount} touched path(s) matched no declared component; skipped.`);
   }
+
+  return anyBlockingFinding;
+}
+
+/**
+ * `run --staged` (commit-checks CC-2): the same dispatch over the files staged for
+ * the next commit — Added, Copied, Modified and Renamed, never deleted — with
+ * whole-project commands left to CI. Reads no stdin and no turn state. Exits 2 when
+ * any command reports a finding, so a git `pre-commit` hook calling it blocks.
+ */
+function runStaged(components, cwd) {
+  let top;
+  let names;
+  try {
+    top = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim();
+    names = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], {
+      cwd: top,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString();
+  } catch {
+    process.exit(0);
+  }
+  const touchedPaths = [...new Set(names.split('\0').filter(Boolean).map((name) => path.join(top, name)))];
+  if (touchedPaths.length === 0) {
+    process.exit(0);
+  }
+  process.exit(dispatchTouchedPaths(components, touchedPaths, cwd, { skipWholeProject: true }) ? 2 : 0);
+}
+
+/**
+ * (specs/monorepo-mode, MC-9/MC-11/MC-12/MC-17/MC-18.) Partitions the turn's
+ * deduped, absolute touched paths across `components` (payload order) by
+ * longest-segment-prefix match, then iterates components in that same order:
+ * a component with NO assigned path runs nothing at all — not its per-file
+ * commands, and not its whole-project commands (MC-17). A surviving component's
+ * commands run with `cwd` = that component's own directory (MC-12); per-file
+ * commands receive their assigned, extension-filtered, still-existing paths,
+ * `whole-project` commands receive none, exactly as today's single-component
+ * loop did. A touched path matching no declared component is dropped and
+ * counted; when that count is nonzero, exactly one stderr notice names it
+ * (MC-11) — for today's single `.` component this count is always 0, so the
+ * notice is never printed (MC-5). The component label is added to finding/skip
+ * lines only when more than one component is present. A surviving component whose
+ * declared directory is absent on disk is itself skipped, with one stderr notice
+ * naming it (`componentDirMissingNotice`) — visible, non-fatal, never spawned into.
+ */
+function runRunMode(cwd) {
+  const { commandsPath, wholeProject, keepTurn, staged } = parseRunArgs(process.argv.slice(3));
+  const components = readCommands(commandsPath);
+
+  if (wholeProject) {
+    runWholeProject(components, cwd);
+    return;
+  }
+
+  if (staged) {
+    runStaged(components, cwd);
+    return;
+  }
+
+  const payload = readStdinJson();
+  const turnKey = resolveTurnKey(payload);
+  const stopHookActive = Boolean(payload.stop_hook_active);
+
+  if (!turnKey) {
+    process.exit(0);
+  }
+
+  const file = turnFilePath(cwd, turnKey);
+  const contents = readTurnFile(file);
+  if (contents === undefined) {
+    // BG-4: no turn file means the turn touched no files. No-op, no output.
+    process.exit(0);
+  }
+
+  const touchedPaths = dedupedTouchedPaths(contents);
+  const anyBlockingFinding = dispatchTouchedPaths(components, touchedPaths, cwd);
 
   // Delete the turn file so a turn key reused across turns cannot leak this
   // turn's paths into the next one, regardless of outcome above — unless

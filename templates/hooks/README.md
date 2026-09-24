@@ -69,6 +69,19 @@ here).
    behaviors 1–6 above describe, unchanged: it is the one-component, install-root
    case of this same rule, not a separate mode.
 
+8. **A delegated sub-agent's completion checks the turn's paths without consuming
+   them.** When a tool lets an agent hand work to a sub-agent and exposes an event
+   for that sub-agent finishing, the runner also fires on that event, so the
+   sub-agent sees findings on its own work while it can still fix them. That run is
+   the ordinary run described above — same commands, filters, probes, components and
+   exit codes — with one difference: it leaves the accumulated paths in place. The
+   enclosing agent's own turn-completion run then reads the same paths again and
+   clears them as usual. Delivery is therefore at-least-once: a finding may reach
+   the sub-agent and then the enclosing agent, but a check made early can never
+   swallow a finding the enclosing turn still has to report. A tool that exposes no
+   such event, or whose event is not documented, is simply not wired for it and
+   behaves exactly as behaviors 1–7 describe.
+
 ## Attributed examples
 
 The behavior above is realized differently on each tool's own hook surface — this is
@@ -89,6 +102,23 @@ per-tool adaptation, not a shared schema:
 - **Codex CLI** pairs `PostToolUse` with `Stop`, offering both
   `hookSpecificOutput.additionalContext` and a blocking `decision`/exit-2 form, and
   exposes the same `stop_hook_active` re-entry signal Claude Code does.
+
+Behavior 8 (sub-agent completion), as verified against each tool's first-party
+documentation on 2026-09-23:
+
+- **Claude Code** registers `SubagentStop` beside `Stop`, running the same runner
+  with `--keep-turn`; findings go through `hookSpecificOutput.additionalContext`
+  with `hookEventName` set to `"SubagentStop"`, since Claude Code pins that field
+  per event. Confirmed live: a sub-agent's edits accumulate under the parent
+  session's turn key.
+- **Cursor** registers `subagentStop` beside `stop`, with the same
+  `followup_message` channel and `loop_limit` guard. Whether `afterFileEdit` fires
+  inside a sub-agent is not yet confirmed.
+- **Codex CLI** registers `SubagentStop` beside `Stop`, with the same channel and
+  timeout. Whether a sub-agent's edits and its stop share one `turn_id` is not
+  documented and not yet probed.
+- **Kiro** and **GitHub Copilot** are not wired for behavior 8: no sub-agent
+  completion event was confirmed in their first-party documentation.
 
 ## `--whole-project` — the CI-only flag (A1)
 

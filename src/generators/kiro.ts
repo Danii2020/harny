@@ -19,6 +19,8 @@ import {
 } from './markdown-yaml.js';
 import { renderJson, wrapPosixShellArg } from './json.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
+import { PERMISSIONS_GUARD_PATH } from '../permissions.js';
+import { guardCommand } from './guard.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
   'most-capable': 'claude-opus-5',
@@ -195,6 +197,16 @@ function agentStopCommand(runner: string, commands: unknown): string {
   );
 }
 
+/** (NEW — permissions-baseline, PB-8.) Kiro blocks a `preToolUse` tool call on
+ *  exit 2 and hands stderr to the agent as the reason; it offers no `ask`, so an
+ *  ask rule is answered with a block that says human approval is required —
+ *  fail closed. Not yet confirmed against a live Kiro install (R1/R5 class). */
+const KIRO_GUARD_CHANNEL = {
+  deny: 'process.stderr.write(reason+String.fromCharCode(10));code=2;',
+  ask: 'process.stderr.write("requires human approval: "+reason+String.fromCharCode(10));code=2;',
+  allow: '',
+};
+
 /**
  * `.kiro/hooks/harny-feedback.json`, carrying both registrations BG-2
  * requires: a `postToolUse` accumulator and an `agentStop` runner, in the
@@ -210,9 +222,21 @@ function renderHook(payload: HookPayload): GeneratedFile {
   const runner = runnerInvocation();
   const commands = payload.commands ?? (profile ? profile.commands : []);
 
+  // (NEW — permissions-baseline.) Absent without a permissions payload (PB-12).
+  const guard = payload.permissions
+    ? [
+        {
+          name: 'harny-permissions',
+          trigger: 'preToolUse',
+          action: { type: 'command', command: guardCommand(PERMISSIONS_GUARD_PATH, KIRO_GUARD_CHANNEL) },
+        },
+      ]
+    : [];
+
   const settings = {
     version: 'v1',
     hooks: [
+      ...guard,
       {
         name: 'harny-feedback-accumulate',
         trigger: 'postToolUse',
@@ -251,6 +275,18 @@ export const kiroGenerator: Generator = {
     format: 'json',
     rootKey: 'mcpServers',
     entry: { url: CONTEXT7_MCP_URL },
+  },
+  // (per-directory AGENTS.md docs.) Kiro reads AGENTS.md at the workspace root only;
+  // directory scoping is a steering file with `inclusion: fileMatch`, and
+  // `#[[file:…]]` includes a workspace-relative file (kiro.dev/docs/steering, via
+  // search 2026-09-24; site egress-blocked — see the audit's reservation).
+  nestedGuidance: {
+    path: '.kiro/steering/agents-{slug}.md',
+    contents: `${renderFrontmatter([
+      { key: 'inclusion', value: 'fileMatch', raw: true },
+      { key: 'fileMatchPattern', value: '{dir}/**' },
+    ])}\n#[[file:{dir}/AGENTS.md]]\n`,
+    marker: '#[[file:{dir}/AGENTS.md]]',
   },
   roleFileName,
   mapModel,

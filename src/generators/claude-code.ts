@@ -8,6 +8,8 @@ import { SPEC_SCHEMA_DIR } from '../engine.js';
 import type { CostTier, RoleId } from '../vocabulary.js';
 import { FEEDBACK_RUNNER_PATH } from '../feedback.js';
 import { CONTEXT7_MCP_URL } from '../mcp.js';
+import { PERMISSIONS_GUARD_PATH, claudeCodePermissions } from '../permissions.js';
+import { emitJson, guardCommand } from './guard.js';
 import {
   renderFrontmatter,
   renderProjectConfigBlock,
@@ -195,13 +197,46 @@ function stopCommand(runner: string, commands: unknown, event: ClaudeStopEvent):
  * `--keep-turn`, so a subagent's own completion checks the turn's paths without
  * consuming them — the enclosing `Stop` still sees every one of them (SF-4).
  */
+/** (NEW — permissions-baseline, PB-8.) Claude Code's `PreToolUse` decision
+ *  channel: `hookSpecificOutput.permissionDecision`, which admits both `deny` and
+ *  `ask` (verified 2026-09-24, code.claude.com/docs/en/hooks). */
+function claudeGuardDecision(decision: 'deny' | 'ask'): string {
+  return emitJson(
+    `{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"${decision}",permissionDecisionReason:reason}}`,
+  );
+}
+
+const CLAUDE_GUARD_CHANNEL = { deny: claudeGuardDecision('deny'), ask: claudeGuardDecision('ask'), allow: '' };
+
 function renderHook(payload: HookPayload): GeneratedFile {
   const { profile } = payload;
   const runner = runnerInvocation();
   const commands = payload.commands ?? (profile ? profile.commands : []);
 
+  // (NEW — permissions-baseline.) Present only with a permissions payload, so a
+  // payload without one renders byte-identically to before (PB-12). The static
+  // rules sit first because they are the file's policy, the hooks its automation.
+  const permissions = payload.permissions ? { permissions: claudeCodePermissions(payload.permissions.policy) } : {};
+  const guard = payload.permissions
+    ? {
+        PreToolUse: [
+          {
+            matcher: 'Bash|Read',
+            hooks: [
+              {
+                type: 'command',
+                command: guardCommand(`\${CLAUDE_PROJECT_DIR}/${PERMISSIONS_GUARD_PATH}`, CLAUDE_GUARD_CHANNEL),
+              },
+            ],
+          },
+        ],
+      }
+    : {};
+
   const settings = {
+    ...permissions,
     hooks: {
+      ...guard,
       PostToolUse: [
         {
           matcher: 'Edit|Write',
@@ -255,6 +290,12 @@ export const claudeCodeGenerator: Generator = {
     rootKey: 'mcpServers',
     entry: { type: 'http', url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Claude Code reads a nested AGENTS.md only when no
+  // CLAUDE.md exists at or above the working directory; a subdirectory CLAUDE.md
+  // loads on demand and `@AGENTS.md` imports its sibling, resolved relative to the
+  // importing file (code.claude.com/docs/en/memory § AGENTS.md, § Share one file,
+  // verified 2026-09-24).
+  nestedGuidance: { path: '{dir}/CLAUDE.md', contents: '@AGENTS.md\n', marker: '@AGENTS.md' },
   roleFileName,
   mapModel,
   mapCapabilities,

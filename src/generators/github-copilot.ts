@@ -19,6 +19,8 @@ import {
   renderSpecSchemaPointerBlock,
 } from './markdown-yaml.js';
 import { renderJson, wrapPosixShellArg } from './json.js';
+import { PERMISSIONS_GUARD_PATH } from '../permissions.js';
+import { emitJson, guardCommand } from './guard.js';
 import type { CapabilityMapping, GeneratedFile, Generator } from './types.js';
 
 const MODEL_BY_TIER: Record<CostTier, string> = {
@@ -180,6 +182,16 @@ function agentStopScript(runner: string, commands: unknown): string {
   );
 }
 
+/** (NEW — permissions-baseline, PB-8.) Copilot's `preToolUse` channel:
+ *  `{"permissionDecision":…,"permissionDecisionReason":…}` on stdout, admitting
+ *  `deny` and `ask` (verified 2026-09-24 against github/copilot-sdk
+ *  docs/hooks/pre-tool-use.md). Allow prints nothing. */
+const COPILOT_GUARD_CHANNEL = {
+  deny: emitJson('{permissionDecision:"deny",permissionDecisionReason:reason}'),
+  ask: emitJson('{permissionDecision:"ask",permissionDecisionReason:reason}'),
+  allow: '',
+};
+
 /**
  * `.github/hooks/harny-feedback.json`, carrying both registrations BG-2
  * requires: a `postToolUse` accumulator and an `agentStop` runner, in the
@@ -193,9 +205,15 @@ function renderHook(payload: HookPayload): GeneratedFile {
   const runner = runnerInvocation();
   const commands = payload.commands ?? (profile ? profile.commands : []);
 
+  // (NEW — permissions-baseline.) Absent without a permissions payload (PB-12).
+  const guard = payload.permissions
+    ? { preToolUse: [{ type: 'command', bash: guardCommand(PERMISSIONS_GUARD_PATH, COPILOT_GUARD_CHANNEL) }] }
+    : {};
+
   const settings = {
     version: 1,
     hooks: {
+      ...guard,
       postToolUse: [{ type: 'command', bash: accumulateCommand(runner) }],
       agentStop: [{ type: 'command', bash: agentStopScript(runner, commands) }],
     },
@@ -227,6 +245,9 @@ export const githubCopilotGenerator: Generator = {
     rootKey: 'servers',
     entry: { type: 'http', url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Copilot resolves nested AGENTS.md files root to leaf
+  // natively (GitHub changelog 2025-08-28, Copilot CLI docs, 2026-09-24): no bridge.
+  nestedGuidance: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

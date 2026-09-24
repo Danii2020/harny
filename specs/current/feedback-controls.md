@@ -54,17 +54,21 @@ The system SHALL read `config.stack` by a code path affecting output beyond the 
 
 ### Requirement: FC-4 — Hook behavior is tool-neutral
 
-The system SHALL specify turn-boundary feedback behavior in tool-neutral language in `templates/hooks/README.md`, stating exactly seven properties of the per-turn batching, deduplication, execution, findings delivery, loop-safety, and per-component dispatch model.
+The system SHALL specify turn-boundary feedback behavior in tool-neutral language in `templates/hooks/README.md`, stating exactly eight properties of the per-turn batching, deduplication, execution, findings delivery, loop-safety, per-component dispatch, and sub-agent completion model.
 
-**Source:** agent-feedback-controls · intent.md § G2, contract.md § SC4; monorepo-mode · contract.md § Integration Points
+**Source:** agent-feedback-controls · intent.md § G2, contract.md § SC4; monorepo-mode · contract.md § Integration Points; subagent-feedback-hooks · contract.md § SF-10
 
 #### Scenario: canonical README describes behavior without naming tools
 - **WHEN** reading `templates/hooks/README.md` § "The behavior"
-- **THEN** it states all seven properties (turn is the unit, accumulate-dedup-run-once, empty turn silent, probe-false skip, findings before yielding, re-entry guard, per-component dispatch) with no tool named; each tool appears only under § "Attributed examples" afterwards
+- **THEN** it states all eight properties (turn is the unit, accumulate-dedup-run-once, empty turn silent, probe-false skip, findings before yielding, re-entry guard, per-component dispatch, sub-agent completion without consuming the turn) with no tool named; each tool appears only under § "Attributed examples" afterwards
 
 #### Scenario: the seventh property is stated tool-neutrally
 - **WHEN** reading the seventh property
 - **THEN** it states that a touched path resolves to exactly one declared component and that component's commands run from that component's directory, names no tool, and states that an install declaring no components behaves exactly as properties 1–6 describe
+
+#### Scenario: the eighth property is stated tool-neutrally
+- **WHEN** reading the eighth property
+- **THEN** it states that a delegated sub-agent's completion runs the ordinary run over the turn's paths without consuming them, that delivery is at-least-once, and that a tool exposing no documented such event behaves exactly as properties 1–7 describe — naming no tool; per-tool event names appear only under § "Attributed examples", dated 2026-09-23
 
 ### Requirement: FC-5 — Five generators emit hooks at verified native paths
 
@@ -360,6 +364,38 @@ The system SHALL run no command for a touched path that belongs to no declared c
 - **WHEN** a turn touches only a `.md` file inside a component that declares both an extension-gated per-file command and a whole-project command
 - **THEN** the per-file command is skipped by its extension gate while the whole-project command still runs once from that component's directory
 
+### Requirement: FC-27 — Sub-agent completion is wired on the three tools that document it
+
+The system SHALL register, on Claude Code (`hooks.SubagentStop` in `.claude/settings.json`), Cursor (`hooks.subagentStop` in `.cursor/hooks.json`) and Codex CLI (`hooks.SubagentStop` in `hooks.json`), that tool's sub-agent completion event inside the hook file it already writes, in that file's already-shipped entry shape and with the turn-completion registration's timeout. The registration invokes the same runner, `run` mode and inline `--commands` payload as the tool's turn-completion registration, plus `--keep-turn`, and never `--whole-project`. Findings use that tool's existing channel. On Claude Code, the emitted `hookEventName` equals the registration's event name (`"SubagentStop"`), never a shared `"Stop"` literal. Kiro's and GitHub Copilot's generated hook files SHALL stay byte-identical: they register no sub-agent event. No new artifact, path, `hooksPath` or `Generator` member is added.
+
+**Source:** subagent-feedback-hooks · contract.md § SF-1, SF-2, SF-5, SF-6, SF-7; ADR 0044, ADR 0045
+
+#### Scenario: Claude Code emits the event name it is registered under
+- **WHEN** the generated `SubagentStop` command runs and a mapped command reports a finding
+- **THEN** it prints `{"hookSpecificOutput":{"hookEventName":"SubagentStop","additionalContext":…}}` and exits 0, while the `Stop` command still emits `"Stop"`
+
+#### Scenario: the sub-agent command is the stop command plus one flag
+- **WHEN** comparing a wired tool's sub-agent and turn-completion registrations
+- **THEN** they share the runner path and `--commands` payload, the sub-agent one adds `--keep-turn`, and neither carries `--whole-project`
+
+#### Scenario: Kiro and Copilot are not wired
+- **WHEN** generating for Kiro or GitHub Copilot
+- **THEN** each hook file registers exactly its two pre-existing events and contains no `--keep-turn`
+
+### Requirement: FC-28 — `--keep-turn` leaves the turn file for the enclosing turn (at-least-once)
+
+The runner's `run` mode SHALL accept a boolean `--keep-turn` flag, never a third mode. With the flag, `run` behaves identically in every respect (turn key, commands, component dispatch, extension and existence filters, probes, re-entry guard, exit codes) except that it does not delete the turn file. The next `run` without the flag reads the same paths and deletes the file as before. The flag has no effect under `--whole-project`, which reads no turn state. A finding may therefore be reported twice, to the sub-agent and then to the enclosing agent, but is never consumed by an earlier run and reported zero times.
+
+**Source:** subagent-feedback-hooks · contract.md § SF-3, SF-4, SF-8; ADR 0043
+
+#### Scenario: the turn file survives a sub-agent stop and is cleared by the parent's stop
+- **WHEN** a turn file holds a path, `run --keep-turn` runs, then plain `run` runs
+- **THEN** the file exists after the first run and is gone after the second, and a failing mapped command reports its finding on both runs
+
+#### Scenario: inert under whole-project
+- **WHEN** `run --whole-project --keep-turn` runs
+- **THEN** no turn state is read or created and a finding still exits 2
+
 ## Invariants
 
 **I1 — Turn as the batch unit.** All five tools' hooks fire at turn-boundary, never per-edit, so the agent sees findings from its complete set of edits in one batch before it yields control.
@@ -385,13 +421,17 @@ The system SHALL run no command for a touched path that belongs to no declared c
 | R5 | Kiro's and GitHub Copilot's post-edit payload field shape (carrying `tool_input.file_path` and turn key) is assumed but not cited in a first-party source. AL-30 class: wrong field name exits 0 recording nothing, turn looks empty. | MEDIUM (human-gated) | agent-feedback-controls · audit.md F3/R5 |
 | R6 | Python profile CI gate is deliberately probe-skip-only (no install step, no assumed Python convention); both ruff/mypy skip on stock runner. Closeable only by a future feature adding `ciInstall` to python profile. | MEDIUM (scope, deliberate) | agent-feedback-controls · audit.md R6 |
 | R7 | TypeScript profile install candidates cover npm only; pnpm/Yarn-Berry repo can fall through to `npm install` not actually populating node_modules, re-entering F1's exact failure. Needs a `localBinary` probe kind (out of A1 scope). | MEDIUM (design, deferred) | agent-feedback-controls · audit.md R7 |
-| R8 | Only `Stop` is hooked, never `SubagentStop` — and Stop fires only for the main conversation, never when a subagent (e.g. a conductor-orchestrated `sdd-executor`/`sdd-test-writer`/`sdd-documentation` run) finishes on its own. In a conductor-driven pipeline where all real edits happen inside subagents, the check-and-report step can only ever fire at the conductor's own next `Stop` (i.e. once a subagent fully completes and hands back), not during the subagent's work — so a deliberately mid-implementation-broken state (e.g. a roadmap phase that intentionally fails `tsc` until a later phase lands) is never caught live. Whether `PostToolUse` accumulation still correctly attributes subagent edits to the same turn key as the conductor's (so they get swept up at that next `Stop` rather than lost) depends on whether Claude Code shares `session_id` between a subagent and its parent — plausible per current docs and per an empty `.sdd/feedback/.turns/` despite heavy subagent edit activity in this repo's own `context7-mcp` dogfood session, but not independently confirmed against a live run. Never examined when `agent-feedback-controls` was designed, built, or audited — no mention of subagents anywhere in this capability's spec or `templates/hooks/README.md`. Surfaced by direct dogfood observation during the `context7-mcp` feature's own conductor-orchestrated pipeline, not by a formal audit. | MEDIUM (design, unexamined) | context7-mcp dogfood observation, 2026-09-15 (this session) |
+| R8 | **Amended by `subagent-feedback-hooks` (2026-09-24): narrowed, not closed.** The Claude Code half is resolved. `SubagentStop` is now wired (FC-27), and a sub-agent's `Write` was confirmed live firing `accumulate` under the parent session's turn key, so sub-agent edits reach a check at the sub-agent's own stop and again at the conductor's `Stop` (FC-28). What remains unknown is narrowed to two probes (see SF-R1): whether a Codex sub-agent's `PostToolUse` and `SubagentStop` resolve the same `turn_id` (if not, its edits still land in a turn file nothing reads), and whether Cursor's `afterFileEdit` fires inside a sub-agent at all. Kiro and GitHub Copilot are split out as SF-R2. | MEDIUM (narrowed) | context7-mcp dogfood observation, 2026-09-15; amended by subagent-feedback-hooks · contract.md § Open questions 1–2 |
 | MR-F3 | The turn-mode half of the "declared component directory absent + `requires: {}`" error row is **reachable and untested**. The earlier reasoning that a turn-mode assigned path implies an existing directory is false: `dedupedTouchedPaths` does no existence filtering and `existingPaths` runs inside `perFilePathsFor`, i.e. after component assignment and only for `per-file` commands, so a vanished path under a removed component directory does reach the notice in turn mode. Only the `--whole-project` half is covered. | HIGH (coverage, deferred by human decision) | monorepo-mode · audit.md F3, rows T39/T39a |
 | MR-F5 | All five generators' `renderHook` ship `payload.commands ?? (profile ? profile.commands : [])` rather than the contracted literal `payload.commands`. Ruled acceptable: `HookPayload.commands` is non-optional and `runInit` is its only construction site, so the fallback is unreachable in production and the "no generator learns what a component is" guarantee holds in full. The cost is that five generator test fixtures build `HookPayload`-shaped objects missing a required field, and the `??` disarms the type system's own guarantee. Closed by supplying `commands` in those five fixtures, then shipping the literal form. | MEDIUM (design, deferred) | monorepo-mode · audit.md F5, C15 |
 | MR-F10 | MC-11's "with a single `.` component, the dropped-path count is always 0" is not strictly true: a touched path outside the install directory resolves to no component and is now dropped with the notice where it was previously passed through. Affects subdirectory installs only; no generated artifact changes. Recorded as a deliberate narrowing. | LOW | monorepo-mode · audit.md F10 |
 | MR-F13 | The "N is always 0 for the legacy single-`.` form" test sets no invocation log and asserts only exit 0 plus the absence of a string, so it would also pass on a runner that dispatched nothing. Weak rather than vacuous — bare-array dispatch is proven positively elsewhere in the same file. | LOW (test quality) | monorepo-mode · audit.md F13, A5 |
 | MR-F7 | MC-5's "no `if (isSingleRepo)` guard appears at any rendering site" is not literally held and cannot be: its own MC-14 mandates different step-name text for more than one component. The observable byte-identity guarantee is met and mechanically proven by golden comparison; the two boundaries are now named, exported, documented predicates (`isSingleRootComponent`, `hasMultipleComponents`). Residue is a spec-wording problem — amend MC-5, do not edit code. | LOW (wording) | monorepo-mode · audit.md F7, C5 |
 | MR-F8 | The per-turn feedback hook could not be confirmed to have fired during `monorepo-mode`'s implementation: `.sdd/feedback/.turns/` held only `.gitignore` with a 2026-09-14 mtime, nine days before the work, and both turn-file creation and the runner's post-run cleanup update that mtime. Circumstantial, not conclusive. The human should confirm the `PostToolUse`/`Stop` hooks were live for the implementing sessions. | MEDIUM (process, human-gated) | monorepo-mode · audit.md F8 |
+| SF-R1 | The live `.turns/` probe (contract.md § Open questions) was never run (task 4.3). Until it is, the Codex and Cursor sub-agent registrations may be inert. Inert, never wrong: the parent's turn-completion run and CI still cover those paths. | MEDIUM (human-gated) | subagent-feedback-hooks · audit.md F7, contract.md § Open questions 1–2 |
+| SF-R2 | Kiro and GitHub Copilot are deliberately not wired for sub-agent completion: Kiro documents no such event, and Copilot's reachable first-party docs never mention `subagentStop`. Those docs also describe a hooks shape (`{"command","shell"}` entries, camelCase `sessionId`/`stopHookActive`) that disagrees with what harny already ships, which questions the shipped `agentStop` artifact itself (AL-30/R5 class). | MEDIUM (human-gated) | subagent-feedback-hooks · contract.md § SF-7, § Open questions 3–4 |
+| SF-F1 | No test executes the Cursor or Codex sub-agent wrapper. The argv forwarding (`.concat(process.argv.slice(3))`) that carries `--keep-turn` to the runner on those two tools is unguarded: removing it keeps the suite green while the turn file is silently consumed at sub-agent stop, which violates FC-28. The behavior was verified correct by the auditor via subprocess. | HIGH (coverage) | subagent-feedback-hooks · audit.md F1, T5/T6/T12 |
+| SF-F4 | The two regenerated `monorepo-mode` `.claude/settings.json` goldens were also added to `tests/e2e-init.test.ts`'s byte-comparison exceptions. The replacement assertion re-renders through the generator, so it cannot catch an unintended Claude Code hook-config change. | LOW (test quality) | subagent-feedback-hooks · audit.md F4, T9 |
 
 ## Contributing features
 
@@ -402,6 +442,7 @@ The system SHALL run no command for a touched path that belongs to no declared c
 | dogfood-quick-fixes | 2026-09-22 | Amended FC-7: workflow now triggers on both `pull_request` and `push` to `main` (push-to-main CI feedback). Aligned AL-11 `extensions` wording across three sites (item 3). |
 | ci-workflow-root | 2026-09-23 | Amended FC-7, FC-13: repository-root placement, install-scoped workflow name (`harny-feedback-<slug>.yml` for subdirectory installs), step-level component scoping via `working-directory`, no `paths:` filter. Added I7 (CI workflow as repository artifact). ADRs 0032, 0034 record the placement and naming strategy decisions. |
 | monorepo-mode | 2026-09-23 | FC-25–FC-26: per-component dispatch by longest **segment**-prefix match, per-component cwd and probe root, unassigned paths dropped with one notice, absent component directories skipped and never created, whole-project once per *affected* component. Amended FC-1 (components select among the same profiles; no component vocabulary in `src/feedback.ts`), FC-2 (per-component inert-stack warning), FC-4 (six → **seven** tool-neutral properties), FC-6 (the deduped set is partitioned across components), FC-7 (a monorepo install is still one workflow, one job, one runner step), FC-13 (this repo stays single-repo and byte-identical), FC-20 (whole-project covers every component), I3 (per-component probe evaluation) and I7 (component directories are data, never write targets). ADRs 0039, 0041. Verdict APPROVED WITH RESERVATIONS: MR-F3, MR-F5, MR-F7, MR-F8, MR-F10, MR-F13 carried. |
+| subagent-feedback-hooks | 2026-09-24 | FC-27–FC-28: sub-agent completion wired on Claude Code (`SubagentStop`), Cursor (`subagentStop`) and Codex (`SubagentStop`), running the same runner with `--keep-turn`, which leaves the turn file for the enclosing turn (at-least-once delivery). Claude Code's wrapper emits the registration's own `hookEventName`. Kiro and Copilot are deliberately unwired. Amended FC-4 (seven → **eight** tool-neutral properties) and R8 (Claude Code half resolved, the rest narrowed to SF-R1/SF-R2). ADRs 0043, 0044. Verdict APPROVED WITH RESERVATIONS: SF-R1, SF-R2, SF-F1, SF-F4 carried. |
 
 ## Related ADRs
 
@@ -418,4 +459,6 @@ The system SHALL run no command for a touched path that belongs to no declared c
 | 0034 | Derive the workflow file name from the install prefix; surface a name collision as `CONFLICT` | Accepted | `specs/archived/ci-workflow-root/decisions/0034-slug-collision-conflict.md` |
 | 0039 | Longest segment-prefix match; an unassigned path is dropped with a notice | Accepted | `specs/archived/monorepo-mode/decisions/0039-longest-segment-prefix-match.md` |
 | 0041 | A `whole-project` command runs once per component with an assigned touched path | Accepted | `specs/archived/monorepo-mode/decisions/0041-whole-project-per-affected-component.md` |
+| 0043 | A sub-agent's stop runs the ordinary runner with `--keep-turn`, giving at-least-once delivery | Accepted | `specs/archived/subagent-feedback-hooks/decisions/0043-keep-turn-flag-at-least-once-delivery.md` |
+| 0044 | Wire a sub-agent completion event only where first-party documentation confirms it | Accepted | `specs/archived/subagent-feedback-hooks/decisions/0044-wire-only-documented-subagent-events.md` |
 

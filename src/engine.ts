@@ -24,6 +24,8 @@ import {
   resolveStackProfile,
 } from './feedback.js';
 import type { FeedbackCommand, FeedbackInstall, StackProfile } from './feedback.js';
+import type { PermissionPolicy } from './permissions.js';
+import { SHARED_COMPONENTS_PATH } from './component-docs.js';
 import { ciWorkflowPathFor } from './repo.js';
 import { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END, yamlQuote } from './generators/markdown-yaml.js';
 import { wrapPosixShellArg } from './generators/json.js';
@@ -79,6 +81,16 @@ export interface HookPayload {
    *  `buildCommandsPayload`, so no generator ever derives it and no generator
    *  ever learns what a component is (MC-15, SC14). */
   readonly commands: CommandsPayload;
+  /** **(NEW — permissions-baseline.)** The parsed baseline, present when the
+   *  templates root carries the permissions subsystem. Absent, every generator's
+   *  hook file renders byte-identically to before that feature (PB-12). */
+  readonly permissions?: PermissionsPayload;
+}
+
+/** **(NEW — permissions-baseline.)** What a generator needs to wire the guard and,
+ *  where a tool has a static rules layer, to derive it (PB-9). */
+export interface PermissionsPayload {
+  readonly policy: PermissionPolicy;
 }
 
 /** (specs/monorepo-mode.) A `ComponentSelection` with its stack already resolved.
@@ -212,6 +224,20 @@ export interface HarnessPayload {
    *  repo by `buildRuntimeSharedFiles`, not by `buildFeedbackFiles` or
    *  `buildDoctorFiles` (§ State Changes). */
   readonly sharedProbes?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/run-guard.mjs`,
+   *  verbatim (PB-2). Same absence rule as `hookRunner`. */
+  readonly permissionsGuard?: SkillResource;
+  /** **(NEW — permissions-baseline.)** `templates/permissions/policy.json`,
+   *  verbatim (PB-1, PB-2). Same absence rule as `hookRunner`. */
+  readonly permissionsPolicy?: SkillResource;
+  /** **(NEW — commit-checks.)** The git hook shims and runner, verbatim (CC-1).
+   *  Same absence rule as `hookRunner`. */
+  readonly gitHooksPreCommit?: SkillResource;
+  readonly gitHooksPrePush?: SkillResource;
+  readonly gitHooksRunner?: SkillResource;
+  /** **(NEW — component-level-docs.)** `templates/shared/components.mjs`, verbatim
+   *  (CL-1). Emitted by `buildRuntimeSharedFiles` beside `probes.mjs`. */
+  readonly sharedComponents?: SkillResource;
 }
 
 export const SPEC_SCHEMA_DIR = '.sdd/spec-schema';
@@ -274,6 +300,12 @@ export function buildPayload(config: HarnessConfig, templates: CanonicalTemplate
     ciWorkflowTemplate: templates.ciWorkflowTemplate,
     doctorRunner: templates.doctorRunner,
     sharedProbes: templates.sharedProbes,
+    permissionsGuard: templates.permissionsGuard,
+    permissionsPolicy: templates.permissionsPolicy,
+    gitHooksPreCommit: templates.gitHooksPreCommit,
+    gitHooksPrePush: templates.gitHooksPrePush,
+    gitHooksRunner: templates.gitHooksRunner,
+    sharedComponents: templates.sharedComponents,
   };
 }
 
@@ -300,7 +332,13 @@ export function buildRuntimeSharedFiles(payload: HarnessPayload): readonly Gener
   if (!payload.sharedProbes) {
     return [];
   }
-  return [{ path: SHARED_PROBES_PATH, contents: payload.sharedProbes.contents }];
+  const files: GeneratedFile[] = [{ path: SHARED_PROBES_PATH, contents: payload.sharedProbes.contents }];
+  // (NEW — component-level-docs.) The discovery module the doctor runner imports,
+  // beside the probe module and under the same once-per-run rule (CL-1).
+  if (payload.sharedComponents) {
+    files.push({ path: SHARED_COMPONENTS_PATH, contents: payload.sharedComponents.contents });
+  }
+  return files;
 }
 
 /** **(NEW — agent-feedback-controls.)** Human-readable escape-hatch notice for an

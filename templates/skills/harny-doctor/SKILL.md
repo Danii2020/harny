@@ -84,7 +84,10 @@ test suite, or a shipped-but-unarchived feature several turns into a session.
 5. Act on what it reports:
    - A **failed** check is addressed before spec work begins.
    - A **warned** check is named with its remediation but never blocks — recommended,
-     not must-have.
+     not must-have. Every entry in the **security** family is recommended: report its
+     warnings (for example, `.env` not git-ignored, commit-check hooks not active,
+     no local secret scanner) so the caller can decide, and never treat one as a
+     failure.
    - A **skipped** check is reported as coverage that could not be evaluated here
      (e.g. an absent tool), never treated as a pass.
    - A clean report (every check `ok`, `skip`, or `warn`) means the harness is ready;

@@ -294,9 +294,21 @@ node /path/to/target-repo/.sdd/doctor/run-doctor.mjs
 node /path/to/target-repo/.sdd/doctor/run-doctor.mjs --only spec-state
 ```
 
+The **security** family reports, as warnings only (never a failure, never a changed
+exit code), whether:
+- the permissions baseline is installed and each selected tool's hook config calls its
+  guard;
+- git actually ignores `.env` and `.env.local` (asked of `git check-ignore`, not by
+  reading `.gitignore`);
+- the commit-check hooks exist and `core.hooksPath` points at them;
+- gitleaks is installed locally;
+- the CI workflow still carries its secret-scan step.
+
+Each warning names its fix. Run it alone with `--only security`.
+
 The direct runner invocation also accepts an optional `--only <family>` selector —
-one of `environment`, `harness`, `repo-readiness`, `spec-state`, or `tests` — that
-evaluates that single family alone instead of all five, and spawns no command from
+one of `environment`, `harness`, `repo-readiness`, `security`, `spec-state`, or
+`tests` — that evaluates that single family alone instead of all six, and spawns no command from
 the `tests` family unless `tests` itself is the selected family. An unrecognized
 value or a value-less `--only` is a usage error (exit `1`), never a silently-empty,
 falsely-ready run. This is what makes it cheap enough for the `sdd-documentation`

@@ -5,3 +5,10 @@ CLAUDE.md
 node_modules/
 dist/
 scratch-smoke-test.sh
+
+# Local secrets (doctor-security-checks: security:env-ignored)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template

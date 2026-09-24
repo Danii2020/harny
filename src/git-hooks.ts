@@ -18,6 +18,11 @@ const execFileAsync = promisify(execFile);
 
 /** Where the hooks are installed, relative to the install directory. */
 export const GIT_HOOKS_DIR = '.sdd/git-hooks';
+/** The name of the canonical CI workflow's secret-scan step
+ *  (`templates/ci/harny-feedback.yml`). Owned here so the doctor's
+ *  `security:ci-secret-scan` check names the step without re-literalling it (S5). */
+export const CI_SECRET_SCAN_STEP_NAME = 'Secret scan (gitleaks)';
+
 /** The resolved feedback commands the `pre-commit` hook lints staged files with. */
 export const GIT_HOOKS_COMMANDS_PATH = `${GIT_HOOKS_DIR}/commands.json`;
 

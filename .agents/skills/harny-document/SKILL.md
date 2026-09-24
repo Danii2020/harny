@@ -72,7 +72,18 @@ Read exactly these three inputs — nothing else counts as ground truth for this
       versions (a standard Keep a Changelog header and an `[Unreleased]` section for
       the changelog; a short top-level structure overview for the architecture doc)
       and then add this feature's entry/section to the new file.
-   4. **Stamp the spec, in place, first.** Add a `Shipped: <date>` header to the top of
+   4. **Component guidance.** Run the readiness runner's repo-readiness family (for
+      example `node .sdd/doctor/run-doctor.mjs --only repo-readiness`). For each
+      `component-doc` warning on a component whose files this feature changed, write
+      that component's `AGENTS.md` from repository evidence: its purpose, key files,
+      the commands that build and test it, and conventions specific to it. Keep it
+      short, and link to the root guidance rather than repeating it. Then apply every
+      `component-bridge` remediation the runner prints for those components, exactly
+      as printed. Those are the per-tool files that make a tool load the component's
+      `AGENTS.md` when it does not read nested ones itself; for example, a Claude Code
+      `CLAUDE.md` that imports it, or a Kiro steering file that includes it. Never
+      touch a component this feature did not change.
+   5. **Stamp the spec, in place, first.** Add a `Shipped: <date>` header to the top of
       that feature's `intent.md`. This stamp always happens **in place**, before
       anything moves.
 3. **Hand off to the knowledge-base skills, in this order** (the `Shipped:` stamp must
@@ -108,7 +119,8 @@ repository with no harny spec history at all — no `specs/<feature-name>/`, no
   specific document(s) missing or incoherent and asks before delegating — or directly
   by a human who wants a repo-level document drafted from scratch.
 - **Inputs.** The named document(s) to draft (`README.md`, `AGENTS.md`, and/or
-  `ARCHITECTURE.md`), the missing coherence element(s) (purpose / components /
+  `ARCHITECTURE.md`, or a component's `<dir>/AGENTS.md` that the readiness runner's
+  `component-doc` warning names — plus that warning's `component-bridge` remediations), the missing coherence element(s) (purpose / components /
   validation) if the caller is `harny-doctor`, and the repository itself as evidence —
   read the actual code, config, and existing docs; never invent what was not
   observed.

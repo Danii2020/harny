@@ -41,6 +41,18 @@ export interface McpConfig {
   readonly entry: Readonly<Record<string, string>>;
 }
 
+/** **(NEW — per-directory AGENTS.md docs.)** How a tool that does not read a nested
+ *  `AGENTS.md` natively is pointed at one. Templates use `{dir}` (the directory's
+ *  POSIX path) and `{slug}` (that path as one segment). */
+export interface NestedGuidanceBridge {
+  /** Install-relative path template. */
+  readonly path: string;
+  /** Exact file contents template, ending in exactly one `\n`. */
+  readonly contents: string;
+  /** A literal (template) the bridge file must contain to count as wired. */
+  readonly marker: string;
+}
+
 export interface GeneratedFile {
   /** POSIX-style path relative to the target repo root. Never absolute, never `..`. */
   readonly path: string;
@@ -125,6 +137,13 @@ export interface Generator {
    *  generator cannot skip the question (`SC13`). All five shipped generators
    *  declare a real value; none is `undefined` today. */
   readonly mcpConfig: McpConfig | undefined;
+
+  /** **(NEW — per-directory AGENTS.md docs.)** The bridge that makes this tool load a
+   *  directory's `AGENTS.md`, or `undefined` when the tool reads a nested
+   *  `AGENTS.md` natively. Declarative, in the `guidancePath`/`mcpConfig` lineage
+   *  (ADR 0011, 0025, 0027): a fixed per-tool fact, nothing rendered by a method.
+   *  Required-but-possibly-`undefined`, so a sixth generator must answer it. */
+  readonly nestedGuidance: NestedGuidanceBridge | undefined;
 
   /** File name only. Accommodates `<role>.md`, `<role>.agent.md`, and `<role>.toml`. */
   roleFileName(roleId: RoleId): string;

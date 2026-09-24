@@ -306,6 +306,9 @@ export const cursorGenerator: Generator = {
     rootKey: 'mcpServers',
     entry: { url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Cursor applies a nested AGENTS.md to its subtree
+  // natively (cursor.com/docs/rules, 2026-09-24): no bridge.
+  nestedGuidance: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

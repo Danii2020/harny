@@ -245,6 +245,9 @@ export const githubCopilotGenerator: Generator = {
     rootKey: 'servers',
     entry: { type: 'http', url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Copilot resolves nested AGENTS.md files root to leaf
+  // natively (GitHub changelog 2025-08-28, Copilot CLI docs, 2026-09-24): no bridge.
+  nestedGuidance: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

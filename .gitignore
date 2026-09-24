@@ -1,7 +1,7 @@
 # Local agent config stays local; the harny-* skill bridge is tracked.
 
 
-CLAUDE.md
+/CLAUDE.md
 node_modules/
 dist/
 scratch-smoke-test.sh

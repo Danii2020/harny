@@ -345,6 +345,9 @@ export const codexGenerator: Generator = {
     rootKey: 'mcp_servers',
     entry: { url: CONTEXT7_MCP_URL },
   },
+  // (per-directory AGENTS.md docs.) Codex concatenates AGENTS.md along the directory
+  // chain natively (first-party AGENTS.md docs): no bridge.
+  nestedGuidance: undefined,
   roleFileName,
   mapModel,
   mapCapabilities,

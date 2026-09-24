@@ -25,6 +25,7 @@ import {
 } from './feedback.js';
 import type { FeedbackCommand, FeedbackInstall, StackProfile } from './feedback.js';
 import type { PermissionPolicy } from './permissions.js';
+import { SHARED_COMPONENTS_PATH } from './component-docs.js';
 import { ciWorkflowPathFor } from './repo.js';
 import { GENERATED_BLOCK_BEGIN, GENERATED_BLOCK_END, yamlQuote } from './generators/markdown-yaml.js';
 import { wrapPosixShellArg } from './generators/json.js';
@@ -234,6 +235,9 @@ export interface HarnessPayload {
   readonly gitHooksPreCommit?: SkillResource;
   readonly gitHooksPrePush?: SkillResource;
   readonly gitHooksRunner?: SkillResource;
+  /** **(NEW — component-level-docs.)** `templates/shared/components.mjs`, verbatim
+   *  (CL-1). Emitted by `buildRuntimeSharedFiles` beside `probes.mjs`. */
+  readonly sharedComponents?: SkillResource;
 }
 
 export const SPEC_SCHEMA_DIR = '.sdd/spec-schema';
@@ -301,6 +305,7 @@ export function buildPayload(config: HarnessConfig, templates: CanonicalTemplate
     gitHooksPreCommit: templates.gitHooksPreCommit,
     gitHooksPrePush: templates.gitHooksPrePush,
     gitHooksRunner: templates.gitHooksRunner,
+    sharedComponents: templates.sharedComponents,
   };
 }
 
@@ -327,7 +332,13 @@ export function buildRuntimeSharedFiles(payload: HarnessPayload): readonly Gener
   if (!payload.sharedProbes) {
     return [];
   }
-  return [{ path: SHARED_PROBES_PATH, contents: payload.sharedProbes.contents }];
+  const files: GeneratedFile[] = [{ path: SHARED_PROBES_PATH, contents: payload.sharedProbes.contents }];
+  // (NEW — component-level-docs.) The discovery module the doctor runner imports,
+  // beside the probe module and under the same once-per-run rule (CL-1).
+  if (payload.sharedComponents) {
+    files.push({ path: SHARED_COMPONENTS_PATH, contents: payload.sharedComponents.contents });
+  }
+  return files;
 }
 
 /** **(NEW — agent-feedback-controls.)** Human-readable escape-hatch notice for an

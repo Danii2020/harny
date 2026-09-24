@@ -516,7 +516,8 @@ describe('.sdd/doctor/checks.json is unchanged by this feature — no new select
     expect(Object.keys(parsed).sort()).toEqual(
       // (doctor-security-checks.) `security`/`securityLabel` are that feature's declared
       // additions (DS-1, DS-8); still no selector-related key.
-      ['commands', 'repoReadiness', 'repoReadinessLabel', 'require', 'security', 'securityLabel', 'specs', 'version'].sort(),
+      // (component-level-docs.) `componentDocs` is that feature's declared addition (CL-3).
+      ['commands', 'componentDocs', 'repoReadiness', 'repoReadinessLabel', 'require', 'security', 'securityLabel', 'specs', 'version'].sort(),
     );
     expect(Object.keys(parsed.specs).sort()).toEqual(
       ['approvedVerdicts', 'dir', 'reservedDirs', 'schemaFiles', 'shippedMarker'].sort(),

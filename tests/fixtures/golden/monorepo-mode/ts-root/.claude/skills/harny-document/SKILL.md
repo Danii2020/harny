@@ -30,139 +30,96 @@ metadata:
 # harny-document
 
 You are acting as a technical writer specializing in Specification-Driven Development
-(SDD) documentation. Your job is to record, faithfully and only, what an approved
-implementation actually did — not to design, verify, or embellish it.
+(SDD) documentation. Record, faithfully and only, what an approved implementation
+actually did — never design, verify or embellish it.
 
 ## When to use this
 
 - Runs automatically right after a human approves `harny-audit`'s final report — an
-  automatic hand-off, like `harny-implement` → `harny-audit`, not a new blocking gate.
-- Invocable directly by a human who wants to document an already-approved feature.
-- **Bootstrap mode**: invoked by `harny-doctor` after a human go-ahead, or directly by
-  a human, when a repository has no approved `audit.md` for a named feature at all —
-  see § Bootstrap mode below. This is a separate, explicitly-bounded entry point from
-  the post-audit path above; the two never reach each other.
+  automatic hand-off, not a new blocking gate.
+- Invocable directly by a human documenting an already-approved feature.
+- **Bootstrap mode**: invoked by `harny-doctor` after a human go-ahead, or directly by a
+  human, when a repository has no approved `audit.md` for a named feature — see
+  § Bootstrap mode. A separate, bounded entry point; the two paths never reach each
+  other.
 
 ## Inputs
 
-Read exactly these three inputs — nothing else counts as ground truth for this skill:
-1. The feature's 5 spec files in `/specs/<feature-name>/` (`intent.md`, `contract.md`,
-   `roadmap.md`, `tasks.md`, `audit.md`).
-2. `audit.md`'s final verdict and its Requirements/Contract Compliance/Test Coverage
-   tables.
-3. The actual diff of files changed during implementation (from the roadmap's File
-   Change Map and the real repository diff) — verify against the real diff, not just
-   what the roadmap predicted.
+Exactly these three; nothing else is ground truth:
+1. The feature's five spec files in `specs/<feature-name>/`.
+2. `audit.md`'s final verdict and its Requirements, Contract Compliance and Test
+   Coverage tables.
+3. The real diff of files changed during implementation — verify against it, not just
+   the roadmap's File Change Map.
 
 ## Steps
 
-1. **Confirm the trigger condition.** Read `/specs/<feature-name>/audit.md`'s Final
-   Verdict section. If the verdict is **APPROVED** or **APPROVED WITH RESERVATIONS**,
-   proceed. If the verdict is **REJECTED**, stop — do not run, do not touch any files.
-   Report that documentation was skipped because the feature was not approved.
+1. **Confirm the trigger.** Read `audit.md`'s Final Verdict. **APPROVED** or
+   **APPROVED WITH RESERVATIONS**: proceed. **REJECTED**: stop, touch nothing, and report
+   that documentation was skipped because the feature was not approved.
 2. **Update documentation:**
-   1. **`README.md`** — update the relevant section(s) to describe the shipped feature
-      as it actually behaves (per the audit-verified contract), in the style and
-      structure this README already uses.
-   2. **`CHANGELOG.md`** — add an entry in **Keep a Changelog** style (an
-      `## [Unreleased]` or dated section, categorized under `Added` / `Changed` /
-      `Fixed` / etc. as appropriate).
-   3. **`ARCHITECTURE.md` or `AGENTS.md`** — update the relevant section to reflect the
-      new/changed architecture. If neither exists yet, bootstrap minimal starting
-      versions (a standard Keep a Changelog header and an `[Unreleased]` section for
-      the changelog; a short top-level structure overview for the architecture doc)
-      and then add this feature's entry/section to the new file.
-   4. **Component guidance.** Run the readiness runner's repo-readiness family (for
-      example `node .sdd/doctor/run-doctor.mjs --only repo-readiness`). For each
-      `component-doc` warning on a component whose files this feature changed, write
-      that component's `AGENTS.md` from repository evidence: its purpose, key files,
-      the commands that build and test it, and conventions specific to it. Keep it
-      short, and link to the root guidance rather than repeating it. Then apply every
-      `component-bridge` remediation the runner prints for those components, exactly
-      as printed. Those are the per-tool files that make a tool load the component's
-      `AGENTS.md` when it does not read nested ones itself; for example, a Claude Code
-      `CLAUDE.md` that imports it, or a Kiro steering file that includes it. Never
-      touch a component this feature did not change.
-   5. **Stamp the spec, in place, first.** Add a `Shipped: <date>` header to the top of
-      that feature's `intent.md`. This stamp always happens **in place**, before
-      anything moves.
-3. **Hand off to the knowledge-base skills, in this order** (the `Shipped:` stamp must
-   already exist on disk before step 3.2, because it moves the directory the stamp was
-   just written into):
-   1. Run **`harny-sync` in archive mode** on this feature. It moves
-      `specs/<feature-name>/` to `specs/archived/<feature-name>/` and re-verifies
-      checksums.
-   2. Run **`harny-adr`** to write any ADRs the approved feature's `contract.md` /
-      `roadmap.md` earns, into `specs/archived/<feature-name>/decisions/`.
-   3. Run **`harny-sync`** again to update the affected `specs/current/` capability
-      docs and regenerate `_index.md` — creating them from `harny-sync`'s bundled
-      template if this is the first feature ever archived in this project, rather
-      than assuming any prior history exists.
-4. **Verify before reporting completion.** Report this hand-off as complete only after
-   confirming, via the spec-state family of the readiness runner shipped at
-   `.sdd/doctor/run-doctor.mjs` — invoked, for example, as
-   `node .sdd/doctor/run-doctor.mjs --only spec-state` — that this feature no longer
-   appears as shipped-but-unarchived. A failing line for a different feature is
-   reported as a finding, never silently ignored and never fixed in passing — that
-   other feature's archive is not this invocation's business. Describing the archive
-   step, or handing it back as a "next step", is not completing it.
-5. **Present a change summary.** After making the updates, present a concise summary of
-   exactly what changed (which files, which sections, which capability docs, which
-   ADRs) for optional human review. This review is optional and does not block
-   anything — the pipeline is complete once this skill finishes.
+   1. **`README.md`**: describe the shipped feature as it actually behaves, in the
+      README's own style.
+   2. **`CHANGELOG.md`**: add a **Keep a Changelog** entry (`## [Unreleased]` or dated,
+      under `Added` / `Changed` / `Fixed`).
+   3. **`ARCHITECTURE.md` or `AGENTS.md`**: update the relevant section. If a file is
+      missing, bootstrap a minimal one (a Keep a Changelog header with `[Unreleased]`; a
+      short structure overview) and add this feature to it.
+   4. **Component guidance.** Run the readiness runner's repo-readiness family (e.g.
+      `node .sdd/doctor/run-doctor.mjs --only repo-readiness`). For each `component-doc`
+      warning on a component this feature changed, write that component's `AGENTS.md`
+      from repository evidence — purpose, key files, build and test commands,
+      component-specific conventions — short, linking to the root guidance rather than
+      repeating it. Then apply every `component-bridge` remediation the runner prints for
+      those components, exactly as printed. Never touch a component this feature did not
+      change.
+   5. **Stamp the spec in place, first.** Add a `Shipped: <date>` header to the top of
+      the feature's `intent.md` before anything moves.
+3. **Hand off, in this order** (the stamp must exist before step 3.1, which moves the
+   directory it was written into):
+   1. `harny-sync` in archive mode moves `specs/<feature-name>/` to
+      `specs/archived/<feature-name>/` and re-verifies checksums.
+   2. `harny-adr` writes the ADRs the approved `contract.md` / `roadmap.md` earn into
+      `specs/archived/<feature-name>/decisions/`.
+   3. `harny-sync` again updates the affected `specs/current/` capability docs and
+      regenerates `_index.md` — creating them from `harny-sync`'s bundled template if this is the first feature ever archived in this project, rather than assuming any prior history exists.
+4. **Verify before reporting completion.** Report this hand-off complete only after the
+   spec-state family of the readiness runner shipped at `.sdd/doctor/run-doctor.mjs` —
+   e.g. `node .sdd/doctor/run-doctor.mjs --only spec-state` — shows this feature no
+   longer shipped-but-unarchived. A failing line for a different feature is a finding,
+   never ignored and never fixed in passing. Describing the archive, or handing it back
+   as a next step, is not completing it.
+5. **Present a change summary**: which files, sections, capability docs and ADRs changed.
+   Review is optional and blocks nothing.
 
 ## Bootstrap mode
 
-A second, explicitly-bounded entry point beside the post-audit path above, for a
-repository with no harny spec history at all — no `specs/<feature-name>/`, no
-`audit.md`, nothing for the post-audit precondition to check.
+For a repository with no harny spec history: no `specs/<feature-name>/`, no `audit.md`.
 
-- **Trigger.** Invoked by `harny-doctor` after a human go-ahead — it names the
-  specific document(s) missing or incoherent and asks before delegating — or directly
-  by a human who wants a repo-level document drafted from scratch.
-- **Inputs.** The named document(s) to draft (`README.md`, `AGENTS.md`, and/or
-  `ARCHITECTURE.md`, or a component's `<dir>/AGENTS.md` that the readiness runner's
-  `component-doc` warning names — plus that warning's `component-bridge` remediations), the missing coherence element(s) (purpose / components /
-  validation) if the caller is `harny-doctor`, and the repository itself as evidence —
-  read the actual code, config, and existing docs; never invent what was not
-  observed.
-- **Output.** Drafts only the named document(s), and marks every draft it produces in
-  this mode for human review — this is bootstrap output, not an audit-verified
-  record, and must never be mistaken for one.
-- **Refusals.** Bootstrap mode never touches source code, never writes or reads a
-  `specs/` path, never touches `CHANGELOG.md` (there is no shipped change to log),
-  and never invokes or is invoked by the `harny-sync`/`harny-adr` archive hand-off. A
-  bootstrap-mode invocation naming a `specs/<feature>/` target refuses and reports why
-  — bootstrap mode can never be used to bypass the post-audit gate.
-- **Unreachable from, and unreached by, the post-audit path.** The post-audit path's
-  `APPROVED`/`APPROVED WITH RESERVATIONS` precondition, its `REJECTED` refusal, its
-  `Shipped:` stamp, and its `harny-sync` → `harny-adr` → `harny-sync` chain are
-  entirely unchanged by bootstrap mode's existence, and bootstrap mode cannot reach
-  any step of that chain.
+- **Trigger.** `harny-doctor` after a human go-ahead (it names the missing or incoherent
+  document(s) and asks first), or a human wanting a repo-level document drafted.
+- **Inputs.** The named document(s) (`README.md`, `AGENTS.md`, `ARCHITECTURE.md`, or a
+  component's `<dir>/AGENTS.md` named by a `component-doc` warning, plus that warning's
+  `component-bridge` remediations), the missing coherence element(s) (purpose /
+  components / validation) if `harny-doctor` called, and the repository as evidence —
+  never invent what was not observed.
+- **Output.** Only the named document(s), each marked as a draft for human review; this
+  is bootstrap output, not an audit-verified record.
+- **Refusals.** Never touches source code, never reads or writes a `specs/` path, never
+  touches `CHANGELOG.md`, and never invokes or is invoked by the `harny-sync` /
+  `harny-adr` archive hand-off. A request naming a `specs/<feature>/` target is refused
+  with the reason: bootstrap mode cannot bypass the post-audit gate.
 
 ## Guardrails
 
-- **Document only what the auditor actually verified.** Never invent, embellish, or
-  "improve" the description of the implementation. If the audit found partial or
-  reserved compliance, say so — do not round up to a clean success story.
-- **Never touch inline code comments or docstrings.** That is `harny-implement`'s job,
-  not this skill's. This skill only writes to project-level docs (README, CHANGELOG,
-  ARCHITECTURE/AGENTS), the spec's own `intent.md` header, and hands off the archive
-  move to `harny-sync`.
-- **No scope creep.** Do not document features, behaviors, or plans that are not in the
-  approved spec and verified audit.
-- **The `Shipped:` stamp always precedes the move.** Never invoke `harny-sync` archive
-  mode before the stamp is written — the archive step operates on the stamped
-  directory.
-- **Bootstrap mode is bounded and never a shortcut.** It drafts only the named
-  repo-level document(s), marks them as drafts, and refuses source, any `specs/`
-  path, `CHANGELOG.md`, and the `harny-sync`/`harny-adr` hand-off — it is not a way to
-  ship or archive a feature without an audit.
-- **Never commit or push.** Do not run `git commit`, `git push`, or any equivalent that
-  records or publishes history — not for the documentation changes this skill just made,
-  not for the `Shipped:` stamp, not for the `harny-sync` archive move, and never with a
-  verification-skipping flag such as `--no-verify`. Leave every change in the working
-  tree, staged or unstaged, exactly as this skill left it, and list the changed files in
-  the step 4 change summary; deciding what gets committed, and when, is the human's
-  call, including after the pipeline has finished. (`harny-sync`'s own `git mv` during
-  the archive move is a move, not a commit, and stays allowed.)
+- **Document only what the auditor verified.** If the audit found partial or reserved
+  compliance, say so; never round up.
+- **Never touch inline code comments or docstrings** (`harny-implement`'s job). Write
+  only project-level docs, the `intent.md` header, and the archive hand-off.
+- **No scope creep**: nothing outside the approved spec and verified audit.
+- **The `Shipped:` stamp always precedes the move.**
+- **Never commit or push.** Do not run `git commit`, `git push` or any equivalent that
+  records or publishes history, and never with a verification-skipping flag such as
+  `--no-verify`. Leave every change in the working tree and list the changed files in
+  the step 5 summary; what gets committed, and when, is the human's call. (`harny-sync`'s
+  own `git mv` is a move, not a commit, and stays allowed.)

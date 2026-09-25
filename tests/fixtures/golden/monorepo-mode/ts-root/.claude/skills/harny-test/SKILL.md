@@ -62,12 +62,12 @@ If the user has not specified a feature name, ask for one.
    codebase, or tests for third-party dependencies — only write tests relevant to the
    spec.
 2. **Learn the test conventions and apply the rubric:**
-   - Apply `` `high-value-tests.md` § "The one question" `` to every candidate test
-     before deciding to write it: if a real bug were introduced here, would this test
-     fail, and would it stay green through a harmless refactor? Yes/Yes → write it. No
-     → tautology or framework test, don't write it. Yes/No → change-detector, rewrite it
-     to assert behavior or drop it. Follow `` `high-value-tests.md` `` § "Don't write
-     these" and § "Do write these" for the six/five items each names.
+   - Apply `` `high-value-tests.md` § "The one question" `` to every candidate test: if a
+     real bug were introduced, would it fail, and would it stay green through a harmless
+     refactor? Yes/Yes: write it. No: it is a tautology or framework test, so skip it.
+     Yes/No: it is a change-detector, so assert behavior instead or drop it. See
+     `` `high-value-tests.md` `` § "Don't write these" and § "Do write these" for the
+     itemized lists.
    - Identify the feature's stack during exploration and follow that stack's own
      conventions — test runner, file layout, and naming — as observed in the codebase
      (a conventions doc, an existing `tests/` tree, or config files like a test-runner
@@ -160,7 +160,8 @@ If the user has not specified a feature name, ask for one.
     actually run. If you wrote tests RED (TDD — the default flow, before
     `harny-implement` runs), confirm each new test fails for the right reason (missing
     implementation — e.g. `ImportError`/`AttributeError` or a failed behavioral
-    assertion), not because of a bug in the test itself.
+    assertion), not because of a bug in the test itself, and record that failure message
+    as the red evidence in your report.
 
 ## Guardrails
 

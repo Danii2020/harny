@@ -50,14 +50,13 @@ If the user has not specified a feature name, ask for one.
    codebase, or tests for third-party dependencies — only write tests relevant to the
    spec.
 2. **Learn the test conventions before writing tests:**
-   - Run the `high-value-tests` skill first — it is the rubric for *whether* a test is
-     worth writing. Run every candidate test through "the one question" in that skill.
-     Do NOT write tautologies (asserting a constant equals its literal), third-party/
-     framework tests (esp. against mocked deps), source-text grep tests (CSS/Tailwind
-     class strings, SQL migration text), file-existence registries, or change-detectors
-     that duplicate a stronger behavioral/integration test. If the only way to "cover" a
-     contract line is one of those, the line is better verified by a behavioral/
-     integration test (or code review for pure styling) — note it and move on.
+   - Run the `high-value-tests` skill first: it is the rubric for *whether* a test is
+     worth writing. Put every candidate test through its "one question". Do NOT write
+     tautologies, third-party/framework tests (especially against mocked deps),
+     source-text grep tests, file-existence registries, or change-detectors that
+     duplicate a stronger behavioral test. If the only way to "cover" a contract line is
+     one of those, verify it another way (a behavioral test or review), note it, and
+     move on.
    - Identify the feature's stack during exploration and follow that stack's own
      conventions — test runner, file layout, and naming — as observed in the codebase
      (a conventions doc, an existing `tests/` tree, or config files like a test-runner
@@ -108,7 +107,9 @@ If the user has not specified a feature name, ask for one.
    wrote tests RED (TDD — the default flow, before `harny-implement` runs), ALL new
    tests are expected to fail. Confirm each fails for the right reason (missing
    implementation — e.g. `ImportError`/`AttributeError` or a failed behavioral
-   assertion), not because of a bug in the test itself, and say so in your report.
+   assertion), not because of a bug in the test itself. Record that failure message as
+   the red evidence in your report, and never claim a test is red-verified unless it
+   actually ran.
 
 ## Guardrails
 

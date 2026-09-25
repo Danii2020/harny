@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Streamlined role and skill instructions: one home per instruction.** The five
+  shipped role bodies (`templates/roles/*.md`) used to restate, in full, the same
+  procedure that the scaffolded `harny-*` skills also carry, so every installed repo
+  held each instruction twice. Each role is now about 25 lines — the skill to load (with
+  a "find its `SKILL.md`" fallback), what the role writes and never touches, and what it
+  returns — and the procedure lives only in the skill. Preloaded context per dogfood
+  subagent drops (architect 15.8 KB to 7.1 KB, executor 11.2 KB to 6.6 KB, auditor 12.1 KB
+  to 8.4 KB) because the architect no longer preloads `harny-sync`'s archive mode and
+  the executor and auditor no longer preload `harny-standards`, which they read on
+  demand. Agent descriptions lose their `<example>` blocks. The skills also gain the
+  useful parts of a leaner review loop: proportional specs (pin what is externally
+  observable), a recorded failure baseline before the executor changes anything,
+  resume-from-`tasks.md`, evidence for every checked-off task, no weakened assertions,
+  consumer and test-migration checks, and an auditor that reruns checks itself, labels
+  each result `rerun` / `reused` / `unavailable`, treats a compliant alternative to the
+  roadmap as no defect, and never spawns an executor. `harny-standards` is now a true
+  pointer with no restated rules, and the conductor is condensed. The spec schema, the
+  three human gates, and the `harny-sync` / `harny-adr` archive flow are unchanged. The
+  tests that pinned the role/skill duplication (auditor role carrying the tier table and
+  protocol tokens) now check the skill, which is where that text lives.
+
 ### Added
 
 - **The shipped test-writer now proposes tests at the right tier, with a human

@@ -8,60 +8,50 @@ metadata:
 
 # SDD Conductor
 
-You are the **conductor** of the SDD subagent pipeline, not a participant. Your job is to sequence the `sdd-*` agents, enforce the human review gates, and verify their work — without doing their work for them or skipping the human's decisions.
+You are the **conductor** of the SDD pipeline, not a participant. Sequence the five `sdd-*` subagents, enforce the human gates, and verify their work — never do their work for them and never decide for the human.
 
-Pipeline (default, when the task warrants TDD):
+## Pipeline
 
 ```
-sdd-architect → [HUMAN REVIEWS SPECS] → sdd-test-writer (red) → [HUMAN REVIEWS TESTS] → sdd-executor (green) → sdd-auditor → [HUMAN REVIEWS AUDIT] → sdd-documentation (auto, non-gated)
+sdd-architect → [HUMAN REVIEWS SPECS]
+             → sdd-test-writer (red)
+             → [HUMAN REVIEWS TESTS]
+             → sdd-executor (green)
+             → sdd-auditor
+             → [HUMAN REVIEWS AUDIT]
+             → sdd-documentation (auto, non-gated)
 ```
 
-Five roles, three human gates, one automatic post-audit handoff. Documentation is **not** a fourth gate — it runs on its own once the third gate is cleared.
+Five roles, three human gates, one automatic post-audit handoff. Documentation is not a fourth gate.
 
-## Hard rules (the mistakes this skill exists to prevent)
+## Hard rules
 
-1. **Never self-approve the architect's artifacts.** When the architect finishes the spec set (intent/contract/roadmap/audit/tasks), STOP. Summarize the specs and hand them to the human for review. Do **not** relay "approved" to the subagent on the human's behalf, and do not start implementation until the human gives an explicit go-ahead (or asks for changes). The architect's own internal "wait between files" default is *not* the human gate — the **complete spec set** is.
+1. **Never self-approve.** When the architect finishes the spec set, STOP, summarize it, and wait for the human's explicit go-ahead (or requested changes). Never relay "approved" to a role on their behalf. The architect's own pause between files is not the gate; the complete set is.
+2. **Default to TDD.** Once specs are approved, start with the test-writer (red), then the executor (green), then the auditor. Run mechanical handoffs without asking "should I proceed?", except at the gates.
+3. **The red tests are a gate.** After the test-writer, STOP before the executor: confirm they fail for the right reason, summarize coverage, and wait for approval.
+4. **The audit is the last gate; documentation follows automatically.** Present the auditor's verdict and STOP. On APPROVED or APPROVED WITH RESERVATIONS that the human accepts, hand off to documentation without asking. REJECTED never triggers documentation; it goes back to the appropriate role.
+5. **Changes to a role's output go back to that same role.** Never make them yourself.
 
-2. **Default to TDD; don't ask "should I proceed with the executor?"** Once the human approves the specs, decide whether the task warrants TDD (almost all feature/logic work does — anything with testable behavior). If yes, the pipeline **starts with `sdd-test-writer` (red phase)**, then `sdd-executor` (green), then `sdd-auditor`. State the plan and run the mechanical handoffs automatically — don't gate each one with a yes/no question — **except** for the two human gates below.
+## Flow
 
-3. **The failing tests are a human gate too.** After the test-writer produces the red-phase tests, STOP before the executor runs. The tests are the contract the executor implements against, so the human reviews them. Don't hand off to the executor until the human approves (or asks for changes).
+**Pause for the human at** the three gates, and for any decision only they can make (scope, product trade-offs, ambiguity); use `AskUserQuestion`.
 
-4. **The post-audit gate is the last human decision point; documentation follows automatically.** After the auditor produces its verdict, STOP and present it to the human (the third gate). Once the human accepts an APPROVED or APPROVED WITH RESERVATIONS verdict, hand off to `sdd-documentation` automatically — do not ask "should I document this?" A REJECTED verdict never triggers documentation; it goes back to the appropriate agent for fixes instead.
+**Flow automatically:** executor → auditor after the tests are approved; auditor → documentation on an accepted APPROVED or APPROVED WITH RESERVATIONS verdict; retries after transient failures; checking off `tasks.md`. Afterwards, surface documentation's change summary for optional review; nothing blocks on it.
 
-5. **When the user asks for changes regarding an agent output, delegate that change to the same sub agent**, **do not do it yourself**
+## Mechanics
 
-## Human gates vs. automatic flow
+- **Track the pipeline** with one task per stage, in order. Stages depend on each other, so never parallelize them.
+- **Brief each role fully** — decisions made, exact paths, prior findings — so a cold start does not re-derive or re-ask. Prefer resuming an invocation over starting a fresh one.
+- **Verify, don't trust.** After the test-writer, executor and auditor report, re-run the gates yourself (type-check, lint, test suite), especially the auditor's PASS/FAIL claims. Confirm tests fail for the right reason before the executor runs and pass after. Before declaring the pipeline complete, the conductor confirms the archive landed by running the readiness runner's spec-state family itself (the runner at `.sdd/doctor/run-doctor.mjs`, for example `node .sdd/doctor/run-doctor.mjs --only spec-state`), not by accepting documentation's report. No role certifies its own gate.
+- **Orchestration stays in the orchestrating thread** (whatever that is for the tool), never inside a role, so the gates stay independent of the work they gate.
 
-**PAUSE for the human at:**
-- **Spec approval** — after the architect produces the full set (hard rule #1).
-- **Test review** — after the test-writer produces the red-phase tests (hard rule #3). Confirm they fail for the right reason and summarize coverage before handing them over.
-- **Final audit** — present the auditor's verdict; if there are blocking issues, propose fixes before merging/committing.
-- Any decision only the human can make: scope, product trade-offs, naming they care about, or anything ambiguous in the request. Use `AskUserQuestion` for these.
+## Failures
 
-**FLOW automatically (no per-step approval):**
-- The handoff `executor → auditor` (after the tests have been approved).
-- The handoff `auditor → documentation`, strictly when the accepted verdict is APPROVED or APPROVED WITH RESERVATIONS (hard rule #4). Not on REJECTED.
-- Re-running or fixing on transient/tooling failures.
-- Checking off `tasks.md` as work completes.
-
-After documentation finishes, surface its change summary for optional human review — this is informational, not a gate; nothing blocks on it.
-
-## Conductor mechanics
-
-- **Track the pipeline** with a task list (one task per stage) and wire dependencies so stages run in order.
-- **Sequence, don't parallelize** dependent stages — each `sdd-*` stage depends on the previous one's output.
-- **Pass rich context** into each subagent (decisions already made, exact file paths, API shapes, prior findings) so a cold-started agent doesn't re-derive or re-ask. A fresh `Agent` call starts cold; `SendMessage` to an existing agent id resumes it with context intact.
-- **Verify, don't trust.** After test-writer/executor/auditor report success, re-run the gates yourself (`tsc`, lint, the test suite) rather than taking the report at face value — especially the auditor's PASS/FAIL claims. Applies to `sdd-documentation` too: before declaring the pipeline complete, the conductor itself confirms the archive landed by running the readiness runner's spec-state family — `node .sdd/doctor/run-doctor.mjs --only spec-state` — rather than accepting the role's own report that it did. A role should not be trusted to certify its own gate.
-- **TDD checkpoints:** confirm the test-writer's tests **fail for the right reason** (missing impl, not test bugs) before the executor runs; confirm they **pass** after.
-
-## Handling subagent failures (e.g. API 500s / outages)
-
-- Retry a transient failure a couple of times. A fresh `Agent` launch starts cold; resuming via `SendMessage` keeps the prior transcript.
-- If failures **persist** (the subagent service is down), don't silently spin. Tell the human, and offer the alternatives: wait and auto-retry, switch the agent's `model`, or implement directly in the main thread (which doesn't depend on the subagent service). Let the human choose — implementing directly is a fallback, not the default, since they chose the SDD/subagent path.
-- If you do implement directly as a fallback, still run the remaining gates (e.g. the auditor) as subagents once the service recovers, and keep the spec artifacts (tasks.md, audit.md) accurate.
+- Retry a transient role failure a couple of times, resuming rather than restarting where possible.
+- If failures persist, tell the human and offer: wait and retry, switch that agent's `model`, or implement directly as a fallback. Let them choose. If you implement directly, still run the remaining gates as their own role invocations and keep `tasks.md` and `audit.md` accurate.
 
 ## Closing the loop
 
-- After the audit passes, fix any non-blocking findings the human wants addressed, update `audit.md`/`tasks.md` to reflect resolutions, and re-run the gates.
-- Once `sdd-documentation` reports completion, the conductor itself confirms the archive landed by running the spec-state check before declaring the pipeline done — see § Conductor mechanics. Once that check comes back clean, the pipeline is done for this feature.
+- After the audit passes, fix the non-blocking findings the human wants addressed, update `audit.md` and `tasks.md`, and re-run the gates.
+- Once documentation reports completion and the spec-state check is clean, the pipeline is done for this feature.
 - **Don't commit or push** unless the human asks.

@@ -1037,16 +1037,19 @@ describe('this repository carries its own commit checks (commit-checks CC-9)', (
  * correct by the T40/Task-4.1 blocks above; no generator change is needed or
  * allowed for TT-30 to hold once the template text lands, per TT-21).
  */
-describe('the TT-17 protocol tokens reach all five generators\' sdd-test-writer, sdd-auditor and conductor artifacts (TT-30) (T16)', () => {
+describe('the TT-17 protocol tokens reach all five generators\' sdd-test-writer and conductor artifacts (TT-30) (T16)', () => {
   const MARKER = 'TEST PLAN AWAITING CONFIRMATION';
   const STATUS_PREFIX = '**Plan status**:';
 
-  it('every generator\'s rendered sdd-test-writer and sdd-auditor role artifacts contain both tokens', async () => {
+  // The auditor role no longer restates the protocol: it delegates to the
+  // `harny-audit` skill, which carries the tokens (tests/test-writer-templates.test.ts).
+  // The test-writer role keeps them because it emits the marker in its own report.
+  it('every generator\'s rendered sdd-test-writer role artifact contains both tokens', async () => {
     const templates = await loadRealTemplates();
     const generators = await allGenerators();
 
     for (const generator of generators) {
-      for (const roleId of ['sdd-test-writer', 'sdd-auditor'] as const) {
+      for (const roleId of ['sdd-test-writer'] as const) {
         const template = templates.roles.get(roleId)!;
         const generated = generator.renderRole({ template, tier: template.metadata.costTier });
 

@@ -159,12 +159,16 @@ two optional (`harny-adr`, `harny-standards`; selectable via `--skills` flag).
 The pipeline that actually runs against this repo today is composed of thin agents
 backed by reusable skills:
 
-**Five thin agents** (each ≤ 25 lines, combined 148 lines down from 646):
+**Five thin agents** (each about 22–24 lines, combined 113 lines down from 646). Each
+one names the skill to load, what the role writes and never touches, and what it
+returns; the procedure lives only in the skill, and only the primary skill is preloaded
+(`harny-sync` lookup, `harny-standards` and `harny-feedback` are read on demand). The
+shipped `templates/roles/` bodies follow the same shape:
 
 - `.claude/agents/sdd-architect.md` — delegates to `harny-propose`
 - `.claude/agents/sdd-test-writer.md` — delegates to `harny-test`
-- `.claude/agents/sdd-executor.md` — delegates to `harny-implement` and `harny-standards`
-- `.claude/agents/sdd-auditor.md` — delegates to `harny-audit` and `harny-standards`
+- `.claude/agents/sdd-executor.md` — delegates to `harny-implement`
+- `.claude/agents/sdd-auditor.md` — delegates to `harny-audit`
 - `.claude/agents/sdd-documentation.md` — delegates to `harny-document`, `harny-sync`,
   and `harny-adr`
 

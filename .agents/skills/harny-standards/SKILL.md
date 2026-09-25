@@ -21,54 +21,38 @@ metadata:
 
 # harny-standards
 
-This skill is a pointer plus a checklist, never a second copy of the rules. It exists so
-`sdd-executor` and `sdd-auditor` check the same seven coding standards against the same
-single document, instead of each re-deriving "match the existing code style" from
-scratch and reaching different conclusions.
+A pointer plus a checklist, never a second copy of the rules. It exists so
+`sdd-executor` and `sdd-auditor` check the same seven coding standards against the same single
+document instead of each re-deriving "match the existing code style" and disagreeing.
 
 ## When to use this
 
-- Invoked by `harny-implement` (the executor) before marking any task done.
-- Invoked by `harny-audit` (the auditor) as a compliance step under its existing
-  severity ratings.
-- Invocable directly by a human, or any other role, that wants the checklist without
-  reading the full conventions document.
+- Invoked by `harny-implement` before marking any task done.
+- Invoked by `harny-audit` as a compliance step under its existing severity ratings.
+- Invocable directly by anyone who wants the checklist without reading the full document.
 
 ## Inputs
 
-- **Required**: this project's conventions document — `AGENTS.md`, `CLAUDE.md`, or the
-  project's equivalent. In this repo, the concrete answer is `AGENTS.md`
+- **Required**: this project's conventions document. In this repo: `AGENTS.md`
   § "Coding standards" (S1–S7).
 
 ## Steps
 
-1. Locate this project's conventions document. In this repo that is `AGENTS.md`; on a
-   different project it may be `CLAUDE.md` or an equivalent the project names as its
-   source of truth for conventions. Read its coding-standards section in full.
-2. Do **not** restate, summarize, or duplicate its rules here — naming the document and
-   reading it live is the whole mechanism. Duplication is the drift failure this skill
-   exists to prevent.
-3. Apply the per-role checklist below, matching the caller's role:
-   - **Executor** (`harny-implement`): before marking a task done, confirm the change
-     satisfies S1 (TypeScript/ESM/`.js` specifiers/`node:` prefix), S2
-     (`HarnessError`-only deliberate errors, exit-code mapping owned by one module), S3
-     (determinism, path containment, single trailing newline), S4 (no new dependency
-     without an explicit contract line), S5 (shared constants imported from their owning
-     module, never re-literalled), and S6 (tests mirror `src/`, carry a `Spec:`/`Covers:`
-     header, never put a contract id in a test name, default offline).
-   - **Auditor** (`harny-audit`): check all seven (S1–S7, including S7 — no tool-specific
-     mechanic named as the only possibility in tool-neutral content) and report violations
-     as findings under the existing severity ratings.
-4. Report back which standards were checked and any violation found, by standard id
-   (`S1`–`S7`), so the caller's own audit trail can cite it.
+1. Read the conventions document's coding-standards section in full, live. Do **not**
+   restate, summarize or duplicate its rules here or in your report; duplication is the
+   drift this skill exists to prevent.
+2. **Executor**: before marking a task done, confirm the change satisfies S1–S6 (the executor's subset).
+   **Auditor**: check all seven (S1–S7) and report each violation as a finding under the existing
+   severity ratings.
+3. Report which standards were checked and any violation found, by the id the document
+   uses, so the caller's audit trail can cite it.
 
 ## Guardrails
 
-- **Never restate the rules.** If the conventions document is missing or unreadable,
-  report that as a finding and fall back to observed codebase conventions, stating
-  explicitly that the fallback was used — never invent or assume a rule.
-- **Never fix a violation in place.** This skill (via the auditor) reports; it does not
-  edit code.
-- **Portability.** Always name the target as "this project's conventions document
-  (`AGENTS.md`, `CLAUDE.md`, or the project's equivalent)" so a user pointing this skill
-  at their own repo's conventions doc needs no edit to this file.
+- **Never restate the rules.** If the document is missing or unreadable, report that as
+  a finding and fall back to observed codebase conventions, saying explicitly that the
+  fallback was used — never invent a rule.
+- **Never fix a violation in place.** The auditor reports; it does not edit code.
+- **Portability.** Name the target as "this project's conventions document (`AGENTS.md`,
+  `CLAUDE.md`, or the project's equivalent)" so pointing this skill at another repo
+  needs no edit here.

@@ -134,13 +134,12 @@ describe('the skill and the role cite the rubric by bare file name and section (
 const TT17_MARKER = 'TEST PLAN AWAITING CONFIRMATION';
 const TT17_STATUS_VALUES = ['PROPOSED', 'CONFIRMED', 'NOT REQUIRED'] as const;
 
-describe('the TT-17 protocol tokens are identical across all five shipped files (TT-17) (T4, T14)', () => {
+describe('the TT-17 protocol tokens are identical across the four shipped files that carry them (TT-17) (T4, T14)', () => {
   const FILES: ReadonlyArray<[string, string]> = [
     ['templates/skills/harny-test/SKILL.md', HARNY_TEST_SKILL_PATH],
     ['templates/roles/sdd-test-writer.md', TEST_WRITER_ROLE_PATH],
     ['templates/conductor/sdd-conductor.md', CONDUCTOR_PATH],
     ['templates/skills/harny-audit/SKILL.md', HARNY_AUDIT_SKILL_PATH],
-    ['templates/roles/sdd-auditor.md', AUDITOR_ROLE_PATH],
   ];
 
   it.each(FILES)('%s carries the literal awaiting-confirmation marker', (_label, filePath) => {
@@ -204,17 +203,21 @@ function severityForFragment(source: string, fragment: string): string | undefin
   return undefined;
 }
 
-describe('the auditor skill and role list the same tier findings at the same severities (TT-28) (T15)', () => {
-  it.each(TT28_CONDITIONS)('$name is rated $severity, identically in the skill and the role', ({ fragment, severity }) => {
+describe('the auditor skill lists the tier findings at the pinned severities (TT-28) (T15)', () => {
+  it.each(TT28_CONDITIONS)('$name is rated $severity in the skill', ({ fragment, severity }) => {
     const skillSource = readIfExists(HARNY_AUDIT_SKILL_PATH);
-    const roleSource = readIfExists(AUDITOR_ROLE_PATH);
     expect(skillSource, `${HARNY_AUDIT_SKILL_PATH} does not exist`).toBeDefined();
+
+    expect(
+      severityForFragment(skillSource!, fragment),
+      `templates/skills/harny-audit/SKILL.md has no row for "${fragment}"`,
+    ).toBe(severity);
+  });
+
+  it('the auditor role delegates to the skill instead of restating the table', () => {
+    const roleSource = readIfExists(AUDITOR_ROLE_PATH);
     expect(roleSource, `${AUDITOR_ROLE_PATH} does not exist`).toBeDefined();
-
-    const skillSeverity = severityForFragment(skillSource!, fragment);
-    const roleSeverity = severityForFragment(roleSource!, fragment);
-
-    expect(skillSeverity, `templates/skills/harny-audit/SKILL.md has no row for "${fragment}"`).toBe(severity);
-    expect(roleSeverity, `templates/roles/sdd-auditor.md has no row for "${fragment}"`).toBe(severity);
+    expect(roleSource).toContain('`harny-audit`');
+    expect(roleSource).not.toContain('| Condition | Severity |');
   });
 });

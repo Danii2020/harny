@@ -271,12 +271,7 @@ const DIVERGENCE_TABLE: Readonly<Record<string, DivergenceExpectation>> = {
   // and count — the exact AL-P1 residue) checklist, neutralized.
   'harny-standards': {
     kind: 'diverges',
-    forbiddenInTemplate: [
-      'S1 (TypeScript/ESM',
-      'tests mirror `src/`',
-      'seven standards',
-      'seven coding standards',
-    ],
+    forbiddenInTemplate: ['S1–S7', 'S1–S6', 'seven coding standards'],
   },
 
   // DC-2: the dated in-repo ADR-registry incident anecdote.

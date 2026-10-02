@@ -10,53 +10,50 @@ roles with explicit human review gates in between:
 ```
 sdd-architect
      |
-[HUMAN GATE: review the 5 specs]
+[HUMAN GATE: review the 3 specs (test scope is part of execution-plan.md)]
      |
-sdd-test-writer   (red phase - proposes unit/integration/e2e tests, then checkpoint*)
+sdd-test-writer   (red phase - writes the tests execution-plan.md names; stops only for an unlisted tier or setup*)
      |
 [HUMAN GATE: confirm the tests fail for the right reason]
      |
 sdd-executor      (green phase - implements until tests pass)
      |
-sdd-auditor       (verifies the contract, tier coverage + confirms the per-turn hook fired and CI is green)
+sdd-auditor       (verifies the ACs and constraints, tier coverage + confirms the per-turn hook fired and CI is green)
      |
 [HUMAN GATE: review the final verdict]
      |
 sdd-documentation (automatic, non-gated - runs only on an approved verdict)
 ```
 
-\* The shipped `sdd-test-writer` picks tests at the `unit`, `integration` and/or `e2e`
-tier — only where the feature's nature makes that tier suitable — and infers a
-framework per tier from the repository's own evidence (manifests, config, existing
-tests), never from a hard-coded table. It records the proposal as a Test Plan in
-`audit.md`. If the plan needs any tier beyond `unit`, or any setup at all (a dev
-dependency, a config file or a script), it stops and asks for confirmation before
-writing a test or installing anything — routed through the conductor when the
-test-writer runs as a delegated sub-agent, asked inline when a human invokes it
-directly. A unit-only plan with no setup skips the checkpoint and proceeds straight to
-writing tests. This checkpoint is conditional, not a fourth human gate: the pipeline
-still has exactly three (specs, tests, audit). The rubric behind "is this test worth
-writing" ships as a bundled `harny-test/high-value-tests.md` resource, and the
-shipped `sdd-auditor` reads the confirmed Test Plan and records the results per tier
-as a `### Tier Results` table in `audit.md` § Test Coverage, flagging (for example) an
-unconfirmed non-unit test or a confirmed tier with no tests. This repository's own
-dogfood pipeline (`.claude/skills/harny-test/` and `.claude/skills/harny-audit/`, via
-the `.agents/skills/` bridge) intentionally does not run this tier flow yet — it keeps
-proposing tests without tiers or a confirmation checkpoint.
+\* The shipped `sdd-test-writer` writes the tests that `execution-plan.md` § Validation
+names, at the tiers (`unit`, `integration`, `e2e`) and with the setup it names; the
+framework per tier is inferred from the repository's own evidence, never from a
+hard-coded table. Approving the specs approves that test scope. If it needs a tier or
+setup the section does not name, it stops with `TEST PLAN AWAITING CONFIRMATION`,
+routed through the conductor when it runs as a delegated sub-agent. That stop is not a
+fourth human gate: the pipeline still has exactly three (specs, tests, audit). The
+rubric behind "is this test worth writing" ships as a bundled
+`harny-test/high-value-tests.md` resource, and the shipped `sdd-auditor` checks the
+tests against § Validation and records the results per tier as a `### Tier Results`
+table in `audit.md`, flagging (for example) a test at an unnamed tier or a named tier
+with no tests. This repository's own dogfood pipeline (`.claude/skills/harny-test/` and
+`.claude/skills/harny-audit/`, via the `.agents/skills/` bridge) intentionally does not
+run the tier flow.
 
-Each feature gets a 5-file spec under `specs/<feature-name>/`:
+Each feature gets a spec under `specs/<feature-name>/`: three files written by the
+architect, plus `audit.md`, which only the auditor writes.
 
 | File | Answers |
 |---|---|
-| `intent.md` | Why: problem, goals, success criteria, non-goals, constraints |
-| `contract.md` | What: interfaces, data models, behavior guarantees, error handling |
-| `roadmap.md` | How: implementation phases, dependencies, file-change map |
-| `tasks.md` | Granular checklist per phase (`[ ]` `[x]` `[~]` `[!]`) |
-| `audit.md` | Compliance checklist, audit log, final verdict |
+| `intent.md` | Why: outcome, acceptance criteria (`AC1`…), scope, constraints; carries `Revision` and `Approval` |
+| `execution-plan.md` | How: binding constraints, proposed approach, migration, risks, and § Validation (the only test plan) |
+| `tasks.md` | Working state: status, baseline, outcomes with evidence, finding responses |
+| `audit.md` | Auditor-only: AC results, constraint compliance, tier results, findings, final verdict |
 
-Every item is traceable: each `contract.md` item cites the `intent.md` goal it
-serves, each `tasks.md` item cites a `roadmap.md` phase, and each `audit.md` item
-cites back to `intent.md` or `contract.md`.
+Every item is traceable: each § Validation row cites an AC, each `tasks.md` outcome
+cites ACs, and each `audit.md` item cites an AC or a binding constraint. A feature
+directory holding `contract.md` or `roadmap.md` is the older five-file shape; it keeps
+working.
 
 ## What's actually running today
 
@@ -241,7 +238,23 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `--config <path>` — read configuration from JSON file instead of prompting
 - `--yes` — accept all defaults, skip prompts and final confirmation
 - `--dry-run` — print planned file list; write nothing
-- `--force` — overwrite existing files without prompting
+- `--force` — overwrite existing files without prompting (also removes the known legacy `.sdd/spec-schema/contract.md` and `roadmap.md`, and nothing else)
+
+### Updating an existing install
+
+```sh
+npx harny update [target]            # bring the install up to this harny version
+npx harny update [target] --dry-run  # print the same report, change nothing
+```
+
+`update` regenerates the harness files from the repo's own `.sdd/harness.json`, so the
+result is byte-identical to a fresh `init` with that configuration, and removes the known
+legacy files (`.sdd/spec-schema/contract.md`, `roadmap.md`). It reports each path as
+`created`, `updated`, `unchanged` or `removed`; a second run reports nothing but
+`unchanged`. It refuses (exit 3, nothing changed) when a tracked file it would modify or
+remove has staged or unstaged changes, or when the target is not inside a git repository;
+`--force` skips those refusals. Untracked files never block and are overwritten. A missing
+or invalid `.sdd/harness.json` exits 2. It never touches `specs/` or `core.hooksPath`.
 
 **Shipped tools:**
 - `claude-code` — generates `.claude/agents/sdd-{architect,test-writer,executor,auditor,documentation}.md` and `.claude/skills/sdd-conductor/SKILL.md`
@@ -251,10 +264,10 @@ npx harny init /path/to/target-repo --config ./harness-config.json
 - `codex` — generates `.codex/agents/sdd-*.toml` (TOML format) and `.agents/skills/sdd-conductor/SKILL.md`
 
 **Generated files per `init` run:**
-- For a single tool with the default skill set: 7 tool-specific files (5 roles + conductor + 1 MCP config) + 9 core/optional skills (8 core + 1 default `harny-standards`, one per tool's root) + 6 shared files (5 spec schema templates + configuration) = 22 files total
-- For multiple tools with defaults: 7 files per selected tool (35 total for all five), plus 9 skills per unique root (8 core + 1 default `harny-standards` for three roots = 27 total), plus 6 shared files = 68 files total
+- For a single tool with the default skill set: 7 tool-specific files (5 roles + conductor + 1 MCP config) + 9 core/optional skills (8 core + 1 default `harny-standards`, one per tool's root) + 5 shared files (4 spec schema templates + configuration) = 21 files total
+- For multiple tools with defaults: 7 files per selected tool (35 total for all five), plus 9 skills per unique root (8 core + 1 default `harny-standards` for three roots = 27 total), plus 5 shared files = 67 files total
 - With `--skills all`: includes both optional skills (`harny-adr` and `harny-standards`) for 10 skills per root instead of 9
-- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 35 tool artifacts + 50 skill artifacts (10 per root) + 6 shared = 91 files total
+- Example: `--tools claude-code,cursor,kiro,github-copilot,codex --skills all` generates 35 tool artifacts + 50 skill artifacts (10 per root) + 5 shared = 90 files total
 
 **Default MCP server wiring:** Each selected tool now gets a default Context7 MCP server entry written into its own native MCP configuration file (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`), so the `docs-lookup` capability's canonical tool tokens (`mcp__context7__resolve-library-id` and `mcp__context7__query-docs` on Claude Code, `@context7` on Kiro) resolve to a real, connected server out of the box. The endpoint harny writes is Context7's OAuth variant (`/mcp/oauth`), which requires clients to implement the MCP OAuth specification. This was chosen because the plain `/mcp` endpoint was observed not to work correctly in practice, despite Context7's own per-client documentation still showing it. These five files are repo-scoped configuration and are tracked in version control; they are never deleted or rewritten whole-file, only extended to add the Context7 entry if absent. The first time an agent calls a Context7 tool, that tool's own native first-use approval prompt remains the approval gate — harny writes the configuration only, never auto-approves or widens permissions. No credential, credential placeholder, or environment-variable reference is ever written alongside the endpoint.
 
@@ -405,8 +418,8 @@ templates/
 │                  # (most-capable / mid / cheapest) and a capabilities list.
 ├── conductor/     # sdd-conductor.md - the same 5-role, 3-gate orchestration logic,
 │                  # described without assuming any single tool's Skill format.
-├── spec-schema/   # intent/contract/roadmap/tasks/audit.md - the blank scaffolds
-│                  # the architect emits, extracted as standalone template files.
+├── spec-schema/   # intent/execution-plan/tasks/audit.md - the blank scaffolds
+│                  # (the architect emits three; the auditor fills audit.md), extracted as standalone template files.
 └── skills/        # Ten harny-* skills plus bundled resources and a shape contract:
                    # harny-propose, harny-test, harny-implement, harny-audit,
                    # harny-document, harny-sync, harny-feedback, harny-doctor,
@@ -433,7 +446,7 @@ This repo's own SDD pipeline (running on Claude Code):
 Shared templates and specs:
 
 ```
-specs/<feature-name>/{intent,contract,roadmap,tasks,audit}.md
+specs/<feature-name>/{intent,execution-plan,tasks,audit}.md
 templates/{roles,conductor,spec-schema}/
 plan.md          # background/vision notes (workshop planning)
 AGENTS.md        # tool-agnostic conventions for this repo

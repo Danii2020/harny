@@ -43,7 +43,7 @@ function collectingIO() {
  *  reference must exist beside it" rule — a bare reference to one of these in
  *  a `SKILL.md` is a reference to a downstream `specs/<feature>/*.md` file,
  *  never to a file this skill ships. */
-const SPEC_FILE_NAMES = new Set(['intent.md', 'contract.md', 'roadmap.md', 'tasks.md', 'audit.md']);
+const SPEC_FILE_NAMES = new Set(['intent.md', 'execution-plan.md', 'contract.md', 'roadmap.md', 'tasks.md', 'audit.md']);
 
 function listFilesUnder(root: string): string[] {
   if (!fs.existsSync(root)) return [];

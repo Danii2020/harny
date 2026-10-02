@@ -111,3 +111,61 @@ export async function activateGitHooks(targetDir: string, repoRoot: string | und
   }
   return { kind: 'activated', hooksPath };
 }
+
+/** The real location of `target`: its own realpath when it exists, otherwise the
+ *  realpath of its nearest existing ancestor plus the remainder. */
+async function resolveReal(target: string): Promise<string> {
+  const tail: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      return path.join(await fs.realpath(current), ...tail.reverse());
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return target;
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/**
+ * (specs/streamlined-spec-artifacts, SA-22.) The subset of `absolutePaths` (returned as the
+ * given absolute paths) that git tracks and that carries staged or unstaged changes. Each
+ * path is resolved through symlinks first, so a file reached via a symlinked directory is
+ * checked at its real location. Untracked and ignored paths never appear. Pathspecs are
+ * literal. **Throws if git cannot answer** (callers fail closed).
+ */
+export async function trackedPathsWithChanges(
+  repoRoot: string,
+  absolutePaths: readonly string[],
+): Promise<readonly string[]> {
+  if (absolutePaths.length === 0) return [];
+  const realRoot = await fs.realpath(repoRoot);
+  const byReal = new Map<string, string[]>();
+  for (const original of absolutePaths) {
+    const real = await resolveReal(original);
+    byReal.set(real, [...(byReal.get(real) ?? []), original]);
+  }
+  const relative: string[] = [];
+  for (const real of byReal.keys()) {
+    const rel = path.relative(realRoot, real);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) continue; // outside this repo
+    relative.push(rel.split(path.sep).join('/'));
+  }
+  if (relative.length === 0) return [];
+  const { stdout } = await execFileAsync(
+    'git',
+    ['--literal-pathspecs', 'status', '--porcelain=v1', '-z', '--untracked-files=no', '--', ...relative],
+    { cwd: realRoot, maxBuffer: 16 * 1024 * 1024 },
+  );
+  const dirty: string[] = [];
+  const entries = stdout.split('\0');
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.length < 4) continue;
+    dirty.push(...(byReal.get(path.join(realRoot, entry.slice(3))) ?? []));
+    if (entry[0] === 'R' || entry[0] === 'C') i++; // rename/copy carries the origin path next
+  }
+  return dirty;
+}

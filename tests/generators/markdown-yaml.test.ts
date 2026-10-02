@@ -269,3 +269,35 @@ describe('renderProjectConfigBlock — per-component lines for a monorepo instal
     expect(block).toContain('- Component: apps/legacy — cobol (no built-in profile)');
   });
 });
+
+/**
+ * Spec: specs/streamlined-spec-artifacts
+ * Covers: contract.md SA-13; intent.md SC9; audit.md Test Coverage T7.
+ *
+ * Red-phase note: today's block names the five legacy scaffolds, so the
+ * "names the four deployed scaffolds" and ownership assertions fail on the
+ * existing text.
+ */
+describe('renderSpecSchemaPointerBlock names the deployed scaffolds and who writes them (SA-13) (T7)', () => {
+  it('lists the four deployed scaffolds and neither removed file', async () => {
+    const { renderSpecSchemaPointerBlock } = await import('../../src/generators/markdown-yaml.js');
+
+    const block = renderSpecSchemaPointerBlock('.sdd/spec-schema');
+
+    for (const name of ['intent.md', 'execution-plan.md', 'tasks.md', 'audit.md']) {
+      expect(block, `block does not name ${name}`).toContain(name);
+    }
+    expect(block).not.toContain('contract.md');
+    expect(block).not.toContain('roadmap.md');
+    expect(block).not.toMatch(/\bfive\b/i);
+  });
+
+  it('states that the architect writes three of them and the auditor writes audit.md', async () => {
+    const { renderSpecSchemaPointerBlock } = await import('../../src/generators/markdown-yaml.js');
+
+    const block = renderSpecSchemaPointerBlock('.sdd/spec-schema');
+
+    expect(block).toMatch(/architect[^.]*\bthree\b|\bthree\b[^.]*architect/i);
+    expect(block).toMatch(/auditor[^.]*audit\.md|audit\.md[^.]*auditor/i);
+  });
+});

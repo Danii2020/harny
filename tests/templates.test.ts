@@ -219,7 +219,7 @@ describe('parseConductorTemplate — accepts id/purpose-only metadata (T7, close
 });
 
 describe('loadCanonicalTemplates — the real eleven-file tree (T8, T9)', () => {
-  it('loads all five roles, the conductor, and the five spec-schema files from the real templates/ root', async () => {
+  it('loads all five roles, the conductor, and the four spec-schema files from the real templates/ root', async () => {
     const { loadCanonicalTemplates } = await import('../src/templates.js');
 
     const templates = await loadCanonicalTemplates(REAL_TEMPLATES_ROOT);
@@ -235,7 +235,7 @@ describe('loadCanonicalTemplates — the real eleven-file tree (T8, T9)', () => 
       expect(templates.roles.has(id)).toBe(true);
     }
     expect(templates.conductor.metadata.id).toBe('sdd-conductor');
-    expect(templates.specSchema).toHaveLength(5);
+    expect(templates.specSchema.map((s) => s.name)).toEqual(['intent', 'execution-plan', 'tasks', 'audit']);
   });
 
   it('loads spec-schema templates byte-for-byte with no reformatting (guarantee 12)', async () => {

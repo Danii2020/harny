@@ -1,6 +1,6 @@
 # ADR 0047: The Test Plan is recorded only inside audit.md § Test Coverage
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR 0052
 - **Date**: 2026-09-24
 - **Feature**: test-tiers
 - **Capability**: pipeline-roles

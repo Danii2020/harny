@@ -90,9 +90,9 @@ or don't write it.**
 
 ## Using this in the SDD workflow
 
-Contract guarantees and intent success criteria are the **source of what to cover** —
+Intent acceptance criteria (ACs) are the **source of what to cover** —
 but each one maps to the *cheapest test that would actually fail on a regression*, at
-the right tier. Before writing a test for a contract line, run it through "the one
+the right tier. Before writing a test for an AC, run it through "the one
 question" above. If the only way to "cover" a line is a tautology, a framework test, or
 a source-text grep, that line is better verified by a behavioral/integration test (or by
 code review for pure styling) — note that and move on rather than adding noise.

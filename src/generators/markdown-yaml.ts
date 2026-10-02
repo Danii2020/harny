@@ -3,6 +3,7 @@
  * Cursor, Kiro, GitHub Copilot) so weeks 3-4 reuse rather than re-derive.
  */
 import type { ProjectConfigSummary } from '../engine.js';
+import { SPEC_SCHEMA_NAMES } from '../templates.js';
 
 export interface FrontmatterField {
   readonly key: string;
@@ -129,10 +130,11 @@ export function renderSpecSchemaPointerBlock(specSchemaDir: string): string {
     '',
     `- Spec schema directory: \`${specSchemaDir}\``,
     '',
-    'The five blank spec scaffolds (`intent.md`, `contract.md`, `roadmap.md`, `tasks.md`,',
-    '`audit.md`) referenced by the role body above were deployed to that directory in this',
-    'repository by `harny init`. Read them from there; the canonical `templates/spec-schema/`',
-    'path named in the role body exists only inside the harny package.',
+    `The blank spec scaffolds (${SPEC_SCHEMA_NAMES.map((name) => `\`${name}.md\``).join(', ')})`,
+    'referenced by the role body above were deployed to that directory in this repository by',
+    '`harny init`. The architect writes three of them (`intent.md`, `execution-plan.md`,',
+    '`tasks.md`); the auditor writes `audit.md`. Read them from there; the canonical',
+    '`templates/spec-schema/` path named in the role body exists only inside the harny package.',
     '',
     GENERATED_BLOCK_END,
   ];

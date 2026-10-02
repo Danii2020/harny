@@ -137,6 +137,11 @@ export const REPO_READINESS_FAMILY_LABEL = 'repo readiness';
  *  exactly like `REPO_READINESS_FAMILY_LABEL`. */
 export const SECURITY_FAMILY_LABEL = 'security';
 
+/** Files the architect writes; `audit.md` is optional until the audit runs. */
+const ARCHITECT_SCHEMA_FILES = ['intent', 'execution-plan', 'tasks'] as const;
+/** The pre-streamlined five-file shape, still accepted for legacy spec dirs. */
+const LEGACY_SCHEMA_FILES = ['intent', 'contract', 'roadmap', 'tasks', 'audit'] as const;
+
 /** The generated data file's schema. Every value in it is derived at generation
  *  time from code that already owns it; the runner script hard-codes none of them
  *  (BG-3). */
@@ -146,6 +151,7 @@ export interface DoctorChecksFile {
     readonly dir: string;
     readonly reservedDirs: readonly string[];
     readonly schemaFiles: readonly string[];
+    readonly legacySchemaFiles?: readonly string[];
     readonly shippedMarker: string;
     readonly approvedVerdicts: readonly string[];
   };
@@ -431,7 +437,8 @@ export function buildDoctorChecks(
     specs: {
       dir: SPECS_DIR,
       reservedDirs: RESERVED_SPEC_DIRS,
-      schemaFiles: SPEC_SCHEMA_NAMES,
+      schemaFiles: ARCHITECT_SCHEMA_FILES,
+      legacySchemaFiles: LEGACY_SCHEMA_FILES,
       shippedMarker: SHIPPED_MARKER,
       approvedVerdicts: APPROVED_VERDICTS,
     },

@@ -432,14 +432,13 @@ describe('init --yes --tools claude-code end to end (R4) (T36)', () => {
         // Code's own project-scope config file.
         '.mcp.json',
         '.sdd/spec-schema/intent.md',
-        '.sdd/spec-schema/contract.md',
-        '.sdd/spec-schema/roadmap.md',
+        '.sdd/spec-schema/execution-plan.md',
         '.sdd/spec-schema/tasks.md',
         '.sdd/spec-schema/audit.md',
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(39);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -563,14 +562,13 @@ describe('init --yes --tools cursor end to end (intent.md success criteria) (Gu 
         // own project-scope config file.
         '.cursor/mcp.json',
         '.sdd/spec-schema/intent.md',
-        '.sdd/spec-schema/contract.md',
-        '.sdd/spec-schema/roadmap.md',
+        '.sdd/spec-schema/execution-plan.md',
         '.sdd/spec-schema/tasks.md',
         '.sdd/spec-schema/audit.md',
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(39);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -603,14 +601,13 @@ describe('init --yes --tools kiro end to end (intent.md success criteria) (Gu 11
         // own workspace-scope config file.
         '.kiro/settings/mcp.json',
         '.sdd/spec-schema/intent.md',
-        '.sdd/spec-schema/contract.md',
-        '.sdd/spec-schema/roadmap.md',
+        '.sdd/spec-schema/execution-plan.md',
         '.sdd/spec-schema/tasks.md',
         '.sdd/spec-schema/audit.md',
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(39);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -643,14 +640,13 @@ describe('init --yes --tools github-copilot end to end (intent.md success criter
         // Code's own MCP config file — Copilot's `mcpConfig`, root key `servers`.
         '.vscode/mcp.json',
         '.sdd/spec-schema/intent.md',
-        '.sdd/spec-schema/contract.md',
-        '.sdd/spec-schema/roadmap.md',
+        '.sdd/spec-schema/execution-plan.md',
         '.sdd/spec-schema/tasks.md',
         '.sdd/spec-schema/audit.md',
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(files).toHaveLength(39);
+    expect(files).toHaveLength(38);
   });
 });
 
@@ -684,14 +680,13 @@ describe('init --yes --tools codex end to end (contract.md SC2, Gu 14, 15) (Task
       // pre-existed.
       '.codex/config.toml',
       '.sdd/spec-schema/intent.md',
-      '.sdd/spec-schema/contract.md',
-      '.sdd/spec-schema/roadmap.md',
+      '.sdd/spec-schema/execution-plan.md',
       '.sdd/spec-schema/tasks.md',
       '.sdd/spec-schema/audit.md',
       '.sdd/harness.json',
     ];
     expect(files.sort()).toEqual(expectedFiles.sort());
-    expect(files).toHaveLength(39);
+    expect(files).toHaveLength(38);
 
     // Every generated path is relative and contained within the target
     // directory -- no absolute path, no ".." segment.
@@ -783,10 +778,10 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
     const files = await listFilesRecursively(targetDir);
     // (test-tiers.) +3 skill-library files (harny-test/high-value-tests.md x 3
     // roots, 33 -> 36) over the pre-test-tiers 92.
-    expect(files).toHaveLength(95);
+    expect(files).toHaveLength(94);
 
     const sharedFiles = files.filter((f) => f.startsWith('.sdd/'));
-    expect(sharedFiles).toHaveLength(18);
+    expect(sharedFiles).toHaveLength(17);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(36);
@@ -813,7 +808,7 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
     expect(toolArtifacts).toContain('.codex/config.toml');
 
     const specSchemaFiles = files.filter((f) => f.startsWith('.sdd/spec-schema/'));
-    expect(specSchemaFiles).toHaveLength(5);
+    expect(specSchemaFiles).toHaveLength(4);
     expect(files.filter((f) => f === '.sdd/harness.json')).toHaveLength(1);
     expect(files.filter((f) => f === '.sdd/feedback/run-feedback.mjs')).toHaveLength(1);
     // (readiness-doctor) the three new tool-neutral doctor/shared artifacts,
@@ -835,7 +830,7 @@ describe('init --yes --tools claude-code,cursor,kiro,github-copilot,codex end to
     ]);
     expect(code).toBe(0);
 
-    for (const name of ['intent', 'contract', 'roadmap', 'tasks', 'audit']) {
+    for (const name of ['intent', 'execution-plan', 'tasks', 'audit']) {
       const generated = await fs.readFile(
         path.join(targetDir, '.sdd', 'spec-schema', `${name}.md`),
         'utf8',
@@ -908,7 +903,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     // generator) over the pre-context7-mcp 86.
     // (test-tiers.) +3 skill-library files (harny-test/high-value-tests.md x 3
     // roots, 39 -> 42) over the pre-test-tiers 98.
-    expect(files).toHaveLength(101);
+    expect(files).toHaveLength(100);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(42);
@@ -942,7 +937,7 @@ describe('--skills all and --skills none amend the default skill-library artifac
     // (test-tiers.) harny-test is core, so high-value-tests.md is present
     // under --skills none too: +3 skill-library files (30 -> 33) over the
     // pre-test-tiers 89.
-    expect(files).toHaveLength(92);
+    expect(files).toHaveLength(91);
 
     const skillLibraryFiles = files.filter(isSkillLibraryPath);
     expect(skillLibraryFiles).toHaveLength(33);

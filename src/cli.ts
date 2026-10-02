@@ -18,7 +18,7 @@ import {
 } from './config.js';
 import type { ComponentSelection, PartialHarnessConfig, RoleOverride } from './config.js';
 import type { GateId, OptionalSkillId, RoleId, ToolId } from './vocabulary.js';
-import { runInit } from './init.js';
+import { runInit, runUpdate } from './init.js';
 import type { InitIO } from './init.js';
 import { runDoctor } from './doctor.js';
 
@@ -29,6 +29,11 @@ const defaultIO: InitIO = {
 
 interface DoctorCommandOptions {
   readonly stack?: string;
+}
+
+interface UpdateCommandOptions {
+  readonly dryRun?: boolean;
+  readonly force?: boolean;
 }
 
 interface InitCommandOptions {
@@ -166,6 +171,15 @@ async function runInitCommand(target: string, opts: InitCommandOptions, io: Init
   }
 }
 
+/** **(NEW — streamlined-spec-artifacts, SA-18.)** Resolves `targetDir` and delegates to
+ *  `runUpdate`; the config comes only from `<target>/.sdd/harness.json`. */
+async function runUpdateCommand(target: string, opts: UpdateCommandOptions, io: InitIO): Promise<void> {
+  const targetDir = path.resolve(process.cwd(), target);
+  await assertWritableDirectory(targetDir);
+
+  await runUpdate({ targetDir, dryRun: Boolean(opts.dryRun), force: Boolean(opts.force), io });
+}
+
 /** **(NEW — readiness-doctor, G8.)** Resolves `targetDir` and delegates to
  *  `runDoctor`. Shares `assertWritableDirectory`'s `USAGE` posture with `init`;
  *  writes nothing, prompts nothing, and never calls `process.exit` itself — every
@@ -228,6 +242,16 @@ export function buildProgram(io: InitIO = defaultIO): Command {
     .option('--stack <name>', 'Override the stack recorded in .sdd/harness.json')
     .action(async (target: string, cmdOptions: DoctorCommandOptions) => {
       await runDoctorCommand(target, cmdOptions, io);
+    });
+
+  program
+    .command('update')
+    .description('Bring an initialised repository up to this harny version, from its recorded harness configuration.')
+    .argument('[target]', 'Target directory to update', '.')
+    .option('--dry-run', 'Print the report; write and delete nothing')
+    .option('--force', 'Proceed past the uncommitted-changes and not-a-git-repo refusals')
+    .action(async (target: string, cmdOptions: UpdateCommandOptions) => {
+      await runUpdateCommand(target, cmdOptions, io);
     });
 
   return program;

@@ -1,6 +1,6 @@
 # ADR 0048: The tier-confirmation checkpoint is conditional, not a fourth human gate
 
-- **Status**: Accepted
+- **Status**: Amended by ADR 0053 (checkpoint replaced by a stop rule; three-gate invariant stands)
 - **Date**: 2026-09-24
 - **Feature**: test-tiers
 - **Capability**: pipeline-roles

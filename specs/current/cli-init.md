@@ -1,6 +1,6 @@
 # CLI Init Specification
 
-> Last synced: 2026-09-23 (monorepo-mode). Owned artifacts: `src/cli.ts`, `src/config.ts`,
+> Last synced: 2026-10-02 (streamlined-spec-artifacts). Owned artifacts: `src/cli.ts`, `src/config.ts`,
 > `src/prompts.ts`, `src/init.ts`, `src/writer.ts`, `src/errors.ts`,
 > `src/engine.ts`, `src/templates.ts`, `src/vocabulary.ts`, `bin/harness.js`.
 
@@ -289,6 +289,34 @@ install.
   `.sdd/`, one runner per family, one hook config per tool, one CI workflow,
   one spec-schema set — and no new file under `templates/`
 
+### Requirement: CLI-15 — `harny update [target]` brings an install up to date
+
+The system SHALL provide `harny update [target]` (default `.`; options `--dry-run`,
+`--force`; no prompts) that reads only `<target>/.sdd/harness.json` and renders
+through `runInit` (non-interactive, no git-hooks activation), so its files are
+byte-identical to a fresh `init`. It reports one line per path (`created`, `updated`,
+`unchanged`, `removed`) plus a summary; `--dry-run` prefixes `would be` and writes
+nothing. It deletes only the paths in `LEGACY_HARNESS_PATHS` (the stale
+`.sdd/spec-schema/contract.md` and `roadmap.md`): regular files only, contained to
+the install root, after all writes; directories and symlinks are skipped with a
+warning. `init --force` removes the same files with no dirty check. `update` never
+touches `specs/`, `core.hooksPath` or `harness.json` bytes, and a second run reports
+only `unchanged`. Without `--force` it refuses with CONFLICT (exit 3) when a path it
+would change is tracked with staged or unstaged changes (resolved through symlinks to
+the file actually written), when git itself fails, or when the target is not in a git
+repo; untracked paths never block; `--dry-run` never refuses and names the triggering
+paths. A missing `harness.json` is a USAGE error (exit 2).
+
+**Source:** streamlined-spec-artifacts · contract.md § SA-18 to SA-25; audit.md F1, F2 (closed round 2); ADR 0055, ADR 0056
+
+#### Scenario: A tracked generated file has local edits
+- **WHEN** `harny update` would change a tracked file with uncommitted changes, including one reached through a symlinked skill directory
+- **THEN** it exits 3 listing the path and changes nothing, unless `--force` is given
+
+#### Scenario: A second update with nothing changed
+- **WHEN** `harny update` runs twice with no change in between
+- **THEN** the second run reports only `unchanged` lines and exits 0
+
 ## Invariants
 
 1. No code path in `src/` writes to, renames, or deletes anything under `templates/` or `.claude/` (`templates/` is a read-only canonical source).
@@ -307,6 +335,9 @@ install.
 | MR-F6 | `tests/packaging.test.ts` — the file `AGENTS.md` S4 names as its enforcement evidence — now asserts the dependency **key set** rather than exact version pins, so S4 has lost mechanical version-drift detection repo-wide and has no replacement enforcement point. Accepted knowingly by the human as an amendment to `codex-generator` guarantee 16; the finding itself stands as correct. | MEDIUM (accepted amendment, consequence open) | monorepo-mode · audit.md F6 |
 | MR-F11 | The interactive repo-shape question (CLI-13) is asked **fourth** — after tools, roles and optional skills, and before the stack question — not literally first as its own contract headline says, and it carries no `Q` number in `src/prompts.ts`'s otherwise-numbered comment scheme. The operative clause ("before any stack question") holds. Amend the wording or renumber the prompt comments. | LOW (wording) | monorepo-mode · audit.md F11, C25 |
 | MR-F9 | CI had not exercised `monorepo-mode` at sign-off: nothing was committed, so the latest green `harny feedback` run belongs to the previous commit. Expected state at ship time; requires a green run on the shipping commit. | LOW (process) | monorepo-mode · audit.md F9 |
+| F3 | Under `update`, the MCP merge warning still advises `--force`, which `update` does not pass to the MCP merge (should drop the advice or point to `init --force`) | LOW (deferred) | streamlined-spec-artifacts · audit.md F3 |
+| F6 | No CI run covers streamlined-spec-artifacts: it was uncommitted at sign-off; confirm `harny feedback` is green with N >= 1 once pushed | LOW | streamlined-spec-artifacts · audit.md F6 |
+| SA-15 | The repo's own `.sdd/` was refreshed via a scratch-copy `update --force`, not `update` in place, because `update` writes through the `.claude/skills` symlinks into dogfood `.agents/skills/*` (accepted deviation D1) | LOW (accepted) | streamlined-spec-artifacts · audit.md D1; ADR 0056 |
 
 ## Contributing features
 
@@ -317,6 +348,7 @@ install.
 | dogfood-quick-fixes | 2026-09-22 | CLI-4/CLI-5/CLI-10: Context7 endpoint value changed from `/mcp` to `/mcp/oauth` in the generated MCP server entries. Determinism and merge-marked path invariants hold at the new value. Packaged template count remains thirty-one. |
 | ci-workflow-root | 2026-09-23 | CLI-1/CLI-4/CLI-5: added `src/repo.ts` for git-root detection (CLI-1 step 11 also resolves install location), widened CLI-4's determinism input set, expanded CLI-5 to cover repository-root conflicts. ADRs 0031, 0033 record the declared write-root and repository-detection strategy decisions. |
 | monorepo-mode | 2026-09-23 | CLI-12–CLI-14: repeatable `--component <path>=<stack>`, `stack`/`components` mutual exclusivity from one source, component path normalization/dedup/canonical ordering, `components` last in the serialized key order, the interactive repo-shape question with flag presetting, and golden-byte identity for every `components`-free install. Amended CLI-1 (step 9 resolves components, step 11 builds the commands payload; still thirteen steps) and CLI-4 (the component list joins the determinism input set, canonically ordered). Restated CLI-10 as still true: still thirty-one `templates/**` files, no new template. ADRs 0038, 0040. Verdict APPROVED WITH RESERVATIONS: MR-F2, MR-F4, MR-F6, MR-F9, MR-F11 carried. |
+| streamlined-spec-artifacts | 2026-10-02 | CLI-15: the `harny update` verb, `LEGACY_HARNESS_PATHS` removals on `init --force` and `update`, fail-closed dirty-tree refusal |
 
 ## Related ADRs
 
@@ -332,3 +364,5 @@ install.
 | 0033 | Detect the repository root by walking for a `.git` entry, not by shelling out | Accepted | `specs/archived/ci-workflow-root/decisions/0033-walk-git-dont-shell.md` |
 | 0038 | `components` replaces `stack`, mutually exclusive, never a fallback | Accepted | `specs/archived/monorepo-mode/decisions/0038-components-replaces-stack.md` |
 | 0040 | The component list travels on the payload, not as a new `CiPlacement` field | Accepted | `specs/archived/monorepo-mode/decisions/0040-component-list-on-payload-not-ciplacement.md` |
+| 0055 | `harny update` renders through init, deletes only a constant list, and fails closed | Accepted | `specs/archived/streamlined-spec-artifacts/decisions/0055-harny-update-verb-and-fail-closed-safety.md` |
+| 0056 | This repo's .sdd/ is refreshed through a scratch copy, not by update in place | Accepted | `specs/archived/streamlined-spec-artifacts/decisions/0056-dogfood-sdd-refreshed-via-scratch-copy.md` |

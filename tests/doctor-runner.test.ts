@@ -864,3 +864,126 @@ describe('family 5 resolves a command\'s cwd AND its requires probe from command
     expect(result.stdout.toLowerCase()).toMatch(/ok\s+root-scoped/);
   });
 });
+
+/**
+ * Spec: specs/streamlined-spec-artifacts
+ * Covers: contract.md SA-3, SA-8, SA-9, SA-10, SA-11 and the Error Handling
+ * Contract rows for a new-shape dir missing `execution-plan.md`, a legacy dir
+ * missing `audit.md`, a dir holding both shapes, and an old `checks.json`;
+ * intent.md SC5, SC6, SC7; audit.md Test Coverage T3, T4, T5.
+ *
+ * Red-phase note: today's runner checks every dir against `schemaFiles` only and
+ * ignores `legacySchemaFiles`, so a new-shape dir fails (it has no contract or
+ * roadmap) and the both-shapes and legacy-fail cases are judged against the wrong
+ * list. The old-`checks.json` test is a declared regression guard (SA-10) that
+ * passes today and must stay green.
+ */
+const NEW_SHAPE_SPECS = {
+  ...SPECS,
+  schemaFiles: ['intent', 'execution-plan', 'tasks'],
+  legacySchemaFiles: ['intent', 'contract', 'roadmap', 'tasks', 'audit'],
+};
+
+async function runSpecState(repoDir: string, specs: unknown): Promise<RunnerResult> {
+  const checksFile = await writeChecksFile(repoDir, { ...readyChecks(), specs });
+  return runRunner({ cwd: repoDir, args: ['--checks', checksFile] });
+}
+
+describe('a new-shape feature dir is judged against the three architect files (SA-8, SA-11) (T3)', () => {
+  it('passes with intent, execution-plan and tasks, with or without audit.md', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'new-shape-no-audit', { schemaFiles: ['intent', 'execution-plan', 'tasks'] });
+    await writeFeature(repoDir, 'new-shape-with-audit', {
+      schemaFiles: ['intent', 'execution-plan', 'tasks', 'audit'],
+    });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.stdout + result.stderr).not.toMatch(/fail[^\n]*new-shape|new-shape[^\n]*fail/i);
+    expect(result.code).toBe(0);
+  });
+
+  it('fails naming execution-plan.md when it is the missing file', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'no-plan-feature', { schemaFiles: ['intent', 'tasks'] });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+    const output = result.stdout + result.stderr;
+
+    expect(result.code).toBe(2);
+    expect(output).toMatch(/no-plan-feature is missing[^\n]*execution-plan/);
+  });
+
+  it('never treats a shipped new-shape dir without audit.md as approved-and-unarchived', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'shipped-no-audit', {
+      schemaFiles: ['intent', 'execution-plan', 'tasks'],
+      shipped: true,
+    });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.code).toBe(0);
+  });
+});
+
+describe('a dir holding contract.md or roadmap.md is judged against the legacy five (SA-9) (T4)', () => {
+  it('passes a legacy dir with all five files', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'legacy-complete', {
+      schemaFiles: ['intent', 'contract', 'roadmap', 'tasks', 'audit'],
+    });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.code).toBe(0);
+  });
+
+  it('fails a legacy dir missing audit.md, naming it', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'legacy-no-audit', { schemaFiles: ['intent', 'contract', 'roadmap', 'tasks'] });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.code).toBe(2);
+    expect(result.stdout + result.stderr).toMatch(/legacy-no-audit is missing[^\n]*audit/);
+  });
+
+  it('judges a dir holding both shapes as legacy: complete legacy files plus execution-plan.md pass', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'both-complete', {
+      schemaFiles: ['intent', 'execution-plan', 'contract', 'roadmap', 'tasks', 'audit'],
+    });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.code).toBe(0);
+  });
+
+  it('judges a dir holding both shapes as legacy: an execution-plan.md does not excuse missing legacy files', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'both-incomplete', {
+      schemaFiles: ['intent', 'execution-plan', 'contract', 'tasks'],
+    });
+
+    const result = await runSpecState(repoDir, NEW_SHAPE_SPECS);
+
+    expect(result.code).toBe(2);
+    expect(result.stdout + result.stderr).toMatch(/both-incomplete is missing[^\n]*(roadmap|audit)/);
+  });
+});
+
+describe('a checks.json written before this feature behaves as today (SA-10) (T5)', () => {
+  it('with no legacySchemaFiles, every dir is checked against schemaFiles', async () => {
+    const repoDir = await makeReadyRepo();
+    await writeFeature(repoDir, 'old-complete', { schemaFiles: ['intent', 'contract', 'roadmap', 'tasks', 'audit'] });
+    await writeFeature(repoDir, 'old-incomplete', { schemaFiles: ['intent', 'contract', 'roadmap', 'tasks'] });
+
+    const result = await runSpecState(repoDir, SPECS);
+    const output = result.stdout + result.stderr;
+
+    expect(result.code).toBe(2);
+    expect(output).toMatch(/old-incomplete is missing[^\n]*audit/);
+    expect(output).not.toMatch(/old-complete is missing/);
+  });
+});

@@ -17,18 +17,20 @@ import {
   buildRuntimeSharedFiles,
   buildSharedFiles,
   buildSkillFiles,
+  HARNESS_CONFIG_PATH,
   skillRootsFor,
 } from './engine.js';
 import type { HookPayload } from './engine.js';
 import { buildDoctorFiles } from './doctor.js';
 import { buildMcpFiles } from './mcp.js';
 import { buildPermissionsFiles, parsePermissionPolicy } from './permissions.js';
-import { activateGitHooks, buildGitHooksFiles } from './git-hooks.js';
+import { activateGitHooks, buildGitHooksFiles, trackedPathsWithChanges } from './git-hooks.js';
 import { COMPONENT_DISCOVERY, buildNestedGuidanceBridgeFiles, loadDiscovery } from './component-docs.js';
 import { availableToolIds, getGenerator } from './generators/index.js';
 import type { GeneratedFile } from './generators/types.js';
 import { ciWorkflowPathFor, resolveInstallLocation } from './repo.js';
-import { applyWrites, displayPath, planWrites } from './writer.js';
+import { applyRemovals, applyWrites, classifyWrites, displayPath, planRemovals, planWrites } from './writer.js';
+import type { WriteStatus } from './writer.js';
 import { confirmGitHooks, confirmWrite, runInitPrompts } from './prompts.js';
 import { GATE_IDS } from './vocabulary.js';
 import type { ToolId } from './vocabulary.js';
@@ -55,6 +57,11 @@ export interface InitOptions {
    *  hooks. Otherwise they are activated after a successful write — after a
    *  confirmation when `interactive` (CC-6). */
   readonly gitHooks?: boolean;
+  /** **(NEW — streamlined-spec-artifacts, SA-21.)** Update mode, set only by
+   *  `runUpdate`: the same render pipeline, but overwrites without the CONFLICT
+   *  refusal, applies the SA-22 tracked-changes safety check instead, skips
+   *  unchanged files, prints a per-path report, and never activates git hooks. */
+  readonly update?: boolean;
   readonly io: InitIO;
 }
 
@@ -67,6 +74,8 @@ export interface InitResult {
   /** Selected tools that have no generator yet. */
   readonly skippedTools: readonly ToolId[];
   readonly dryRun: boolean;
+  /** **(NEW — SA-23.)** Known-legacy paths actually removed. Empty when `dryRun`. */
+  readonly removed?: readonly string[];
 }
 
 async function readConfigFile(configFile: string): Promise<string> {
@@ -346,7 +355,7 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   // READS from targetDir while building: each file's contents extend whatever is
   // already there (G3), which is why this call is awaited and why its outputs are
   // merge-marked (G4).
-  const mcp = await buildMcpFiles(resolvedGenerators, { targetDir, force: options.force });
+  const mcp = await buildMcpFiles(resolvedGenerators, { targetDir, force: options.force && !options.update });
   files.push(...mcp.files);
   for (const warning of mcp.warnings) {
     io.warn(warning);
@@ -371,13 +380,30 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   const plan = await planWrites(files, targetDir, location.repoRoot);
   const planned = plan.files.map((file) => displayPath(file, targetDir, plan.repoRoot));
 
+  // (NEW — streamlined-spec-artifacts, SA-23.) Known-legacy removals, planned from
+  // the constant list only.
+  const removals = await planRemovals(targetDir);
+  for (const skip of removals.skipped) {
+    io.warn(`Skipped legacy path ${skip.path}: it ${skip.reason}.`);
+  }
+
+  if (options.update) {
+    return runUpdateStep({ options, config, plan, planned, removals, skippedTools, location, io });
+  }
+
   // 13. Dry-run stops here; otherwise confirm (if interactive) and write.
   if (options.dryRun) {
     io.log(`Would write ${planned.length} file(s) to ${targetDir}:`);
     for (const path of planned) {
       io.log(`  ${path}`);
     }
-    return { config, planned, written: [], skippedTools, dryRun: true };
+    if (removals.remove.length > 0) {
+      io.log(`Would remove ${removals.remove.length} legacy file(s):`);
+      for (const entry of removals.remove) {
+        io.log(`  ${entry.path}`);
+      }
+    }
+    return { config, planned, written: [], skippedTools, dryRun: true, removed: [] };
   }
 
   if (options.interactive) {
@@ -385,6 +411,10 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
   }
 
   const written = await applyWrites(plan, { force: options.force });
+  const removed = await applyRemovals(removals.remove, written);
+  for (const path of removed) {
+    io.log(`  removed  ${path}`);
+  }
 
   // (NEW — commit-checks, CC-6.) Activation is the one consented side effect outside
   // the write plan: a single git config key, set only after the files it points at
@@ -401,5 +431,125 @@ export async function runInit(options: InitOptions): Promise<InitResult> {
     }
   }
 
-  return { config, planned, written, skippedTools, dryRun: false };
+  return { config, planned, written, skippedTools, dryRun: false, removed };
+}
+
+interface UpdateStepInput {
+  readonly options: InitOptions;
+  readonly config: HarnessConfig;
+  readonly plan: Awaited<ReturnType<typeof planWrites>>;
+  readonly planned: readonly string[];
+  readonly removals: Awaited<ReturnType<typeof planRemovals>>;
+  readonly skippedTools: readonly ToolId[];
+  readonly location: Awaited<ReturnType<typeof resolveInstallLocation>>;
+  readonly io: InitIO;
+}
+
+/** **(NEW — SA-20, SA-22, SA-24.)** Steps 12b-13 of the pipeline in update mode:
+ *  classify, safety check, apply, report. Never activates git hooks. */
+async function runUpdateStep(input: UpdateStepInput): Promise<InitResult> {
+  const { options, config, plan, planned, removals, skippedTools, location, io } = input;
+  const dryRun = options.dryRun;
+  const classified = await classifyWrites(plan);
+
+  type Status = WriteStatus | 'removed';
+  const lines: { path: string; status: Status }[] = [
+    ...classified.map((c) => ({ path: c.path, status: c.status as Status })),
+    ...removals.remove.map((r) => ({ path: r.path, status: 'removed' as Status })),
+  ];
+
+  // SA-22: every path that would change (updated + removed) must be clean in git.
+  const changing = [
+    ...classified.filter((c) => c.status === 'updated').map((c) => ({ path: c.path, absolute: c.absolute })),
+    ...removals.remove.map((r) => ({ path: r.path, absolute: r.absolute })),
+  ];
+  const offending: string[] = [];
+  let notInRepo = false;
+  let gitFailed = false;
+  if (!location.insideRepo) {
+    notInRepo = true;
+  } else {
+    try {
+      const dirty = new Set(await trackedPathsWithChanges(location.repoRoot, changing.map((c) => c.absolute)));
+      for (const change of changing) {
+        if (dirty.has(change.absolute)) offending.push(change.path);
+      }
+    } catch {
+      gitFailed = true; // fail closed: uncommitted edits cannot be ruled out
+    }
+  }
+  const refusal = notInRepo || gitFailed || offending.length > 0;
+
+  if (refusal && !options.force) {
+    if (dryRun) {
+      io.warn(
+        notInRepo
+          ? 'Not inside a git repository: a real update would refuse without --force.'
+          : gitFailed
+            ? 'git could not report the working-tree state: a real update would refuse without --force.'
+            : `A real update would refuse without --force: uncommitted changes in ${offending.join(', ')}.`,
+      );
+    } else {
+      throw new HarnessError(
+        'CONFLICT',
+        notInRepo || gitFailed
+          ? (notInRepo
+              ? `${options.targetDir} is not inside a git repository`
+              : 'git could not report the working-tree state') +
+              ', so uncommitted edits cannot be ruled out. Re-run with --force to update anyway.'
+          : `Refusing to update ${offending.length} path(s) with uncommitted changes. ` +
+              'Commit or stash them, or re-run with --force.',
+        notInRepo || gitFailed ? changing.map((c) => c.path) : offending,
+      );
+    }
+  }
+
+  let written: readonly string[] = [];
+  let removed: readonly string[] = [];
+  if (!dryRun && !(refusal && !options.force)) {
+    written = await applyWrites(plan, { force: true, skipUnchanged: true });
+    removed = await applyRemovals(removals.remove, written);
+  }
+
+  const prefix = dryRun ? 'would be ' : '';
+  for (const line of lines) {
+    io.log(`  ${prefix}${line.status}  ${line.path}`);
+  }
+  const count = (status: Status) => lines.filter((l) => l.status === status).length;
+  io.log(
+    `${dryRun ? 'Dry run: ' : ''}${count('created')} ${prefix}created, ${count('updated')} ${prefix}updated, ` +
+      `${count('unchanged')} unchanged, ${count('removed')} ${prefix}removed.`,
+  );
+  return { config, planned, written, skippedTools, dryRun, removed };
+}
+
+/**
+ * **(NEW — streamlined-spec-artifacts, SA-18, SA-21.)** `harny update`: renders through
+ * `runInit` from `<target>/.sdd/harness.json` (non-interactive, no git-hooks
+ * activation), so its output is byte-identical to a fresh `init` with that config.
+ */
+export async function runUpdate(options: {
+  readonly targetDir: string;
+  readonly templatesRoot?: string;
+  readonly dryRun: boolean;
+  readonly force: boolean;
+  readonly io: InitIO;
+}): Promise<InitResult> {
+  const configFile = path.join(options.targetDir, HARNESS_CONFIG_PATH);
+  try {
+    await fs.access(configFile);
+  } catch {
+    throw new HarnessError('USAGE', `${HARNESS_CONFIG_PATH} not found: not initialised; run harny init.`);
+  }
+  return runInit({
+    targetDir: options.targetDir,
+    templatesRoot: options.templatesRoot,
+    configFile,
+    interactive: false,
+    dryRun: options.dryRun,
+    force: options.force,
+    gitHooks: false,
+    update: true,
+    io: options.io,
+  });
 }

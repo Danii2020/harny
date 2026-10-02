@@ -224,14 +224,13 @@ describe('runInit — happy path over the well-formed fixture (T29)', () => {
         // independent of which templates root is loaded.
         '.mcp.json',
         '.sdd/spec-schema/intent.md',
-        '.sdd/spec-schema/contract.md',
-        '.sdd/spec-schema/roadmap.md',
+        '.sdd/spec-schema/execution-plan.md',
         '.sdd/spec-schema/tasks.md',
         '.sdd/spec-schema/audit.md',
         '.sdd/harness.json',
       ].sort(),
     );
-    expect(result.planned).toHaveLength(23);
+    expect(result.planned).toHaveLength(22);
   });
 });
 

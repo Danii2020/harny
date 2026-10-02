@@ -208,53 +208,45 @@ absent, since it is untracked and therefore absent on a fresh clone and in CI.
 - **WHEN** the live, per-tool conductor file does not exist (e.g. a fresh clone or CI)
 - **THEN** the parity test skips, observably, and the suite still passes
 
-### Requirement: PR-12 — Conditional tier-confirmation checkpoint, not a gate
+### Requirement: PR-12 — Test tiers come from § Validation; a stop rule, not a gate (amended)
 
-The system SHALL have `sdd-test-writer` propose tests at the tier (`unit` /
-`integration` / `e2e`) suited to each spec item, with a framework inferred per tier
-from repository evidence, recorded as a `### Test Plan` in `audit.md` § Test
-Coverage. Confirmation is required if and only if the plan contains a tier beyond
-`unit`, or any row's "Setup needed" is not `none` — a unit-only plan that would still
-need setup also asks. A plan that is both unit-only and needs no setup is recorded
-`NOT REQUIRED` and proceeds with no pause. The checkpoint is a conditional step
-inside the test-writer stage, described as an instance of the conductor's existing
-"any decision only the human can make" pause — it is explicitly not a fourth
-`[HUMAN GATE`; PR-6's three-gate count and order are unchanged.
+The system SHALL have `sdd-test-writer` write the tests that `execution-plan.md`
+§ Validation names, at the tiers (`unit` / `integration` / `e2e`) and with the setup
+it names; it adds no tier or setup beyond that. The architect owns § Validation and
+the human approves it at the spec gate; there is no `### Test Plan` in `audit.md`,
+no `**Plan status**` line and no conductor hard rule 6. If the test-writer needs a
+tier or setup § Validation does not name, it writes nothing more and reports first
+line `TEST PLAN AWAITING CONFIRMATION` naming the gap; the conductor asks the human
+and relays the answer, and the approved plan changes only through the architect.
+This stop is not a fourth `[HUMAN GATE`; PR-6's three-gate count and order are
+unchanged.
 
-**Source:** test-tiers · contract.md § Behavior Guarantees TT-6 to TT-18; ADR 0046, ADR 0047, ADR 0048.
+**Source:** test-tiers · contract.md § Behavior Guarantees TT-6 to TT-18; ADR 0046, ADR 0047, ADR 0048. **Amended by** streamlined-spec-artifacts · contract.md § SA-7; ADR 0052 (supersedes ADR 0047), ADR 0053 (amends ADR 0048). The Test Plan, `Plan status` and always-on confirmation requirements of the original PR-12 are retired.
 
-#### Scenario: The test-writer's plan needs a non-unit tier or any setup
-- **WHEN** the Test Plan contains a tier beyond `unit`, or any row's "Setup needed"
-  is not `none`
-- **THEN** the test-writer stops for confirmation before writing a test or
-  installing anything — a delegated invocation records `PROPOSED` and reports the
-  first line `TEST PLAN AWAITING CONFIRMATION` for the conductor to relay; a direct
-  invocation asks inline and waits
+#### Scenario: The test-writer needs a tier § Validation does not name
+- **WHEN** the tests need a tier or setup absent from `execution-plan.md` § Validation
+- **THEN** it stops with first line `TEST PLAN AWAITING CONFIRMATION` naming the gap, and writes no further tests
 
-#### Scenario: The plan is unit-only with no setup
-- **WHEN** the Test Plan is unit-only and every row's "Setup needed" is `none`
-- **THEN** it is recorded `NOT REQUIRED (unit-only, no setup)`, tests are written in
-  the same invocation with no pause, and the conductor's diagram shows no additional
-  `[HUMAN GATE` line
+#### Scenario: § Validation covers everything the tests need
+- **WHEN** every needed tier and setup is named in § Validation
+- **THEN** the test-writer proceeds with no pause and no confirmation step
 
-### Requirement: PR-13 — Auditor checks tier coverage
+### Requirement: PR-13 — Auditor checks tier coverage against § Validation (amended)
 
-The system SHALL have `sdd-auditor` read a `CONFIRMED` or `NOT REQUIRED` Test Plan
-and record a `### Tier Results` table in `audit.md` § Test Coverage, immediately
-below the Test Plan, verifying per tier that tests exist, that every listed spec id
-is covered at that tier, that the setup present matches the plan, and that the tier
-ran or is honestly reported "not run: <reason>". Deviations (an integration/e2e test
-written without a `CONFIRMED` plan, a confirmed tier with no tests, setup the plan
-never named, or a plan still `PROPOSED`) are raised as findings mapped onto the
-auditor's existing CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchanged.
+The system SHALL have `sdd-auditor` record a `### Tier Results` table in `audit.md`
+§ Test Coverage, checked against `execution-plan.md` § Validation (a legacy dir has
+no § Validation, so the legacy contract and roadmap are the reference). It verifies
+per tier that tests exist, that every listed AC is covered, that the setup present
+matches § Validation, and that the tier ran or is honestly reported "not run:
+<reason>". A test at a tier § Validation does not name, a named tier with no tests,
+and setup it does not name are raised as findings mapped onto the existing
+CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchanged.
 
-**Source:** test-tiers · contract.md § Behavior Guarantees TT-26 to TT-29; intent.md G7; ADR 0049.
+**Source:** test-tiers · contract.md § Behavior Guarantees TT-26 to TT-29; intent.md G7; ADR 0049. **Amended by** streamlined-spec-artifacts · contract.md § SA-7; ADR 0053.
 
-#### Scenario: The auditor audits a feature with a Test Plan
-- **WHEN** `sdd-auditor` audits a feature whose `audit.md` contains a `### Test Plan`
-- **THEN** it writes a `### Tier Results` table below it, checking coverage, setup
-  and run status per tier, and logs any deviation as a finding in the existing
-  severity buckets rather than a new tier-specific scale
+#### Scenario: The auditor audits a feature with a § Validation section
+- **WHEN** `sdd-auditor` audits a feature whose `execution-plan.md` has a § Validation
+- **THEN** it writes a `### Tier Results` table checking coverage, setup and run status per tier, and logs any deviation as a finding in the existing severity buckets
 
 ## Invariants
 
@@ -278,6 +270,8 @@ auditor's existing CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchang
 | TT-AL4 | The previous spec-to-test mapping instructions (every error-handling row, every constraint, the edge-case list) were dropped from the shipped test-writer without a contract line authorizing the removal; the shipped auditor still expects every contract guarantee to have at least one test. | MEDIUM | test-tiers · audit.md AL-4 |
 | TT-R1 | Tier inference, the confirmation rule, stop/ask behavior, setup scope and per-tier red reporting are prompt instructions no automated test can prove an agent follows; evidence is limited to five manual walkthroughs on Claude Code, three of which are PARTIAL (no e2e proposal seen, no edit relayed, no decline path, no inline continuation, and every "red for the right reason" leg blocked by the sample's own permission rule). | MEDIUM (human-gated) | test-tiers · audit.md AL-5, TT-R1 |
 
+> TT-AL1, TT-AL2, TT-AL3 and TT-R1 concern the retired Test Plan flow; streamlined-spec-artifacts (PR-12) removed the Test Plan, so they no longer describe shipped behavior.
+
 ## Contributing features
 
 | Feature | Shipped | What it established |
@@ -289,6 +283,7 @@ auditor's existing CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchang
 | dogfood-quick-fixes | 2026-09-22 | Added § Hard-rule inventory: `sdd-documentation` is the only role in the five-role set that carries an explicit hard rule forbidding `git commit` and `git push` (the other four deliberately do not carry this rule). This rule is stated in `templates/roles/sdd-documentation.md` § "Step 5: Hard Rules" and is wired into the canonical role body so it reaches all five tools' generated artifacts. |
 | documentation-role-completion | 2026-09-23 | Amended PR-2 (`cheapest` → `mid` for `sdd-documentation`; other four roles unchanged; `cheapest` unoccupied, not removed) and PR-5 (archive verification now a completion precondition, not just a duty). Added PR-11 (conductor verifies the archive itself before declaring the pipeline complete, plus a presence-gated parity guard for the live per-tool conductor copy). Restored role-template↔skill parity for the hand-off tail (the role template previously named `harny-adr` zero times). Renumbered the role template's steps: hard rules are now Step 7 and the change summary is Step 8 (was Step 5/6). |
 | test-tiers | 2026-09-24 | Added PR-12 (the shipped test-writer proposes unit/integration/e2e tests with a conditional, non-gate confirmation checkpoint) and PR-13 (the shipped auditor checks tier coverage and records `### Tier Results`). Shipped as the delivery layer only — reaches all five tools, `src/` unchanged; this repository's own dogfood test-writer and auditor intentionally keep the pre-tier flow (reservation TT-R3). Approved with reservations: two HIGH text defects in the shipped prompts (a wrong step cross-reference; four missing Error Handling Contract rows) and partial manual-walkthrough coverage on Claude Code, carried forward rather than blocking. |
+| streamlined-spec-artifacts | 2026-10-02 | Amended PR-12 and PR-13: the Test Plan moved into `execution-plan.md` § Validation (architect-owned, approved at the spec gate); the tier checkpoint became a stop rule (`TEST PLAN AWAITING CONFIRMATION`) only for tiers/setup § Validation omits; the architect writes three files, never `audit.md`. ADR 0047 superseded, ADR 0048 amended |
 
 ## Hard-rule inventory
 
@@ -305,6 +300,8 @@ auditor's existing CRITICAL/HIGH/MEDIUM/LOW buckets; the verdict enum is unchang
 | 0036 | Raise `sdd-documentation` to `mid`; leave `cheapest` unoccupied rather than reassigning another role to it | Accepted |
 | 0037 | Guard the untracked live conductor with a presence-gated parity test rather than tracking the file or leaving it unguarded | Accepted |
 | 0046 | Any setup requires confirmation, even for a unit-only plan | Accepted |
-| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Accepted |
-| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Accepted |
+| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Superseded by 0052 |
+| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Amended by 0053 |
 | 0049 | Tier findings map onto the auditor's existing severity buckets | Accepted |
+| 0052 | execution-plan.md § Validation is the only test plan (supersedes ADR 0047) | Accepted |
+| 0053 | The tier-confirmation checkpoint becomes a stop rule for gaps in § Validation (amends ADR 0048) | Accepted |

@@ -141,8 +141,9 @@ describe('--help (R1, C18b) (T35)', () => {
   });
 });
 
-describe('--help lists exactly two commands, init and doctor (readiness-doctor, SC16, T19)', () => {
-  it('still reads "Usage: harny [options] [command]" and lists both "init" and "doctor"', async () => {
+// Migrated by specs/streamlined-spec-artifacts (SA-18): `update` joins `init` and `doctor`.
+describe('--help lists exactly three commands, init, doctor and update (readiness-doctor, SC16, T19; SA-18)', () => {
+  it('still reads "Usage: harny [options] [command]" and lists "init", "doctor" and "update"', async () => {
     const { main } = await import('../src/cli.js');
 
     const { text } = await captureOutput(() => main(['--help']));
@@ -150,15 +151,28 @@ describe('--help lists exactly two commands, init and doctor (readiness-doctor, 
     expect(text).toContain('Usage: harny [options] [command]');
     expect(text).toContain('init');
     expect(text).toContain('doctor');
+    expect(text).toContain('update');
   });
 
-  it('registers exactly two commands on the program', async () => {
+  it('registers exactly three commands on the program', async () => {
     const { buildProgram } = await import('../src/cli.js');
 
     const program = buildProgram();
     const commandNames = program.commands.map((c) => c.name());
 
-    expect(commandNames).toEqual(['init', 'doctor']);
+    expect(commandNames.slice().sort()).toEqual(['doctor', 'init', 'update']);
+  });
+
+  it('the update command\'s own --help lists [target], --dry-run and --force, and no other options', async () => {
+    const { main } = await import('../src/cli.js');
+
+    const { text } = await captureOutput(() => main(['update', '--help']));
+
+    expect(text).toContain('target');
+    expect(text).toContain('--dry-run');
+    expect(text).toContain('--force');
+    expect(text).not.toContain('--tools');
+    expect(text).not.toContain('--yes');
   });
 
   it('the doctor command\'s own --help lists its [target] argument and --stack flag', async () => {

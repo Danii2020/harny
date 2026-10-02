@@ -19,7 +19,8 @@ Today, three things exist side by side:
    read from.
 3. A **CLI scaffolder**, `npx harny init`, that reads the portable templates and
    generates a configured pipeline into any target repository (see `README.md`
-   for usage). Five per-tool generators ship here: Claude Code, Cursor, Kiro,
+   for usage), and `npx harny update`, which brings an initialised repository up to
+   the installed harny version from its own `.sdd/harness.json`. Five per-tool generators ship here: Claude Code, Cursor, Kiro,
    GitHub Copilot, and Codex.
 
 The repo does not yet include a demo application or any publishing tooling. Those
@@ -30,19 +31,22 @@ scaffolds downstream, runs on every PR — see "Feedforward vs. feedback" below.
 ## The SDD spec schema
 
 Every feature built through this pipeline gets a directory `specs/<feature-name>/`
-containing exactly five files:
+containing three files written by the architect, plus `audit.md`, which only the
+auditor creates and writes:
 
 | File | Purpose |
 |---|---|
-| `intent.md` | The **why**: problem statement, goals, success criteria, non-goals, constraints |
-| `contract.md` | The **what**: interfaces, data models, behavior guarantees, error-handling contract |
-| `roadmap.md` | The **how**: implementation phases, dependencies, risk assessment, file-change map |
-| `tasks.md` | A granular checklist per roadmap phase, using states `[ ]` not started, `[x]` completed, `[~]` in progress, `[!]` blocked |
-| `audit.md` | Requirements checklist, contract-compliance table, test-coverage table, audit log, and a final verdict (`APPROVED` / `APPROVED WITH RESERVATIONS` / `REJECTED`) |
+| `intent.md` | The **why**: outcome, acceptance criteria (`AC1`…), scope, constraints, open questions, revision history; its header carries `Revision` and `Approval` |
+| `execution-plan.md` | The **how**: guidance consulted, ownership, binding constraints, proposed approach (revisable), consumers and migration, risks, and § Validation, the only test plan (one row per AC: tests, tier, framework, setup, commands) |
+| `tasks.md` | The working state: status, baseline, outcomes (`O1`… each mapped to ACs, with Tests / Red / Green evidence), working state, finding responses, checkpoint |
+| `audit.md` | Auditor-only: AC results, binding-constraint compliance, test coverage with `### Tier Results` against § Validation, findings, audit log, and a final verdict (`APPROVED` / `APPROVED WITH RESERVATIONS` / `REJECTED`) |
 
-Traceability is mandatory and reflexive: every item in `contract.md` cites the
-`intent.md` goal it serves; every item in `tasks.md` cites the `roadmap.md` phase
-it belongs to; every item in `audit.md` cites back to `intent.md` or `contract.md`.
+A feature dir holding `contract.md` or `roadmap.md` is the legacy five-file shape
+(`intent`, `contract`, `roadmap`, `tasks`, `audit`); the doctor judges it against the
+legacy list and every tool accepts it.
+
+Traceability is mandatory: every § Validation row cites an AC; every `tasks.md`
+outcome cites ACs; every item in `audit.md` cites an AC or a binding constraint.
 Nothing floats without a stated justification.
 
 Once a feature's `audit.md` reaches a final verdict of `APPROVED` or
@@ -69,8 +73,7 @@ templates/
 │   └── sdd-conductor.md
 ├── spec-schema/
 │   ├── intent.md
-│   ├── contract.md
-│   ├── roadmap.md
+│   ├── execution-plan.md
 │   ├── tasks.md
 │   └── audit.md
 ├── hooks/
@@ -141,7 +144,7 @@ and the documentation auto-hand-off, without assuming any single tool's package
 format (it is plain content, not framed as a Claude Code Skill).
 
 `templates/spec-schema/*.md` are the blank scaffolds the architect role emits for
-each of the five spec files, extracted so they exist as a single reusable source
+each of the spec files (the auditor fills `audit.md`), extracted so they exist as a single reusable source
 rather than being duplicated inline in the architect's prompt.
 
 `templates/skills/` contains the canonical, tool-neutral source for ten `harny-*`
@@ -179,25 +182,25 @@ symlinks at `.claude/skills/harny-*/`:
   `specs/current/` via `harny-sync` lookup
 - `harny-test` — since `test-tiers`, the shipped `templates/skills/harny-test/SKILL.md`
   and `sdd-test-writer.md` propose tests at the `unit` / `integration` / `e2e` tier
-  best suited to each spec item, infer a framework per tier from repository evidence
-  (never a hard-coded table), and record the proposal as a Test Plan in `audit.md`.
-  A plan that needs any tier beyond `unit`, or any setup at all, stops for a human
-  confirmation checkpoint (routed through the conductor when delegated, asked inline
-  when invoked directly) before writing a test or installing anything; a unit-only
-  plan with no setup proceeds without a pause. The rubric that grounds "is this test
+  best suited to each AC, with the framework per tier inferred from repository evidence
+  (never a hard-coded table). Since `streamlined-spec-artifacts` that plan is
+  `execution-plan.md` § Validation, approved with the specs at the first gate: the
+  test-writer writes the tests it names and stops, first line `TEST PLAN AWAITING
+  CONFIRMATION`, only if it needs a tier or setup that section does not name (routed
+  through the conductor when delegated). The rubric that grounds "is this test
   worth writing" ships as the bundled `harny-test/high-value-tests.md` resource,
   closing the previous dangling reference to an unshipped `high-value-tests` skill.
   **This is the shipped delivery layer only** — this repository's own dogfood
   `.claude/skills/harny-test/` (via `.agents/skills/harny-test/`) intentionally
   diverges: it keeps the pre-tier flow and its own `high-value-tests` skill, and this
-  repo's pipeline does not itself produce a Test Plan while building a feature
+  repo's pipeline does not itself run the tier flow while building a feature
   (declared in `tests/skills-fidelity.test.ts` `DIVERGENCE_TABLE`, reservation TT-R3)
-- `harny-implement` — phase execution, contract-is-law, adherence rules
+- `harny-implement` — outcome execution, ACs-and-binding-constraints-are-law, adherence rules
 - `harny-audit` — 7-step audit process, severity ratings, verdict enum. Since
   `test-tiers`, the shipped `harny-audit` skill and `sdd-auditor.md` also read a
-  feature's Test Plan and record a `### Tier Results` table in `audit.md` § Test
-  Coverage, raising CRITICAL/HIGH/MEDIUM/LOW findings for an unconfirmed non-unit
-  test, a confirmed tier with no tests, unnamed setup, or a plan left `PROPOSED` — the
+  feature's § Validation and record a `### Tier Results` table in `audit.md` § Test
+  coverage, raising findings for a test at a tier § Validation does not name, a named
+  tier with no tests, or setup it does not name — the
   same dogfood-diverges caveat above applies (the dogfood auditor has no tier flow)
 - `harny-document` — documentation trigger check, README/CHANGELOG/AGENTS update,
   `Shipped:` stamp, a three-sub-step archive hand-off (`harny-sync` archive mode →
@@ -288,10 +291,10 @@ Read across the rows:
 
 ## Working conventions
 
-- Treat `contract.md` as law during implementation: no scope creep beyond what a
-  feature's contract specifies.
-- Default to test-first (red phase before green phase) unless a feature's roadmap
-  says otherwise.
+- Treat the intent ACs and execution-plan binding constraints as law during
+  implementation: no scope creep beyond what a feature's spec specifies.
+- Default to test-first (red phase before green phase) unless a feature's execution
+  plan says otherwise.
 - The three human gates (post-specs, post-red-tests, post-audit) are not
   optional; the documentation hand-off after an approved audit is the one
   automatic, non-gated step in the pipeline.
@@ -309,8 +312,8 @@ skill points here rather than restating any of this; `sdd-executor` follows it, 
 |---|---|---|
 | S1 | TypeScript, ESM, `nodenext` resolution; relative imports carry the `.js` specifier; Node builtins use the `node:` prefix | `src/engine.ts:5–11`, `tsconfig.json` |
 | S2 | `HarnessError(code, message, details?)` is the only error thrown deliberately; the `HarnessErrorCode`→exit-code map lives in `src/errors.ts`; anything else reaching `main` is a bug mapping to `EXIT.UNEXPECTED` | `src/errors.ts:1–3, 28–31` |
-| S3 | Determinism and containment: identical inputs produce byte-identical output; every written path is relative and inside its **declared root** — the install directory for every artifact except the CI workflow, whose declared root is the enclosing git repository (`'repo'`, `src/generators/types.ts` `GeneratedFile.root`); every generated artifact ends in exactly one `\n` | `src/writer.ts:20–78`; `specs/archived/cli-skeleton/contract.md` guarantees 13, 19; `specs/archived/ci-workflow-root/contract.md` WR-1–WR-5 |
-| S4 | Adding a runtime or dev dependency requires an explicit line in that feature's `contract.md`; the default is none | `tests/packaging.test.ts` |
+| S3 | Determinism and containment: identical inputs produce byte-identical output; every written path is relative and inside its **declared root** — the install directory for every artifact except the CI workflow, whose declared root is the enclosing git repository (`'repo'`, `src/generators/types.ts` `GeneratedFile.root`); every generated artifact ends in exactly one `\n`. The one delete exception is `LEGACY_HARNESS_PATHS` (`src/writer.ts`): `init --force` and `update` remove only those listed files, never a directory, glob or anything under `specs/` | `src/writer.ts:20–78`; `specs/archived/cli-skeleton/contract.md` guarantees 13, 19; `specs/archived/ci-workflow-root/contract.md` WR-1–WR-5 |
+| S4 | Adding a runtime or dev dependency requires an explicit line in that feature's `execution-plan.md` § Binding constraints; the default is none | `tests/packaging.test.ts` |
 | S5 | A shared constant is imported from its owning module, never re-literalled at a call site (e.g. `SPEC_SCHEMA_DIR` from `src/engine.ts:45`) | `specs/archived/cursor-kiro-copilot-generators/contract.md` guarantee 8 |
 | S6 | Tests: vitest; `tests/` mirrors `src/`; every test file opens with a `Spec:` / `Covers:` header naming the feature and the ids it covers; contract ids never appear in test names; the default run is offline | `tests/packaging.test.ts:1–10`; `.claude/skills/high-value-tests/SKILL.md` |
 | S7 | In tool-neutral content, no single tool's mechanic may be named as the only possibility; name the behavior first and the tool as an attributed example | `specs/archived/canonical-role-templates/audit.md` AL-9 |

@@ -189,7 +189,6 @@ describe('buildDoctorChecks — determinism, fixed order, no environment leakage
     );
     const { SPEC_SCHEMA_DIR, HARNESS_CONFIG_PATH } = await import('../src/engine.js');
     const { FEEDBACK_RUNNER_PATH, CI_WORKFLOW_PATH } = await import('../src/feedback.js');
-    const { SPEC_SCHEMA_NAMES } = await import('../src/templates.js');
     const { CORE_SKILL_IDS } = await import('../src/vocabulary.js');
 
     const generators = [fakeGenerator('claude-code', '.claude/skills', '.claude/skills/sdd-conductor/SKILL.md')];
@@ -198,7 +197,11 @@ describe('buildDoctorChecks — determinism, fixed order, no environment leakage
     expect(checks.version).toBe(1);
     expect(checks.specs.dir).toBe(SPECS_DIR);
     expect(checks.specs.reservedDirs).toEqual(RESERVED_SPEC_DIRS);
-    expect(checks.specs.schemaFiles).toEqual([...SPEC_SCHEMA_NAMES]);
+    // (SA-3, streamlined-spec-artifacts.) `schemaFiles` lists only what the architect
+    // writes (audit.md is optional until the audit runs); the legacy five ride along
+    // so a pre-feature spec dir is still judged against its own shape.
+    expect(checks.specs.schemaFiles).toEqual(['intent', 'execution-plan', 'tasks']);
+    expect(checks.specs.legacySchemaFiles).toEqual(['intent', 'contract', 'roadmap', 'tasks', 'audit']);
     expect(checks.specs.shippedMarker).toBe(SHIPPED_MARKER);
     expect(checks.specs.approvedVerdicts).toEqual([...APPROVED_VERDICTS]);
 
@@ -520,7 +523,7 @@ describe('.sdd/doctor/checks.json is unchanged by this feature — no new select
       ['commands', 'componentDocs', 'repoReadiness', 'repoReadinessLabel', 'require', 'security', 'securityLabel', 'specs', 'version'].sort(),
     );
     expect(Object.keys(parsed.specs).sort()).toEqual(
-      ['approvedVerdicts', 'dir', 'reservedDirs', 'schemaFiles', 'shippedMarker'].sort(),
+      ['approvedVerdicts', 'dir', 'legacySchemaFiles', 'reservedDirs', 'schemaFiles', 'shippedMarker'].sort(),
     );
   });
 });

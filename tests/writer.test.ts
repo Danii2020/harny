@@ -441,3 +441,89 @@ describe('displayPath — POSIX, relative to targetDir; "../"-prefixed for a rep
     );
   });
 });
+
+/**
+ * Spec: specs/streamlined-spec-artifacts (repair round 1, audit F4)
+ * Covers: contract.md "Public API — src/writer.ts" `planRemovals` / `applyRemovals`
+ * (SA-19, SA-23): only regular files on the legacy list are removed; symlinks,
+ * directories and out-of-root real locations are skipped with a reason; a delete
+ * failure rejects with a plain Error (exit-1 path) disclosing written/removed files.
+ */
+describe('planRemovals / applyRemovals (SA-19, SA-23)', () => {
+  const LEGACY_A = '.sdd/spec-schema/contract.md';
+  const LEGACY_B = '.sdd/spec-schema/roadmap.md';
+
+  async function installDir(): Promise<string> {
+    const dir = await makeTempDir();
+    await fs.mkdir(path.join(dir, '.sdd', 'spec-schema'), { recursive: true });
+    return dir;
+  }
+
+  it('plans and deletes regular legacy files, leaving unrelated files', async () => {
+    const { planRemovals, applyRemovals } = await import('../src/writer.js');
+    const dir = await installDir();
+    await fs.writeFile(path.join(dir, LEGACY_A), 'a', 'utf8');
+    await fs.writeFile(path.join(dir, LEGACY_B), 'b', 'utf8');
+    await fs.writeFile(path.join(dir, '.sdd', 'spec-schema', 'mine.md'), 'keep', 'utf8');
+
+    const plan = await planRemovals(dir);
+    const removed = await applyRemovals(plan.remove, []);
+
+    expect([...removed].sort()).toEqual([LEGACY_A, LEGACY_B]);
+    await expect(fs.access(path.join(dir, LEGACY_A))).rejects.toThrow();
+    expect(await fs.readFile(path.join(dir, '.sdd', 'spec-schema', 'mine.md'), 'utf8')).toBe('keep');
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('skips a symlink and a directory with a reason, and never deletes the symlink target', async () => {
+    const { planRemovals } = await import('../src/writer.js');
+    const dir = await installDir();
+    const outside = await makeTempDir();
+    await fs.writeFile(path.join(outside, 'precious.md'), 'p', 'utf8');
+    await fs.symlink(path.join(outside, 'precious.md'), path.join(dir, LEGACY_A));
+    await fs.mkdir(path.join(dir, LEGACY_B));
+
+    const plan = await planRemovals(dir);
+
+    expect(plan.remove).toEqual([]);
+    expect(plan.skipped.map((s) => s.path).sort()).toEqual([LEGACY_A, LEGACY_B]);
+    for (const s of plan.skipped) expect(s.reason.length).toBeGreaterThan(0);
+  });
+
+  it('skips a regular file whose parent directory resolves outside the install root', async () => {
+    const { planRemovals } = await import('../src/writer.js');
+    const dir = await makeTempDir();
+    const outside = await makeTempDir();
+    await fs.mkdir(path.join(outside, 'spec-schema'), { recursive: true });
+    await fs.writeFile(path.join(outside, 'spec-schema', 'contract.md'), 'x', 'utf8');
+    await fs.symlink(outside, path.join(dir, '.sdd'));
+
+    const plan = await planRemovals(dir);
+
+    expect(plan.remove).toEqual([]);
+    expect(plan.skipped.map((s) => s.path)).toContain(LEGACY_A);
+    expect(await fs.readFile(path.join(outside, 'spec-schema', 'contract.md'), 'utf8')).toBe('x');
+  });
+
+  it('rejects with a plain Error disclosing what was written and removed when a delete fails', async () => {
+    const { applyRemovals } = await import('../src/writer.js');
+    const dir = await installDir();
+    await fs.writeFile(path.join(dir, LEGACY_A), 'a', 'utf8');
+    const missing = { path: LEGACY_B, absolute: path.join(dir, LEGACY_B) };
+
+    const failure = await applyRemovals(
+      [{ path: LEGACY_A, absolute: path.join(dir, LEGACY_A) }, missing],
+      ['written.md'],
+    ).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+
+    expect(failure).toBeInstanceOf(Error);
+    const message = (failure as Error).message;
+    expect(message).toContain(LEGACY_B);
+    expect(message).toContain('written.md');
+    expect(message).toContain(LEGACY_A);
+    expect((failure as { code?: string }).code).toBeUndefined();
+  });
+});

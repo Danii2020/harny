@@ -62,7 +62,7 @@ export interface ConductorTemplate {
   readonly sourcePath: string;
 }
 
-export const SPEC_SCHEMA_NAMES = ['intent', 'contract', 'roadmap', 'tasks', 'audit'] as const;
+export const SPEC_SCHEMA_NAMES = ['intent', 'execution-plan', 'tasks', 'audit'] as const;
 export type SpecSchemaName = (typeof SPEC_SCHEMA_NAMES)[number];
 
 export interface SpecSchemaTemplate {

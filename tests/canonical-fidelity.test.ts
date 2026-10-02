@@ -354,6 +354,14 @@ describe('non-mutation: templates/ and .claude/ are byte-for-byte unchanged (R16
       relativePath === 'templates/conductor/sdd-conductor.md' ||
       relativePath === 'templates/roles/sdd-test-writer.md' ||
       relativePath === 'templates/roles/sdd-auditor.md' ||
+      // (specs/streamlined-spec-artifacts.) Contracted content migration of the
+      // architect/executor roles, the spec-schema set and the live dogfood copies.
+      relativePath === 'templates/roles/sdd-architect.md' ||
+      relativePath === 'templates/roles/sdd-executor.md' ||
+      relativePath.startsWith('templates/spec-schema/') ||
+      relativePath.startsWith('.claude/agents/') ||
+      relativePath.startsWith('.claude/skills/high-value-tests/') ||
+      relativePath.startsWith('.claude/skills/sdd-conductor/') ||
       relativePath === '.claude/settings.json';
 
     // (templates-skill-library-parity fix.) Each porcelain line is a fixed-width
@@ -1057,10 +1065,11 @@ describe('the TT-17 protocol tokens reach all five generators\' sdd-test-writer 
           generated.contents,
           `${generator.id}'s ${roleId} artifact is missing "${MARKER}"`,
         ).toContain(MARKER);
+        // (SA-7, streamlined-spec-artifacts.) The Plan status line is removed.
         expect(
           generated.contents,
-          `${generator.id}'s ${roleId} artifact is missing "${STATUS_PREFIX}"`,
-        ).toContain(STATUS_PREFIX);
+          `${generator.id}'s ${roleId} artifact still carries "${STATUS_PREFIX}"`,
+        ).not.toContain(STATUS_PREFIX);
       }
     }
   });
@@ -1078,8 +1087,8 @@ describe('the TT-17 protocol tokens reach all five generators\' sdd-test-writer 
       ).toContain(MARKER);
       expect(
         generated.contents,
-        `${generator.id}'s conductor artifact is missing "${STATUS_PREFIX}"`,
-      ).toContain(STATUS_PREFIX);
+        `${generator.id}'s conductor artifact still carries "${STATUS_PREFIX}"`,
+      ).not.toContain(STATUS_PREFIX);
     }
   });
 });

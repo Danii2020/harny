@@ -1,19 +1,19 @@
 # Current-State Specifications
 
 > Current truth for this repo. Maintained by `harny-sync`; do not hand-edit.
-> Last synced: 2026-09-24 by test-tiers (archive mode: feature archived, capability docs updated, ADRs 0046–0050 registered)
+> Last synced: 2026-10-02 by streamlined-spec-artifacts (archive mode: feature archived, capability docs updated, ADRs 0051–0056 registered)
 
 ## Capabilities
 
 | Capability | Current-State Specification | Incorporated Changes |
 |---|---|---|
-| spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) |
-| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
+| spec-workflow | [spec-workflow.md](./spec-workflow.md) | [canonical-role-templates](../archived/canonical-role-templates/), [cli-skeleton](../archived/cli-skeleton/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/) , [streamlined-spec-artifacts](../archived/streamlined-spec-artifacts/) |
+| pipeline-roles | [pipeline-roles.md](./pipeline-roles.md) | [canonical-role-templates](../archived/canonical-role-templates/), [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) , [streamlined-spec-artifacts](../archived/streamlined-spec-artifacts/) |
 | skill-library | [skill-library.md](./skill-library.md) | [sdd-skill-library](../archived/sdd-skill-library/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [documentation-role-completion](../archived/documentation-role-completion/), [test-tiers](../archived/test-tiers/) |
-| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) |
+| cli-init | [cli-init.md](./cli-init.md) | [cli-skeleton](../archived/cli-skeleton/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/) , [streamlined-spec-artifacts](../archived/streamlined-spec-artifacts/) |
 | tool-generators | [tool-generators.md](./tool-generators.md) | [cli-skeleton](../archived/cli-skeleton/), [cursor-kiro-copilot-generators](../archived/cursor-kiro-copilot-generators/), [codex-generator](../archived/codex-generator/), [templates-skill-library-parity](../archived/templates-skill-library-parity/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [context7-mcp](../archived/context7-mcp/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
 | feedback-controls | [feedback-controls.md](./feedback-controls.md) | [agent-feedback-controls](../archived/agent-feedback-controls/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [dogfood-quick-fixes](../archived/dogfood-quick-fixes/), [ci-workflow-root](../archived/ci-workflow-root/), [monorepo-mode](../archived/monorepo-mode/), [subagent-feedback-hooks](../archived/subagent-feedback-hooks/) |
-| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/), [monorepo-mode](../archived/monorepo-mode/) |
+| readiness-checks | [readiness-checks.md](./readiness-checks.md) | [readiness-doctor](../archived/readiness-doctor/), [ai-sdlc-readiness](../archived/ai-sdlc-readiness/), [feedback-path-hygiene](../archived/feedback-path-hygiene/), [ci-workflow-root](../archived/ci-workflow-root/), [documentation-role-completion](../archived/documentation-role-completion/), [monorepo-mode](../archived/monorepo-mode/) , [streamlined-spec-artifacts](../archived/streamlined-spec-artifacts/) |
 
 ## Keyword lookup
 
@@ -93,11 +93,14 @@
 | SubagentStop / subagentStop / sub-agent feedback | feedback-controls, tool-generators |
 | --keep-turn / at-least-once delivery | feedback-controls |
 | test tier / unit / integration / e2e | pipeline-roles |
-| Test Plan / Plan status | pipeline-roles |
+| Test Plan / Plan status (retired) | pipeline-roles |
 | TEST PLAN AWAITING CONFIRMATION | pipeline-roles |
 | Tier Results | pipeline-roles |
 | high-value-tests.md | skill-library |
 | tier-confirmation checkpoint | pipeline-roles |
+| execution-plan.md / § Validation | spec-workflow, pipeline-roles |
+| legacy shape (contract.md / roadmap.md) | spec-workflow, readiness-checks |
+| harny update / LEGACY_HARNESS_PATHS | cli-init |
 
 ## Synchronized Changes
 
@@ -119,6 +122,7 @@
 | monorepo-mode | [specs/archived/monorepo-mode/](../archived/monorepo-mode/) | [feedback-controls.md](./feedback-controls.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 | subagent-feedback-hooks | [specs/archived/subagent-feedback-hooks/](../archived/subagent-feedback-hooks/) | [feedback-controls.md](./feedback-controls.md), [tool-generators.md](./tool-generators.md) |
 | test-tiers | [specs/archived/test-tiers/](../archived/test-tiers/) | [pipeline-roles.md](./pipeline-roles.md), [skill-library.md](./skill-library.md), [tool-generators.md](./tool-generators.md) |
+| streamlined-spec-artifacts | [specs/archived/streamlined-spec-artifacts/](../archived/streamlined-spec-artifacts/) | [spec-workflow.md](./spec-workflow.md), [pipeline-roles.md](./pipeline-roles.md), [cli-init.md](./cli-init.md), [readiness-checks.md](./readiness-checks.md) |
 
 ## Decisions (ADR registry)
 
@@ -170,10 +174,16 @@
 | 0044 | Wire a sub-agent completion event only where first-party documentation confirms it | Accepted | feedback-controls | `specs/archived/subagent-feedback-hooks/decisions/0044-wire-only-documented-subagent-events.md` |
 | 0045 | Claude Code's wrapper takes the event name as a parameter; Cursor and Codex share one argv-forwarding wrapper | Accepted | tool-generators | `specs/archived/subagent-feedback-hooks/decisions/0045-event-name-is-a-wrapper-parameter.md` |
 | 0046 | Any setup requires confirmation, even for a unit-only plan | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0046-any-setup-requires-confirmation-even-unit-only.md` |
-| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0047-test-plan-lives-only-in-audit-md.md` |
-| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0048-tier-checkpoint-conditional-not-a-fourth-gate.md` |
+| 0047 | The Test Plan is recorded only inside audit.md § Test Coverage | Superseded by 0052 | pipeline-roles | `specs/archived/test-tiers/decisions/0047-test-plan-lives-only-in-audit-md.md` |
+| 0048 | The tier-confirmation checkpoint is conditional, not a fourth human gate | Amended by 0053 | pipeline-roles | `specs/archived/test-tiers/decisions/0048-tier-checkpoint-conditional-not-a-fourth-gate.md` |
 | 0049 | Tier findings map onto the auditor's existing severity buckets | Accepted | pipeline-roles | `specs/archived/test-tiers/decisions/0049-tier-findings-reuse-existing-severity-buckets.md` |
 | 0050 | The test-value rubric ships as a bundled harny-test resource, not a skill | Accepted | skill-library | `specs/archived/test-tiers/decisions/0050-rubric-ships-as-bundled-harny-test-resource.md` |
+| 0051 | The spec schema is four files; execution-plan.md replaces contract.md and roadmap.md | Accepted | spec-workflow | `specs/archived/streamlined-spec-artifacts/decisions/0051-four-file-spec-schema-with-execution-plan.md` |
+| 0052 | execution-plan.md § Validation is the only test plan (supersedes ADR 0047) | Accepted | pipeline-roles | `specs/archived/streamlined-spec-artifacts/decisions/0052-validation-section-is-the-only-test-plan.md` |
+| 0053 | The tier-confirmation checkpoint becomes a stop rule for gaps in § Validation (amends ADR 0048) | Accepted | pipeline-roles | `specs/archived/streamlined-spec-artifacts/decisions/0053-tier-checkpoint-replaced-by-stop-rule.md` |
+| 0054 | The doctor's spec-state check is shape-aware, keyed off checks.json | Accepted | readiness-checks | `specs/archived/streamlined-spec-artifacts/decisions/0054-shape-aware-spec-state-check.md` |
+| 0055 | `harny update` renders through init, deletes only a constant list, and fails closed | Accepted | cli-init | `specs/archived/streamlined-spec-artifacts/decisions/0055-harny-update-verb-and-fail-closed-safety.md` |
+| 0056 | This repo's .sdd/ is refreshed through a scratch copy, not by update in place | Accepted | cli-init | `specs/archived/streamlined-spec-artifacts/decisions/0056-dogfood-sdd-refreshed-via-scratch-copy.md` |
 
 ## Open reservations
 
@@ -252,6 +262,10 @@
 | TT-R1 | Tier inference, confirmation, stop/ask, setup scope and per-tier red reporting are prompt instructions unverifiable by automated tests; 3 of 5 manual Claude Code walkthroughs were only PARTIAL | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-5, TT-R1 | pipeline-roles |
 | TT-R2 | Tier proposal, confirmation and tier-aware audit are delivered and tested for presence on Cursor, Kiro, GitHub Copilot and Codex, but walked through at runtime only on Claude Code | MEDIUM (human-gated) | `specs/archived/test-tiers/audit.md` AL-6, TT-R2 | tool-generators |
 | TT-R3 | The dogfood `harny-test`/`harny-audit` intentionally lack the tier flow and tier audit; dogfood `harny-test` still points at the dogfood-only `high-value-tests` skill | LOW (design, deliberate) | `specs/archived/test-tiers/audit.md` TT-R3 | skill-library |
+| SA-F3 | Under `update`, the MCP merge warning still advises `--force`, which `update` does not pass to the MCP merge | LOW (deferred) | `specs/archived/streamlined-spec-artifacts/audit.md` F3 | cli-init |
+| SA-F5 | `ARCHITECT_SCHEMA_FILES` in `src/doctor.ts` re-literals names that `SPEC_SCHEMA_NAMES` owns | LOW (deferred) | `specs/archived/streamlined-spec-artifacts/audit.md` F5 | readiness-checks |
+| SA-F6 | No CI run covers streamlined-spec-artifacts (uncommitted at sign-off); confirm `harny feedback` green with N >= 1 once pushed | LOW | `specs/archived/streamlined-spec-artifacts/audit.md` F6 | cli-init |
+| SA-15 | Repo `.sdd/` refreshed via scratch-copy `update --force`, not `update` in place (accepted deviation D1; ADR 0056) | LOW (accepted) | `specs/archived/streamlined-spec-artifacts/audit.md` D1 | cli-init |
 
 ## Notes
 

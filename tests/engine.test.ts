@@ -318,7 +318,7 @@ describe('buildPayload (T15)', () => {
 });
 
 describe('buildSharedFiles (T16, guarantee 12)', () => {
-  it('emits exactly the five spec-schema files (byte-identical to source) plus .sdd/harness.json', async () => {
+  it('emits exactly the four spec-schema files (byte-identical to source) plus .sdd/harness.json', async () => {
     const { buildPayload, buildSharedFiles, SPEC_SCHEMA_DIR, HARNESS_CONFIG_PATH } = await import(
       '../src/engine.js'
     );
@@ -334,7 +334,7 @@ describe('buildSharedFiles (T16, guarantee 12)', () => {
     const payload = buildPayload(config as any, templates);
     const files = buildSharedFiles(payload);
 
-    expect(files).toHaveLength(6);
+    expect(files).toHaveLength(5);
 
     for (const schema of templates.specSchema) {
       const expectedPath = `${SPEC_SCHEMA_DIR}/${schema.name}.md`;

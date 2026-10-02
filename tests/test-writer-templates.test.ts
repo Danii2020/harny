@@ -134,12 +134,19 @@ describe('the skill and the role cite the rubric by bare file name and section (
 const TT17_MARKER = 'TEST PLAN AWAITING CONFIRMATION';
 const TT17_STATUS_VALUES = ['PROPOSED', 'CONFIRMED', 'NOT REQUIRED'] as const;
 
-describe('the TT-17 protocol tokens are identical across the four shipped files that carry them (TT-17) (T4, T14)', () => {
+// Migrated by specs/streamlined-spec-artifacts (SA-7, SC4): the stop marker survives
+// in the test-writer skill/role and the conductor that relays it; the separate Test
+// Plan and its `**Plan status**` line are gone everywhere.
+describe('the awaiting-confirmation marker is carried by the files that emit and relay it, and no Plan status line exists (TT-17 as narrowed by SA-7) (T4, T14)', () => {
   const FILES: ReadonlyArray<[string, string]> = [
     ['templates/skills/harny-test/SKILL.md', HARNY_TEST_SKILL_PATH],
     ['templates/roles/sdd-test-writer.md', TEST_WRITER_ROLE_PATH],
     ['templates/conductor/sdd-conductor.md', CONDUCTOR_PATH],
+  ];
+  const ALL_FILES: ReadonlyArray<[string, string]> = [
+    ...FILES,
     ['templates/skills/harny-audit/SKILL.md', HARNY_AUDIT_SKILL_PATH],
+    ['templates/roles/sdd-auditor.md', AUDITOR_ROLE_PATH],
   ];
 
   it.each(FILES)('%s carries the literal awaiting-confirmation marker', (_label, filePath) => {
@@ -148,12 +155,12 @@ describe('the TT-17 protocol tokens are identical across the four shipped files 
     expect(source, `${filePath} is missing "${TT17_MARKER}"`).toContain(TT17_MARKER);
   });
 
-  it.each(FILES)('%s carries all three `**Plan status**:` literals', (_label, filePath) => {
+  it.each(ALL_FILES)('%s carries no `**Plan status**` line', (_label, filePath) => {
     const source = readIfExists(filePath);
     expect(source, `${filePath} does not exist`).toBeDefined();
+    expect(source).not.toContain('**Plan status**');
     for (const value of TT17_STATUS_VALUES) {
-      const needle = `**Plan status**: ${value}`;
-      expect(source, `${filePath} is missing "${needle}"`).toContain(needle);
+      expect(source).not.toContain(`Plan status: ${value}`);
     }
   });
 });
@@ -183,11 +190,8 @@ describe('the conductor keeps exactly three human gates, and the checkpoint is n
  *  (`contract.md` § Behavior Guarantees, TT-28's table), so a table-row match
  *  is scoped to a single markdown line rather than the whole file. */
 const TT28_CONDITIONS: ReadonlyArray<{ name: string; fragment: string; severity: 'HIGH' | 'MEDIUM' | 'LOW' }> = [
-  { name: 'unconfirmed non-unit test', fragment: 'the plan is not `CONFIRMED`', severity: 'HIGH' },
   { name: 'unnamed setup', fragment: 'the plan did not name', severity: 'HIGH' },
   { name: 'confirmed/not-required tier with no tests', fragment: 'has no tests', severity: 'HIGH' },
-  { name: 'plan left PROPOSED', fragment: 'still `PROPOSED` at audit time', severity: 'HIGH' },
-  { name: 'misapplied NOT REQUIRED', fragment: 'confirmation rule was misapplied', severity: 'HIGH' },
 ];
 
 /** Finds the severity token on the first line of `source` that also contains

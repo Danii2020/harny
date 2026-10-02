@@ -22,13 +22,13 @@ sdd-architect → [HUMAN REVIEWS SPECS]
              → sdd-documentation (auto, non-gated)
 ```
 
-Five roles, three human gates, one automatic post-audit handoff. Documentation is not a fourth gate.
+Five roles, three human gates, one automatic post-audit handoff. Documentation is not a fourth gate. Test scope is approved at the first gate, as part of `execution-plan.md` § Validation; no separate test-plan step or gate exists.
 
 ## Hard rules
 
 1. **Never self-approve.** When the architect finishes the spec set, STOP, summarize it, and wait for the human's explicit go-ahead (or requested changes). Never relay "approved" to a role on their behalf. The architect's own pause between files is not the gate; the complete set is.
 2. **Default to TDD.** Once specs are approved, start with the test-writer (red), then the executor (green), then the auditor. Run mechanical handoffs without asking "should I proceed?", except at the gates.
-3. **The red tests are a gate.** After the test-writer, STOP before the executor: confirm they fail for the right reason, summarize coverage, and wait for approval.
+3. **The red tests are a gate.** After the test-writer, STOP before the executor: confirm they fail for the right reason, summarize coverage and each tier's red status, and wait for approval.
 4. **The audit is the last gate; documentation follows automatically.** Present the auditor's verdict and STOP. On APPROVED or APPROVED WITH RESERVATIONS that the human accepts, hand off to documentation without asking. REJECTED never triggers documentation; it goes back to the appropriate role.
 5. **Changes to a role's output go back to that same role.** Never make them yourself.
 
@@ -41,6 +41,7 @@ Five roles, three human gates, one automatic post-audit handoff. Documentation i
 ## Mechanics
 
 - **Track the pipeline** with one task per stage, in order. Stages depend on each other, so never parallelize them.
+- **Relay a test-writer stop; never answer it for the human.** If the test-writer's report begins `TEST PLAN AWAITING CONFIRMATION`, it needs a tier or setup that the approved `execution-plan.md` § Validation does not name. Ask the human with `AskUserQuestion` and relay their answer verbatim to the same test-writer. The approved plan changes only through the architect.
 - **Brief each role fully** — decisions made, exact paths, prior findings — so a cold start does not re-derive or re-ask. Prefer resuming an invocation over starting a fresh one.
 - **Verify, don't trust.** After the test-writer, executor and auditor report, re-run the gates yourself (type-check, lint, test suite), especially the auditor's PASS/FAIL claims. Confirm tests fail for the right reason before the executor runs and pass after. Before declaring the pipeline complete, the conductor confirms the archive landed by running the readiness runner's spec-state family itself (the runner at `.sdd/doctor/run-doctor.mjs`, for example `node .sdd/doctor/run-doctor.mjs --only spec-state`), not by accepting documentation's report. No role certifies its own gate.
 - **Orchestration stays in the orchestrating thread** (whatever that is for the tool), never inside a role, so the gates stay independent of the work they gate.

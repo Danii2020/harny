@@ -46,13 +46,13 @@ The system SHALL provide exactly one probe evaluator (`probeSatisfied` and relat
 
 ### Requirement: RD-4 — Spec-state coherence detection
 
-The system SHALL detect and report by feature name: a `specs/<feature>/` missing any of the five required schema files, and a `specs/<feature>/` carrying `Shipped:` in `intent.md` and approved verdict in `audit.md` yet still existing outside `specs/archived/` (shipped-but-unarchived condition).
+The system SHALL detect and report by feature name: a `specs/<feature>/` missing any required schema file (new shape: `schemaFiles`, the three the architect writes; a dir holding `contract.md` or `roadmap.md` is legacy and is checked against `legacySchemaFiles`, the five legacy files; with no `legacySchemaFiles` in `checks.json`, every dir uses `schemaFiles`), and a `specs/<feature>/` carrying `Shipped:` in `intent.md` and approved verdict in `audit.md` yet still existing outside `specs/archived/` (shipped-but-unarchived condition).
 
-**Source:** readiness-doctor · intent.md § G3, contract.md § BG-10
+**Source:** readiness-doctor · intent.md § G3, contract.md § BG-10. **Amended by** streamlined-spec-artifacts · contract.md § SA-3, SA-8 to SA-11; ADR 0054
 
 #### Scenario: missing schema file reported
-- **WHEN** a `specs/<feature>/` is missing `intent.md`, `contract.md`, `roadmap.md`, `tasks.md`, or `audit.md`
-- **THEN** the check reports the feature by name as a failure
+- **WHEN** a new-shape `specs/<feature>/` is missing `intent.md`, `execution-plan.md` or `tasks.md`, or a legacy-shape one is missing any of `intent.md`, `contract.md`, `roadmap.md`, `tasks.md`, `audit.md`
+- **THEN** the check reports the feature by name as a failure (`<dir>/<name> is missing <files>`)
 
 #### Scenario: shipped-but-unarchived reported
 - **WHEN** a `specs/<feature>/` carries `Shipped:` and an approved verdict but is not in `specs/archived/`
@@ -257,6 +257,7 @@ The system SHALL emit one family-5 (tests) entry per resolved component, each ca
 | RC-AL5 | **A misconfigured `specs.dir` yields a green `--only spec-state` run indistinguishable from a genuinely clean repo.** Family 4 swallows a `readdirSync` failure into an empty feature list, so a wrong `specs.dir` exits `0` with the same output shape as a repo with nothing stranded. Pre-existing family-4 behavior that `RD-12` deliberately reuses rather than changes; `contract.md`'s Error Handling Contract explicitly sanctions "`specs/` absent or empty ⇒ exit 0". Running from the wrong working directory is still caught loudly (missing `checks.json` ⇒ exit 1). | LOW | documentation-role-completion · audit.md AL-5 |
 | MR-F1 | **Closed, recorded for its lesson.** `buildDoctorChecks` first gated `dir`/id-suffix emission on "more than one component", so a lone non-`.` component ran both its probe and its test command at the install root — a silent false-readiness verdict with no error and no warning. Fixed before ship by gating on the exported `isSingleRootComponent` predicate and perturbation-proved closed. The lesson stands: the single-repo boundary had four re-derived spellings in `src/`, and that divergence is what produced the defect; it is now two named, exported, documented predicates (`isSingleRootComponent`, `hasMultipleComponents`), each forbidding substitution for the other. One duplication remains unguarded at `src/generators/markdown-yaml.ts:62`, where an import cannot be written without failing the component-vocabulary grep gate. | CLOSED (residual LOW, unguarded) | monorepo-mode · audit.md F1, round-2 Audit Log, S5 |
 | MR-MC20 | RD-13's `:<path>` id suffix follows the `isSingleRootComponent` boundary, so a lone non-`.` component gets `npm-test:apps/web` where MC-20's original wording ("more than one component") implied a bare `npm-test`. MC-20's two clauses never covered that case, MC-5 settles the `dir` half in the shipped direction, and suffixing threatens no uniqueness — recorded here so the gap is not rediscovered as a defect. | LOW (wording) | monorepo-mode · audit.md C20, Final Verdict |
+| SA-F5 | `ARCHITECT_SCHEMA_FILES` in `src/doctor.ts` re-literals three names that `SPEC_SCHEMA_NAMES` owns (derive it or accept) | LOW (deferred) | streamlined-spec-artifacts · audit.md F5 |
 
 ## Contributing features
 
@@ -267,6 +268,7 @@ The system SHALL emit one family-5 (tests) entry per resolved component, each ca
 | ci-workflow-root | 2026-09-23 | Amended RD-7: the verb re-derives install location before building checks, which keeps agreement true for subdirectory installs. Added RD-R10: generated `checks.json`'s `ci-workflow` entry records install-relative path that goes stale after a directory move; verb is never stale. |
 | monorepo-mode | 2026-09-23 | Added RD-13: family 5 scoped per component by a `dir` field on the generated checks entry, with the id suffixed `:<path>`, both omitted for the implicit single-repo shape; the runner gains no component literal and `checks.json` stays at `version: 1`. Amended RD-2 (`dir` lives on the generated entry type, never on `CommandSpec`), RD-5 (per-component probe evaluation) and RD-7 (the verb re-derives components as well as placement). Restated RD-1/I3 as still true: five families, same order, families 1–4 unchanged. ADR 0042. Carried MR-F1 (closed) and MR-MC20. |
 | documentation-role-completion | 2026-09-23 | Added RD-12: an optional `--only <family>` selector on the direct runner invocation, reusing each family's existing detection logic (never a duplicate), making the spec-state family cheap enough to invoke as a completion precondition rather than only at `harny-doctor`'s two existing checkpoints. `npx harny doctor` (`src/doctor.ts`) is unaffected — no selector, no schema change. |
+| streamlined-spec-artifacts | 2026-10-02 | Amended RD-4: shape-aware spec-state (`schemaFiles` / `legacySchemaFiles`); in-flight legacy dirs and old `checks.json` behave as before |
 
 ## Related ADRs
 
@@ -279,3 +281,4 @@ The system SHALL emit one family-5 (tests) entry per resolved component, each ca
 | 0024 | Presence checked in the deterministic runner; coherence judged one layer up, in the skill | Accepted |
 | 0035 | Verify the archive with the existing spec-state detector via a family selector, not with new advisory prose or a second check | Accepted |
 | 0042 | Component scoping for readiness is a `dir` field on the generated checks entry, never on `CommandSpec` | Accepted |
+| 0054 | The doctor's spec-state check is shape-aware, keyed off checks.json | Accepted |

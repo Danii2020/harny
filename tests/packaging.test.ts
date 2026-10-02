@@ -72,8 +72,7 @@ const EXPECTED_TEMPLATE_FILES = [
   'templates/roles/sdd-documentation.md',
   'templates/conductor/sdd-conductor.md',
   'templates/spec-schema/intent.md',
-  'templates/spec-schema/contract.md',
-  'templates/spec-schema/roadmap.md',
+  'templates/spec-schema/execution-plan.md',
   'templates/spec-schema/tasks.md',
   'templates/spec-schema/audit.md',
   'templates/skills/README.md',
@@ -112,12 +111,12 @@ async function packedFilePaths(): Promise<string[]> {
 }
 
 describe('npm pack --dry-run (guarantee 20) (T42)', () => {
-  it('includes bin/, dist/, and all thirty-two templates/** files (Gu 26, S4) (test-tiers amendment: 31 -> 32)', async () => {
+  it('includes bin/, dist/, and all thirty-one templates/** files (Gu 26, S4) (streamlined-spec-artifacts: 32 -> 31)', async () => {
     const files = await packedFilePaths();
 
     expect(files.some((f) => f.startsWith('bin/'))).toBe(true);
     expect(files.some((f) => f.startsWith('dist/'))).toBe(true);
-    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(32);
+    expect(EXPECTED_TEMPLATE_FILES).toHaveLength(31);
     for (const expected of EXPECTED_TEMPLATE_FILES) {
       expect(files).toContain(expected);
     }

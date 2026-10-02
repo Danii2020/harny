@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- **Four-file spec schema (`streamlined-spec-artifacts`).** The architect now writes
+  three files per feature, `intent.md`, `execution-plan.md` and `tasks.md`, and the
+  auditor adds `audit.md`. `execution-plan.md` replaces `contract.md` and `roadmap.md`
+  (ownership, binding constraints, a revisable approach, and a Validation section with
+  one row per AC). Validation is the only test plan: the `### Test Plan` subsection,
+  the `**Plan status**` line and conductor hard rule 6 are removed, and the test-writer
+  stops with `TEST PLAN AWAITING CONFIRMATION` only for a tier or setup Validation does
+  not name. `harny init` deploys four schema files, the doctor's spec-state check is
+  shape-aware (new `legacySchemaFiles` key; an old `checks.json` behaves as before), and
+  `harny-sync` archives either shape. Legacy five-file feature dirs stay valid. This
+  supersedes ADR 0047 and amends ADR 0048 (ADRs 0051-0056).
+
+
 - **Streamlined role and skill instructions: one home per instruction.** The five
   shipped role bodies (`templates/roles/*.md`) used to restate, in full, the same
   procedure that the scaffolded `harny-*` skills also carry, so every installed repo
@@ -30,6 +43,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   protocol tokens) now check the skill, which is where that text lives.
 
 ### Added
+
+- **`harny update [target]`.** Brings an initialised install up to this harny version
+  by rendering through `init` from `.sdd/harness.json`, with a per-path report
+  (`created` / `updated` / `unchanged` / `removed`), `--dry-run` and `--force`. It
+  refuses (exit 3) over tracked files with uncommitted changes, including ones reached
+  through symlinked skill directories, when git fails, or outside a git repo, unless
+  `--force`. It never touches `specs/`. `update` and `init --force` also remove the
+  stale `.sdd/spec-schema/contract.md` and `roadmap.md`, and nothing else.
+  Known, deferred (LOW): under `update` the MCP merge warning still advises `--force`,
+  which `update` does not pass to the MCP merge; `ARCHITECT_SCHEMA_FILES` re-literals
+  names that `SPEC_SCHEMA_NAMES` owns. The repo's own `.sdd/` was refreshed through a
+  scratch copy rather than `update` in place (accepted deviation).
 
 - **The shipped test-writer now proposes tests at the right tier, with a human
   confirmation checkpoint, and ships the rubric it was already pointing at

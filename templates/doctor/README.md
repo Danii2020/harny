@@ -103,7 +103,10 @@ all, unlike the feedback hook (`AGENTS.md` S7).
   it is never the only possibility — each selected tool contributes its own entry,
   derived from that tool's own adapter, never a fixed list.
 - **Spec state** — every `specs/<feature>/` directory (excluding `current` and
-  `archived`) is checked for the five spec-schema files, and for the
+  `archived`) is checked for the three architect files (`intent.md`, `execution-plan.md`,
+  `tasks.md`; `audit.md` is optional until the audit runs), or, when it holds a
+  legacy `contract.md`/`roadmap.md`, for the legacy five (a legacy-shape note: that
+  dir is judged by `legacySchemaFiles`), and for the
   shipped-but-unarchived condition: a feature whose `intent.md` is stamped
   `Shipped:` and whose `audit.md` carries an approved verdict, but which still sits
   outside `specs/archived/` — the exact condition `harny-sync`'s bounded, ≤4-file

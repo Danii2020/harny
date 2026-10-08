@@ -445,11 +445,15 @@ describe('FeedbackInstall / StackProfile.ciInstall (A1; contract.md § Interface
     }
   });
 
-  it('the python profile declares no ciInstall at all — deliberate, per BG-21/R6', async () => {
+  it('the python profile declares a single uv.lock-gated uv-sync candidate that puts the venv on $GITHUB_PATH (closes R6 for uv projects)', async () => {
     const { STACK_PROFILES } = await import('../src/feedback.js');
     const python = STACK_PROFILES.find((profile) => profile.id === 'python');
 
-    expect(python?.ciInstall).toBeUndefined();
+    expect(python?.ciInstall?.map((candidate) => candidate.id)).toEqual(['uv-sync']);
+    expect(python?.ciInstall?.[0].requires).toEqual({ anyFile: ['uv.lock'] });
+    const chain = python?.ciInstall?.[0].argv.join(' ');
+    expect(chain).toContain('uv sync');
+    expect(chain).toContain('>> "$GITHUB_PATH"');
   });
 });
 

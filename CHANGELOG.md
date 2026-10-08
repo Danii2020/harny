@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Python CI gate no longer skips ruff and mypy on a stock runner.** The `python`
+  profile now declares a `ciInstall` candidate gated on `uv.lock`
+  (`pipx install uv && uv sync --all-groups`, then the venv's `bin` goes onto
+  `$GITHUB_PATH`), so `ruff` and `mypy` pass their presence probes and actually run.
+  Python repos without `uv.lock` are unchanged (probe-skip, no assumed convention).
+  Closes R6 for uv projects.
+
 ### Changed
 
 - **Four-file spec schema (`streamlined-spec-artifacts`).** The architect now writes

@@ -114,7 +114,7 @@ export interface StackProfile {
   readonly commands: readonly FeedbackCommand[];
   /** **(A1 — NEW.)** Ordered CI-only install candidates; the FIRST entry whose
    *  `requires` gate passes is the one that runs, and no more than one ever runs.
-   *  Absent (the `python` profile) or all-gates-false ⇒ no install happens, which
+   *  Absent or all-gates-false ⇒ no install happens, which
    *  is a notice and never a failure: every command then falls through to BG-9's
    *  ordinary probe-skip path. */
   readonly ciInstall?: readonly FeedbackInstall[];
@@ -207,7 +207,24 @@ export const STACK_PROFILES: readonly StackProfile[] = [
         requires: { binary: 'mypy' },
       },
     ],
-    // (A1.) No `ciInstall`: deliberate, see BG-21 and reservation R6.
+    // Closes R6 for uv projects only: a stock runner has neither uv nor the
+    // project's tools, so without this ruff/mypy always probe-skip and the CI gate
+    // checks nothing. Gated on `uv.lock`; any other Python layout still falls
+    // through to the probe-skip path (no assumed install convention). The chain is
+    // joined into one shell command, so `&&` and the redirect are shell tokens: the
+    // venv's bin dir goes onto $GITHUB_PATH so the runner step's bare `ruff`/`mypy`
+    // probes find the project-pinned tools.
+    ciInstall: [
+      {
+        id: 'uv-sync',
+        argv: [
+          'pipx', 'install', 'uv', '&&',
+          'uv', 'sync', '--all-groups', '&&',
+          'echo', '"$PWD/.venv/bin"', '>>', '"$GITHUB_PATH"',
+        ],
+        requires: { anyFile: ['uv.lock'] },
+      },
+    ],
     // (readiness-doctor — NEW.) Feedforward-only; never reaches a per-turn hook
     // or the CI workflow's inline JSON (BG-4).
     readiness: [

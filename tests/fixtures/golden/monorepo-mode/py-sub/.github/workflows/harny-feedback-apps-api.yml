@@ -49,6 +49,9 @@ jobs:
         with:
           fetch-depth: 0
       # <!-- harny:begin generated project configuration -->
+      - name: "Install dependencies (Python)"
+        run: "if [ -f uv.lock ]; then pipx install uv && uv sync --all-groups && echo \"$PWD/.venv/bin\" >> \"$GITHUB_PATH\"; else echo 'harny-feedback: no uv.lock in this checkout; skipping dependency install'; fi"
+        working-directory: "apps/api"
       - name: "harny feedback (Python)"
         run: "test -f .sdd/feedback/run-feedback.mjs -a -f .sdd/shared/probes.mjs || { echo 'harny-feedback: .sdd/feedback/run-feedback.mjs or .sdd/shared/probes.mjs is missing from this checkout; run npx harny init and commit both'; exit 1; }; node .sdd/feedback/run-feedback.mjs run --whole-project --commands '[{\"id\":\"ruff\",\"kind\":\"lint\",\"argv\":[\"ruff\",\"check\"],\"pathMode\":\"per-file\",\"extensions\":[\".py\",\".pyi\"],\"requires\":{\"binary\":\"ruff\"}},{\"id\":\"mypy\",\"kind\":\"typecheck\",\"argv\":[\"mypy\"],\"pathMode\":\"per-file\",\"extensions\":[\".py\",\".pyi\"],\"requires\":{\"binary\":\"mypy\"}}]'"
         working-directory: "apps/api"

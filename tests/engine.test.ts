@@ -820,7 +820,7 @@ describe('buildFeedbackFiles — renderCiWorkflow (A1): at most one install step
     expect(npmInstallGateIndex).toBeGreaterThan(npmCiGateIndex);
   });
 
-  it('the python profile: no install step at all (no ciInstall declared) — exactly one step, the runner invocation (BG-21)', async () => {
+  it('the python profile: one uv.lock-gated install step, then exactly one step, the runner invocation', async () => {
     const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
     const { CI_WORKFLOW_PATH, STACK_PROFILES } = await import('../src/feedback.js');
     const templates = await loadRealTemplates();
@@ -833,17 +833,20 @@ describe('buildFeedbackFiles — renderCiWorkflow (A1): at most one install step
     const block = generatedBlockOf(workflow!.contents);
     const steps = parseSteps(block);
 
-    expect(steps).toHaveLength(1);
-    expect(RUNNER_INVOCATION.test(steps[0].run)).toBe(true);
+    expect(steps).toHaveLength(2);
+    expect(RUNNER_INVOCATION.test(steps[0].run)).toBe(false);
+    expect(steps[0].run).toContain('uv.lock');
+    expect(steps[0].run).toContain('uv sync');
+    expect(RUNNER_INVOCATION.test(steps[1].run)).toBe(true);
 
     const pythonProfile = STACK_PROFILES.find((p) => p.id === 'python')!;
     for (const command of pythonProfile.commands) {
       for (const token of command.argv) {
-        expect(steps[0].run).toContain(token);
+        expect(steps[1].run).toContain(token);
       }
     }
 
-    // No install-gate tokens anywhere — python declares no ciInstall.
+    // Only python's own gate — no npm tokens leak in.
     expect(block).not.toContain('package-lock.json');
     expect(block).not.toContain('package.json');
   });
@@ -1010,14 +1013,14 @@ describe('CI workflow — python profile end-to-end through the real runner: "."
       const block = ciGeneratedBlockOf(workflow.contents);
       const steps = ciParseSteps(block);
 
-      // The python profile declares no ciInstall (BG-21), so the generated
-      // block is exactly one step: the runner invocation.
-      expect(steps).toHaveLength(1);
+      // The generated block is the uv.lock-gated install step followed by the
+      // runner invocation; the stub-tool run below exercises only the latter.
+      expect(steps).toHaveLength(2);
 
       // `yamlQuote` (src/generators/markdown-yaml.ts) escapes only `\`, `"`,
       // and newline — a subset of JSON string syntax — so the quoted `run:`
       // scalar decodes cleanly with JSON.parse (roadmap.md Phase 3 step 2).
-      const shellCommand = JSON.parse(steps[0].run) as string;
+      const shellCommand = JSON.parse(steps[1].run) as string;
       expect(shellCommand).toContain('run --whole-project --commands');
 
       const { projectDir, binDir, stubLog } = await makeCiE2eProjectDir();
@@ -1152,7 +1155,7 @@ describe('ci-workflow-root — placement-aware rendering (contract.md § "Render
       }
     });
 
-    it('the python profile (no install step): the sole runner step still carries working-directory', async () => {
+    it('the python profile: both the install step and the runner step carry working-directory', async () => {
       const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
       const { yamlQuote } = await import('../src/generators/markdown-yaml.js');
       const { ciWorkflowPathFor } = await import('../src/repo.js');
@@ -1164,8 +1167,10 @@ describe('ci-workflow-root — placement-aware rendering (contract.md § "Render
       )!;
       const steps = parseStepsWithWorkingDir(generatedBlockOf(workflow.contents));
 
-      expect(steps).toHaveLength(1);
-      expect(steps[0].workingDirectory).toBe(yamlQuote('services/api'));
+      expect(steps).toHaveLength(2);
+      for (const step of steps) {
+        expect(step.workingDirectory).toBe(yamlQuote('services/api'));
+      }
     });
 
     it('an unresolved stack: the notice step still carries working-directory (FC-2 row of the Error Handling Contract)', async () => {
@@ -1524,7 +1529,7 @@ describe('buildFeedbackFiles — per-component CI install/runner steps and namin
     return steps;
   }
 
-  it('two components, one declaring ciInstall: exactly one install step, one runner step; no matrix/strategy/paths filter/defaults.run (MC-13, SC9)', async () => {
+  it('two components, both declaring ciInstall: one install step each, one runner step; no matrix/strategy/paths filter/defaults.run (MC-13, SC9)', async () => {
     const { buildPayload, buildFeedbackFiles } = await import('../src/engine.js');
     const { CI_WORKFLOW_PATH } = await import('../src/feedback.js');
     const templates = await loadRealTemplates();
@@ -1545,8 +1550,8 @@ describe('buildFeedbackFiles — per-component CI install/runner steps and namin
     const installSteps = steps.filter((s) => !/run --whole-project --commands/.test(s.run));
 
     expect(runnerSteps).toHaveLength(1);
-    // Only the typescript component declares ciInstall (python does not, BG-21).
-    expect(installSteps).toHaveLength(1);
+    // Both components declare ciInstall: one install step per component.
+    expect(installSteps).toHaveLength(2);
 
     expect(contents).not.toContain('strategy:');
     expect(contents).not.toContain('matrix:');
